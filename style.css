@@ -1,0 +1,37 @@
+body{
+margin:0;
+font-family:Arial,sans-serif;
+background:#1b1f2a;
+color:#fff;
+display:flex;
+justify-content:center;
+align-items:center;
+height:100vh;
+}
+.container{
+width:90%;
+max-width:420px;
+background:#2a3040;
+padding:24px;
+border-radius:12px;
+}
+input,button{
+width:100%;
+padding:12px;
+margin:8px 0;
+box-sizing:border-box;
+}
+.characters{
+display:grid;
+grid-template-columns:1fr 1fr;
+gap:10px;
+}
+.char.selected{
+background:#3d7eff;
+color:white;
+}
+button{
+cursor:pointer;
+border:none;
+border-radius:8px;
+}

@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hidden Duel</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="container">
+<h1>Hidden Duel</h1>
+
+<label>Player Name</label>
+<input id="playerName" type="text" maxlength="20" placeholder="Enter your name">
+
+<h2>Select Character</h2>
+<div class="characters">
+<button class="char selected" data-char="Knight">Knight</button>
+<button class="char" data-char="Mage">Mage</button>
+<button class="char" data-char="Hunter">Hunter</button>
+<button class="char" data-char="Rogue">Rogue</button>
+</div>
+
+<div class="buttons">
+<button id="createBtn">Create Lobby</button>
+</div>
+
+<div class="join">
+<input id="lobbyCode" maxlength="6" placeholder="Lobby Code">
+<button id="joinBtn">Join Lobby</button>
+</div>
+
+<p id="status"></p>
+</div>
+<script src="js/index.js"></script>
+</body>
+</html>
