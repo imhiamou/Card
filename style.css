@@ -1,0 +1,25 @@
+body{
+margin:0;
+background:#181c24;
+display:flex;
+justify-content:center;
+align-items:center;
+height:100vh;
+font-family:Arial;
+color:white;
+}
+.box{
+background:#2a3140;
+padding:25px;
+border-radius:12px;
+width:350px;
+}
+input,select,button{
+width:100%;
+padding:10px;
+margin:8px 0;
+box-sizing:border-box;
+}
+button{
+cursor:pointer;
+}

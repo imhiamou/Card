@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hidden Duel</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+</head>
+<body>
+<div class="box">
+<h1>Hidden Duel</h1>
+
+<input id="playerName" placeholder="Player Name">
+
+<h3>Character</h3>
+<select id="character">
+<option>Knight</option>
+<option>Mage</option>
+<option>Hunter</option>
+<option>Rogue</option>
+</select>
+
+<button id="createBtn">Create Lobby</button>
+
+<hr>
+
+<input id="roomCode" placeholder="Lobby Code">
+
+<button id="joinBtn">Join Lobby</button>
+
+<h2 id="status"></h2>
+<h3 id="code"></h3>
+
+</div>
+
+<script src="index.js"></script>
+</body>
+</html>
