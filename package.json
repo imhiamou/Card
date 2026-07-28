@@ -1,0 +1,16 @@
+{
+  "name": "hidden-duel",
+  "version": "1.0.0",
+  "description": "Hidden Duel - frontend (GitHub Pages) + Socket.IO backend in server/ (Render)",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1"
+  }
+}
