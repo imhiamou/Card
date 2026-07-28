@@ -24,7 +24,9 @@ const playAgainBtn=document.getElementById("playAgainBtn");
 
 const BOARD_SIZE=8;
 const ROOM_CODE_PATTERN=/^[A-Z0-9]{4,8}$/;
-const CHARACTER_ICONS={Wolf:"\u{1F43A}",Mermaid:"\u{1F9DC}"};
+// Emojis for the selectable characters (used in the player panel,
+// on your own hidden tile and in the game log).
+const CHARACTER_ICONS={Knight:"\u{1F6E1}\uFE0F",Mage:"\u{1F9D9}",Hunter:"\u{1F3F9}",Rogue:"\u{1F5E1}\uFE0F"};
 
 // How each card is targeted on the board. Cards without an entry
 // resolve immediately when clicked (no board target required).
@@ -44,8 +46,8 @@ attack:{target:"tile",hint:"Click the square you want to attack."}
 // owns the real game state (decks, hands, turn, positions).
 let currentRoom=null;    // lobby code of the room this client is in
 let lobbyPlayers=[];     // public player info (id, name, character)
-let selectedName="Knight";
-let selectedCharacter="Wolf";
+let selectedName="Wolf";
+let selectedCharacter="Knight";
 let selectedTile=null;   // placement: currently selected tile
 let myPosition=null;     // my own hidden square (updates when I move)
 let myTurn=null;         // true when it is this client's turn
@@ -60,7 +62,7 @@ let gameOver=false;
    LOBBY
    ============================================================ */
 
-// Name selection: no typing — click one of the classic names.
+// Name selection: no typing — your name is Wolf or Mermaid.
 document.querySelectorAll(".nameOption").forEach((option)=>{
 option.onclick=()=>{
 document.querySelectorAll(".nameOption").forEach((o)=>o.classList.remove("selected"));
@@ -69,7 +71,7 @@ selectedName=option.dataset.name;
 };
 });
 
-// Character selection: click one of the two options to choose it.
+// Character selection: Knight, Mage, Hunter or Rogue.
 document.querySelectorAll(".charOption").forEach((option)=>{
 option.onclick=()=>{
 document.querySelectorAll(".charOption").forEach((o)=>o.classList.remove("selected"));
