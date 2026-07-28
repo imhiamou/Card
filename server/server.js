@@ -19,10 +19,10 @@ const MAX_HAND_SIZE = 5;
 const STARTING_HAND_SIZE = 3;
 
 // The only selectable characters. Anything else is rejected.
-const CHARACTERS = ["Wolf", "Mermaid"];
+const CHARACTERS = ["Knight", "Mage", "Hunter", "Rogue"];
 
-// Display names are picked, not typed: only the classic names allowed.
-const PLAYER_NAMES = ["Knight", "Mage", "Hunter", "Rogue"];
+// Display names are picked, not typed: Wolf or Mermaid only.
+const PLAYER_NAMES = ["Wolf", "Mermaid"];
 
 // Lobby codes are chosen by the creator: 4-8 letters/numbers only.
 const ROOM_CODE_PATTERN = /^[A-Z0-9]{4,8}$/;
