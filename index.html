@@ -9,25 +9,27 @@
 </head>
 <body>
 
-<!-- Lobby screen (existing) -->
+<!-- Lobby screen -->
 <div class="box" id="lobbyScreen">
 <h1>Hidden Duel</h1>
 
 <input id="playerName" placeholder="Player Name">
 
 <h3>Character</h3>
-<select id="character">
-<option>Knight</option>
-<option>Mage</option>
-<option>Hunter</option>
-<option>Rogue</option>
-</select>
+<!-- Only two selectable characters; click to choose -->
+<div class="charSelect">
+<div class="charOption selected" data-character="Wolf"><span class="charEmoji">&#x1F43A;</span> Wolf</div>
+<div class="charOption" data-character="Mermaid"><span class="charEmoji">&#x1F9DC;</span> Mermaid</div>
+</div>
+
+<!-- The lobby creator chooses their own code (4-8 letters/numbers) -->
+<input id="createCode" placeholder="Choose Lobby Code (4-8 letters/numbers)" maxlength="8">
 
 <button id="createBtn">Create Lobby</button>
 
 <hr>
 
-<input id="roomCode" placeholder="Lobby Code">
+<input id="roomCode" placeholder="Lobby Code" maxlength="8">
 
 <button id="joinBtn">Join Lobby</button>
 
@@ -49,11 +51,14 @@
      resolves and the turn passes automatically. No End Turn button. -->
 <div class="box wide hidden" id="gameScreen">
 
-<div class="portraits">
-<div class="portrait" id="myPortrait"></div>
-<h2 id="turnIndicator"></h2>
-<div class="portrait" id="oppPortrait"></div>
+<!-- Player information panel: both characters are always visible -->
+<div class="playerPanel">
+<div class="playerInfo" id="myInfo"></div>
+<div class="vs">VS</div>
+<div class="playerInfo" id="oppInfo"></div>
 </div>
+
+<h2 id="turnIndicator"></h2>
 
 <div id="gameBoard" class="board"></div>
 
@@ -62,6 +67,12 @@
 <div id="hand" class="hand"></div>
 
 <p id="pileInfo"></p>
+
+<!-- Rematch: shown after game over; resets when both players accept -->
+<button id="playAgainBtn" class="hidden">Play Again</button>
+
+<!-- Public game log: never contains hidden positions -->
+<div id="gameLog" class="log"></div>
 
 </div>
 

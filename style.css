@@ -4,7 +4,7 @@ background:#181c24;
 display:flex;
 justify-content:center;
 align-items:center;
-height:100vh;
+min-height:100vh;
 font-family:Arial;
 color:white;
 }
@@ -13,9 +13,10 @@ background:#2a3140;
 padding:25px;
 border-radius:12px;
 width:350px;
+margin:16px 0;
 }
 .box.wide{
-width:420px;
+width:440px;
 }
 input,select,button{
 width:100%;
@@ -34,6 +35,33 @@ opacity:.6;
 /* Screens hidden until activated by JS */
 .hidden{
 display:none;
+}
+
+/* Character selection (Wolf / Mermaid) */
+.charSelect{
+display:flex;
+gap:8px;
+}
+.charOption{
+flex:1;
+background:#3a4256;
+border:2px solid transparent;
+border-radius:8px;
+padding:10px;
+text-align:center;
+cursor:pointer;
+user-select:none;
+}
+.charOption:hover{
+background:#4a5470;
+}
+.charOption.selected{
+border-color:#4f9cff;
+background:#31537a;
+}
+.charEmoji{
+font-size:20px;
+margin-right:4px;
 }
 
 /* 8x8 board (used for both placement and gameplay) */
@@ -71,7 +99,7 @@ opacity:.55;
 .tile.you{
 background:#2e6b46;
 }
-/* Rows that have been scanned (public info for both players) */
+/* Tiles that have been scanned (public info for both players) */
 .tile.scanned{
 background:#54607d;
 }
@@ -79,35 +107,44 @@ background:#54607d;
 .tile.attacked{
 background:#6b2e38;
 }
-/* Brief highlight animation when the opponent scans a row */
+/* Temporary heat map highlight (public for both players) */
+.tile.heat{
+background:#8a6a2f;
+}
+/* Brief highlight animation whenever a tile is part of a played card */
 .tile.flash{
 animation:flashScan .9s ease;
 }
 @keyframes flashScan{
 0%{background:#e3c14f;}
-100%{background:#54607d;}
 }
 
-/* Character portraits (yours and the opponent's) */
-.portraits{
+/* Player information panel (both characters always visible) */
+.playerPanel{
 display:flex;
 justify-content:space-between;
 align-items:center;
 gap:8px;
 }
-.portrait{
+.playerInfo{
 background:#3a4256;
 border-radius:8px;
-padding:6px 10px;
+padding:8px 10px;
 text-align:center;
 font-size:12px;
-min-width:70px;
+min-width:110px;
 }
-.portrait .icon{
-font-size:24px;
+.playerInfo .charLine{
+font-size:16px;
+margin-bottom:4px;
+}
+.vs{
+font-weight:bold;
+font-size:16px;
+color:#9db2d0;
 }
 #turnIndicator{
-margin:0;
+margin:10px 0 0;
 text-align:center;
 font-size:18px;
 }
@@ -129,7 +166,7 @@ background:#3a4256;
 border:1px solid #4a5470;
 border-radius:6px;
 padding:10px 6px;
-width:64px;
+width:66px;
 text-align:center;
 cursor:pointer;
 font-size:12px;
@@ -154,4 +191,23 @@ font-size:13px;
 color:#c7d2e0;
 min-height:16px;
 margin:6px 0;
+}
+
+/* Public game log (never contains hidden positions) */
+.log{
+background:#232936;
+border-radius:6px;
+padding:8px 10px;
+margin-top:8px;
+max-height:130px;
+overflow-y:auto;
+font-size:12px;
+text-align:left;
+}
+.log p{
+margin:3px 0;
+color:#c7d2e0;
+}
+.log p.private{
+color:#8fd0a0;
 }

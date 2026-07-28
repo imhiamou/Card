@@ -17,18 +17,36 @@ const turnIndicator=document.getElementById("turnIndicator");
 const handEl=document.getElementById("hand");
 const gameMsg=document.getElementById("gameMsg");
 const pileInfo=document.getElementById("pileInfo");
-const myPortrait=document.getElementById("myPortrait");
-const oppPortrait=document.getElementById("oppPortrait");
+const myInfo=document.getElementById("myInfo");
+const oppInfo=document.getElementById("oppInfo");
+const gameLogEl=document.getElementById("gameLog");
+const playAgainBtn=document.getElementById("playAgainBtn");
 
 const BOARD_SIZE=8;
-const CHARACTER_ICONS={Knight:"\u{1F6E1}\uFE0F",Mage:"\u{1F9D9}",Hunter:"\u{1F3F9}",Rogue:"\u{1F5E1}\uFE0F"};
+const ROOM_CODE_PATTERN=/^[A-Z0-9]{4,8}$/;
+const CHARACTER_ICONS={Wolf:"\u{1F43A}",Mermaid:"\u{1F9DC}"};
+
+// How each card is targeted on the board. Cards without an entry
+// resolve immediately when clicked (no board target required).
+// Adding a new targeted card only needs a new entry here.
+const CARD_UI={
+scanRow:{target:"row",hint:"Click any square in the row you want to scan."},
+scanColumn:{target:"column",hint:"Click any square in the column you want to scan."},
+scan2x2:{target:"tile",hint:"Click the top-left square of the 2x2 area to scan."},
+scanCross:{target:"tile",hint:"Click the centre square of the cross to scan."},
+moveOne:{target:"tile",hint:"Click an adjacent square (up, down, left or right)."},
+dash:{target:"tile",hint:"Click a square exactly two tiles away."},
+teleport:{target:"tile",hint:"Click any square to teleport to."},
+attack:{target:"tile",hint:"Click the square you want to attack."}
+};
 
 // Client-side state. This is only used for RENDERING — the server
 // owns the real game state (decks, hands, turn, positions).
 let currentRoom=null;    // lobby code of the room this client is in
 let lobbyPlayers=[];     // public player info (id, name, character)
+let selectedCharacter="Wolf";
 let selectedTile=null;   // placement: currently selected tile
-let myPosition=null;     // my own confirmed hidden square
+let myPosition=null;     // my own hidden square (updates when I move)
 let myTurn=null;         // true when it is this client's turn
 let hand=[];             // my cards (as sent by the server)
 let deckCount=0;
@@ -37,20 +55,39 @@ let selectedCardUid=null;// card currently awaiting a board target
 let playedThisTurn=false;// locks the hand after playing until turnChanged
 let gameOver=false;
 
+/* ============================================================
+   LOBBY
+   ============================================================ */
+
+// Character selection: click one of the two options to choose it.
+document.querySelectorAll(".charOption").forEach((option)=>{
+option.onclick=()=>{
+document.querySelectorAll(".charOption").forEach((o)=>o.classList.remove("selected"));
+option.classList.add("selected");
+selectedCharacter=option.dataset.character;
+};
+});
+
+// Lobby code inputs auto-convert to uppercase while typing.
+["createCode","roomCode"].forEach((id)=>{
+const input=document.getElementById(id);
+input.addEventListener("input",()=>{input.value=input.value.toUpperCase();});
+});
+
 document.getElementById("createBtn").onclick=()=>{
 const name=document.getElementById("playerName").value.trim();
-const character=document.getElementById("character").value;
+const room=document.getElementById("createCode").value.trim().toUpperCase();
 if(!name){alert("Enter name");return;}
-socket.emit("createLobby",{name,character});
+if(!ROOM_CODE_PATTERN.test(room)){alert("Lobby code must be 4-8 letters or numbers");return;}
+socket.emit("createLobby",{name,character:selectedCharacter,room});
 status.textContent="Creating lobby...";
 };
 
 document.getElementById("joinBtn").onclick=()=>{
 const name=document.getElementById("playerName").value.trim();
-const character=document.getElementById("character").value;
 const room=document.getElementById("roomCode").value.trim().toUpperCase();
 if(!name||!room){alert("Enter name and code");return;}
-socket.emit("joinLobby",{name,character,room});
+socket.emit("joinLobby",{name,character:selectedCharacter,room});
 // Remember the code we tried to join; confirmed once "gameStart" arrives.
 currentRoom=room;
 status.textContent="Joining...";
@@ -63,8 +100,8 @@ status.textContent="Waiting for Player 2...";
 });
 
 // Fired by the server when the second player joins the lobby.
-// Carries the public player list (id, name, character) so both
-// clients can render the character portraits later.
+// Carries the public player list (id, name, character) used to
+// render the player information panel during the game.
 socket.on("gameStart",(data)=>{
 if(data&&data.room)currentRoom=data.room;
 if(data&&data.players)lobbyPlayers=data.players;
@@ -89,7 +126,8 @@ alert(msg);
    CHARACTER PLACEMENT PHASE
    ============================================================ */
 
-// Build the 8x8 board and switch from the lobby UI to placement UI.
+// Build the 8x8 board and switch to the placement UI. Also used when
+// a rematch resets the match back to the placement phase.
 function showPlacementScreen(){
 lobbyScreen.classList.add("hidden");
 gameScreen.classList.add("hidden");
@@ -190,29 +228,28 @@ selectedCardUid=null;
 renderGameState();
 });
 
-// "scanResult" — private answer to MY scan: only YES or NO, never the
-// exact position.
-socket.on("scanResult",(data)=>{
-markRowScanned(data.row,false);
-gameMsg.textContent="You scanned Row "+(data.row+1)+": "+(data.hit?"YES":"NO");
+// "actionPlayed" — public broadcast for EVERY card either player
+// plays: who played what, plus public target info (scanned row/
+// column/area, attacked tile, heat map region). Movement and
+// information cards carry no target — the opponent learns what was
+// played but never destinations or private answers. Drives the game
+// log and the board animations for both players.
+socket.on("actionPlayed",(data)=>{
+addLog(actionLogText(data),false);
+animateAction(data);
 });
 
-// "opponentScanned" — the opponent scanned a row; show which one with
-// a brief highlight. Scans are public information.
-socket.on("opponentScanned",(data)=>{
-markRowScanned(data.row,true);
-gameMsg.textContent="Opponent scanned Row "+(data.row+1)+".";
-});
-
-// "attackResult" — a square was attacked (public for both players).
-socket.on("attackResult",(data)=>{
-markSquareAttacked(data.row,data.col);
-if(data.hit){
-gameMsg.textContent="Direct hit at Row "+(data.row+1)+", Col "+(data.col+1)+"!";
-}else if(playedThisTurn){
-gameMsg.textContent="Your attack at Row "+(data.row+1)+", Col "+(data.col+1)+" missed.";
-}else{
-gameMsg.textContent="Opponent attacked Row "+(data.row+1)+", Col "+(data.col+1)+" and missed.";
+// "cardResult" — private result of MY card: scan YES/NO answers,
+// radar/compass halves, my own new position after moving, etc.
+socket.on("cardResult",(data)=>{
+const result=data.result||{};
+if(result.position){
+moveMyMarker(result.position);
+gameMsg.textContent="You moved to "+tileLabel(result.position.row,result.position.col)+".";
+addLog("You moved to "+tileLabel(result.position.row,result.position.col)+". (only you can see this)",true);
+}else if(result.answer){
+gameMsg.textContent=data.cardName+": "+result.answer;
+addLog("Result ("+data.cardName+"): "+result.answer,true);
 }
 });
 
@@ -221,17 +258,59 @@ socket.on("gameOver",(data)=>{
 gameOver=true;
 turnIndicator.textContent=data.youWin?"You Win!":"You Lose!";
 gameMsg.textContent=data.youWin?"You found the opponent's hiding spot!":"The opponent found your hiding spot.";
+addLog(data.youWin?"You won the game!":"You lost the game.",true);
+playAgainBtn.classList.remove("hidden");
+playAgainBtn.disabled=false;
+playAgainBtn.textContent="Play Again";
 renderHand();
 });
 
-/* ------------------ rendering helpers ------------------ */
+/* ============================================================
+   REMATCH (Play Again)
+   ============================================================ */
+
+// "playAgain" — vote for a rematch; the game only resets when both
+// players have voted.
+playAgainBtn.onclick=()=>{
+if(!currentRoom)return;
+socket.emit("playAgain",{roomCode:currentRoom});
+playAgainBtn.disabled=true;
+playAgainBtn.textContent="Waiting for opponent...";
+};
+
+// "playAgainWait" — my vote is in, the opponent has not voted yet.
+socket.on("playAgainWait",()=>{
+playAgainBtn.textContent="Waiting for opponent...";
+});
+
+// "gameReset" — both players accepted: wipe all match state and go
+// back to the hidden placement phase (same lobby, same players).
+socket.on("gameReset",()=>{
+myPosition=null;
+myTurn=null;
+hand=[];
+deckCount=0;
+discardCount=0;
+selectedCardUid=null;
+playedThisTurn=false;
+gameOver=false;
+gameMsg.textContent="";
+gameLogEl.innerHTML="";
+playAgainBtn.classList.add("hidden");
+showPlacementScreen();
+});
+
+/* ============================================================
+   RENDERING
+   ============================================================ */
 
 function showGameScreen(){
 placementScreen.classList.add("hidden");
 gameScreen.classList.remove("hidden");
 buildGameBoard();
-renderPortraits();
+renderPlayerPanel();
 renderGameState();
+addLog("Game started. Good luck!",true);
 }
 
 // The gameplay board stays visible for the whole game. It shows your
@@ -254,23 +333,31 @@ gameBoardEl.appendChild(tile);
 }
 }
 
+function getMe(){return lobbyPlayers.find((p)=>p.id===socket.id);}
+function getOpp(){return lobbyPlayers.find((p)=>p.id!==socket.id);}
+
 function myCharacterIcon(){
-const me=lobbyPlayers.find(p=>p.id===socket.id);
-return me?(CHARACTER_ICONS[me.character]||"\u{1F464}"):"\u{1F464}";
+const me=getMe();
+return me?(CHARACTER_ICONS[me.character]||"?"):"?";
 }
 
-// Both players always see their own portrait and the opponent's.
-function renderPortraits(){
-const me=lobbyPlayers.find(p=>p.id===socket.id);
-const opp=lobbyPlayers.find(p=>p.id!==socket.id);
-myPortrait.innerHTML=portraitHtml(me,"You");
-oppPortrait.innerHTML=portraitHtml(opp,"Opponent");
+// Player information panel: both players always see their own
+// character and the opponent's character (emoji + name + player).
+function renderPlayerPanel(){
+fillPlayerInfo(myInfo,getMe());
+fillPlayerInfo(oppInfo,getOpp());
 }
 
-function portraitHtml(player,label){
-if(!player)return"<div class='icon'>?</div>"+label;
-const icon=CHARACTER_ICONS[player.character]||"\u{1F464}";
-return"<div class='icon'>"+icon+"</div>"+player.name+"<br>("+label+")";
+function fillPlayerInfo(el,player){
+el.innerHTML="";
+const charLine=document.createElement("div");
+charLine.className="charLine";
+charLine.textContent=player?(CHARACTER_ICONS[player.character]||"?")+" "+player.character:"?";
+const nameLine=document.createElement("div");
+nameLine.className="nameLine";
+nameLine.textContent=player?"Player: "+player.name:"";
+el.appendChild(charLine);
+el.appendChild(nameLine);
 }
 
 function renderGameState(){
@@ -289,18 +376,31 @@ hand.forEach((card)=>{
 const el=document.createElement("div");
 el.className="card";
 if(card.uid===selectedCardUid)el.classList.add("selected");
-el.innerHTML=card.name+"<span class='cat'>"+card.category+"</span>";
+const nameNode=document.createElement("span");
+nameNode.textContent=card.name;
+const catNode=document.createElement("span");
+catNode.className="cat";
+catNode.textContent=card.category;
+el.appendChild(nameNode);
+el.appendChild(catNode);
 el.onclick=()=>onCardClick(card);
 handEl.appendChild(el);
 });
 }
 
-// Selecting a card puts the board into targeting mode for that card.
-// Clicking the same card again cancels the selection.
+/* ============================================================
+   PLAYING CARDS
+   ============================================================ */
+
+// Selecting a card either plays it immediately (cards without a
+// board target, e.g. Radar or Rest) or puts the board into targeting
+// mode. Clicking the same card again cancels the selection.
 function onCardClick(card){
 if(!myTurn||playedThisTurn||gameOver)return;
-if(!card.implemented){
-gameMsg.textContent=card.name+" is not available yet.";
+const ui=CARD_UI[card.id];
+if(!ui){
+// No board target needed: play the card straight away.
+emitPlayCard(card,{});
 return;
 }
 if(selectedCardUid===card.uid){
@@ -308,26 +408,31 @@ selectedCardUid=null;
 gameMsg.textContent="";
 }else{
 selectedCardUid=card.uid;
-if(card.id==="scanRow"){
-gameMsg.textContent="Click any square in the row you want to scan.";
-}else if(card.id==="attack"){
-gameMsg.textContent="Click the square you want to attack.";
-}
+gameMsg.textContent=ui.hint;
 }
 renderHand();
 }
 
-// Board click while a card is selected: send the play to the server.
-// The server validates the card, the target and the turn; the client
-// locks its hand until the server passes the turn back.
+// Board click while a card is selected: build the card-specific
+// target and send the play to the server. The server validates the
+// card, the target and the turn.
 function onGameBoardClick(tile){
 if(!myTurn||playedThisTurn||gameOver||selectedCardUid===null)return;
-const card=hand.find(c=>c.uid===selectedCardUid);
+const card=hand.find((c)=>c.uid===selectedCardUid);
 if(!card)return;
+const ui=CARD_UI[card.id];
 const row=Number(tile.dataset.row);
 const col=Number(tile.dataset.col);
-const target=card.id==="scanRow"?{row}:{row,col};
-// "playCard" — playing one card is the entire turn.
+let target;
+if(ui.target==="row")target={row};
+else if(ui.target==="column")target={col};
+else target={row,col};
+emitPlayCard(card,target);
+}
+
+// "playCard" — playing one card is the entire turn. The client locks
+// its hand until the server passes the turn back.
+function emitPlayCard(card,target){
 socket.emit("playCard",{roomCode:currentRoom,cardUid:card.uid,target});
 playedThisTurn=true;
 selectedCardUid=null;
@@ -335,23 +440,120 @@ gameMsg.textContent="";
 renderHand();
 }
 
-// Mark every tile of a scanned row; optionally flash it briefly so
-// the scanned player immediately notices the scan.
-function markRowScanned(row,flash){
-const tiles=gameBoardEl.querySelectorAll(".tile[data-row='"+row+"']");
+/* ============================================================
+   GAME LOG + ANIMATIONS (driven by "actionPlayed")
+   ============================================================ */
+
+// Board coordinates in the log use chess-like labels: column letter
+// (A-H) + row number (1-8), e.g. D5.
+function tileLabel(row,col){
+return String.fromCharCode(65+col)+(row+1);
+}
+
+function actionLogText(d){
+const icon=CHARACTER_ICONS[d.character]||"";
+const who=icon+" "+d.name;
+const p=d.public||{};
+switch(d.cardId){
+case "scanRow":return who+" scanned Row "+(p.row+1)+".";
+case "scanColumn":return who+" scanned Column "+String.fromCharCode(65+p.col)+".";
+case "scan2x2":return who+" scanned a 2x2 area at "+tileLabel(p.row,p.col)+".";
+case "scanCross":return who+" scanned a cross at "+tileLabel(p.row,p.col)+".";
+case "attack":return who+" attacked "+tileLabel(p.row,p.col)+(p.hit?" — HIT!":" — miss.");
+case "heatMap":return who+" used Heat Map: region "+tileLabel(p.row,p.col)+" to "+tileLabel(p.row+2,p.col+2)+" highlighted.";
+default:return who+" played "+d.cardName+".";
+}
+}
+
+// The log never contains hidden positions: it is built exclusively
+// from public "actionPlayed" data plus this client's OWN private
+// results (marked green and only rendered locally).
+function addLog(text,isPrivate){
+const line=document.createElement("p");
+line.textContent=text;
+if(isPrivate)line.classList.add("private");
+gameLogEl.appendChild(line);
+gameLogEl.scrollTop=gameLogEl.scrollHeight;
+}
+
+function tileAt(row,col){
+return gameBoardEl.querySelector(".tile[data-row='"+row+"'][data-col='"+col+"']");
+}
+function tilesInRow(row){
+return Array.from(gameBoardEl.querySelectorAll(".tile[data-row='"+row+"']"));
+}
+function tilesInCol(col){
+return Array.from(gameBoardEl.querySelectorAll(".tile[data-col='"+col+"']"));
+}
+function tilesInArea(row,col,size){
+const tiles=[];
+for(let r=row;r<row+size;r++)for(let c=col;c<col+size;c++){
+const t=tileAt(r,c);
+if(t)tiles.push(t);
+}
+return tiles;
+}
+
+// Small board animation for every played card (both players see it).
+function animateAction(d){
+const p=d.public||{};
+switch(d.cardId){
+case "scanRow":markScanned(tilesInRow(p.row));break;
+case "scanColumn":markScanned(tilesInCol(p.col));break;
+case "scan2x2":markScanned(tilesInArea(p.row,p.col,2));break;
+case "scanCross":markScanned([...tilesInRow(p.row),...tilesInCol(p.col)]);break;
+case "attack":markAttacked(p.row,p.col);break;
+case "heatMap":flashHeat(tilesInArea(p.row,p.col,3));break;
+}
+}
+
+// Scanned tiles flash briefly and stay tinted (public knowledge).
+function markScanned(tiles){
 tiles.forEach((tile)=>{
 tile.classList.add("scanned");
-if(flash){
-tile.classList.add("flash");
-setTimeout(()=>tile.classList.remove("flash"),950);
-}
+flashTile(tile);
 });
 }
 
-// Mark an attacked square with a cross (public for both players).
-function markSquareAttacked(row,col){
-const tile=gameBoardEl.querySelector(".tile[data-row='"+row+"'][data-col='"+col+"']");
+// Attacked squares flash and stay marked with a cross.
+function markAttacked(row,col){
+const tile=tileAt(row,col);
 if(!tile)return;
 tile.classList.add("attacked");
 if(!tile.classList.contains("you"))tile.textContent="\u2716";
+flashTile(tile);
+}
+
+// Heat map: temporary highlight of the 3x3 region.
+function flashHeat(tiles){
+tiles.forEach((tile)=>{
+tile.classList.add("heat");
+setTimeout(()=>tile.classList.remove("heat"),3000);
+});
+}
+
+function flashTile(tile){
+tile.classList.remove("flash");
+void tile.offsetWidth; // restart the CSS animation
+tile.classList.add("flash");
+setTimeout(()=>tile.classList.remove("flash"),950);
+}
+
+// Move my own character marker after a movement card resolved. Only
+// this client ever sees this — the opponent just gets the log entry.
+function moveMyMarker(position){
+if(myPosition){
+const oldTile=tileAt(myPosition.row,myPosition.col);
+if(oldTile){
+oldTile.classList.remove("you");
+oldTile.textContent=oldTile.classList.contains("attacked")?"\u2716":"";
+}
+}
+myPosition={row:position.row,col:position.col};
+const newTile=tileAt(position.row,position.col);
+if(newTile){
+newTile.classList.add("you");
+newTile.textContent=myCharacterIcon();
+flashTile(newTile);
+}
 }
