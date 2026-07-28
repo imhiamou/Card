@@ -23,3 +23,38 @@ box-sizing:border-box;
 button{
 cursor:pointer;
 }
+button:disabled{
+cursor:not-allowed;
+opacity:.6;
+}
+
+/* Screens hidden until activated by JS */
+.hidden{
+display:none;
+}
+
+/* 8x8 placement board */
+.board{
+display:grid;
+grid-template-columns:repeat(8,1fr);
+gap:4px;
+margin:12px 0;
+}
+.tile{
+aspect-ratio:1/1;
+background:#3a4256;
+border-radius:4px;
+cursor:pointer;
+}
+.tile:hover{
+background:#4a5470;
+}
+.tile.selected{
+background:#4f9cff;
+outline:2px solid #ffffff;
+}
+/* Board locked after the player confirms their position */
+.board.disabled{
+pointer-events:none;
+opacity:.55;
+}

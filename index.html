@@ -8,7 +8,9 @@
 <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
 </head>
 <body>
-<div class="box">
+
+<!-- Lobby screen (existing) -->
+<div class="box" id="lobbyScreen">
 <h1>Hidden Duel</h1>
 
 <input id="playerName" placeholder="Player Name">
@@ -32,6 +34,23 @@
 <h2 id="status"></h2>
 <h3 id="code"></h3>
 
+</div>
+
+<!-- Character placement screen (shown after both players join) -->
+<div class="box hidden" id="placementScreen">
+<h2 id="placementTitle">Choose your hiding location.</h2>
+<div id="board" class="board"></div>
+<button id="confirmBtn" disabled>Confirm Position</button>
+<h3 id="placementStatus"></h3>
+</div>
+
+<!-- Gameplay screen (shown once both players have confirmed) -->
+<div class="box hidden" id="gameScreen">
+<h2 id="turnIndicator"></h2>
+<button id="scanRowBtn">Scan Row</button>
+<button id="scanColBtn">Scan Column</button>
+<button id="attackBtn">Attack</button>
+<button id="endTurnBtn">End Turn</button>
 </div>
 
 <script src="index.js"></script>
