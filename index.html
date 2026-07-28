@@ -44,13 +44,25 @@
 <h3 id="placementStatus"></h3>
 </div>
 
-<!-- Gameplay screen (shown once both players have confirmed) -->
-<div class="box hidden" id="gameScreen">
+<!-- Gameplay screen (shown once both players have confirmed).
+     Turn flow is entirely card-driven: draw, play ONE card, the card
+     resolves and the turn passes automatically. No End Turn button. -->
+<div class="box wide hidden" id="gameScreen">
+
+<div class="portraits">
+<div class="portrait" id="myPortrait"></div>
 <h2 id="turnIndicator"></h2>
-<button id="scanRowBtn">Scan Row</button>
-<button id="scanColBtn">Scan Column</button>
-<button id="attackBtn">Attack</button>
-<button id="endTurnBtn">End Turn</button>
+<div class="portrait" id="oppPortrait"></div>
+</div>
+
+<div id="gameBoard" class="board"></div>
+
+<p id="gameMsg"></p>
+
+<div id="hand" class="hand"></div>
+
+<p id="pileInfo"></p>
+
 </div>
 
 <script src="index.js"></script>

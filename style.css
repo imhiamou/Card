@@ -14,6 +14,9 @@ padding:25px;
 border-radius:12px;
 width:350px;
 }
+.box.wide{
+width:420px;
+}
 input,select,button{
 width:100%;
 padding:10px;
@@ -33,7 +36,7 @@ opacity:.6;
 display:none;
 }
 
-/* 8x8 placement board */
+/* 8x8 board (used for both placement and gameplay) */
 .board{
 display:grid;
 grid-template-columns:repeat(8,1fr);
@@ -45,6 +48,11 @@ aspect-ratio:1/1;
 background:#3a4256;
 border-radius:4px;
 cursor:pointer;
+display:flex;
+align-items:center;
+justify-content:center;
+font-size:15px;
+user-select:none;
 }
 .tile:hover{
 background:#4a5470;
@@ -53,8 +61,97 @@ background:#4a5470;
 background:#4f9cff;
 outline:2px solid #ffffff;
 }
-/* Board locked after the player confirms their position */
+/* Board locked (after confirming placement / when not targeting) */
 .board.disabled{
 pointer-events:none;
 opacity:.55;
+}
+
+/* Your own hidden position (only visible to you) */
+.tile.you{
+background:#2e6b46;
+}
+/* Rows that have been scanned (public info for both players) */
+.tile.scanned{
+background:#54607d;
+}
+/* Squares that have been attacked (public info for both players) */
+.tile.attacked{
+background:#6b2e38;
+}
+/* Brief highlight animation when the opponent scans a row */
+.tile.flash{
+animation:flashScan .9s ease;
+}
+@keyframes flashScan{
+0%{background:#e3c14f;}
+100%{background:#54607d;}
+}
+
+/* Character portraits (yours and the opponent's) */
+.portraits{
+display:flex;
+justify-content:space-between;
+align-items:center;
+gap:8px;
+}
+.portrait{
+background:#3a4256;
+border-radius:8px;
+padding:6px 10px;
+text-align:center;
+font-size:12px;
+min-width:70px;
+}
+.portrait .icon{
+font-size:24px;
+}
+#turnIndicator{
+margin:0;
+text-align:center;
+font-size:18px;
+}
+
+/* Hand of cards underneath the board */
+.hand{
+display:flex;
+gap:6px;
+flex-wrap:wrap;
+justify-content:center;
+min-height:70px;
+}
+.hand.disabled{
+opacity:.5;
+pointer-events:none;
+}
+.card{
+background:#3a4256;
+border:1px solid #4a5470;
+border-radius:6px;
+padding:10px 6px;
+width:64px;
+text-align:center;
+cursor:pointer;
+font-size:12px;
+}
+.card:hover{
+background:#4a5470;
+}
+.card.selected{
+outline:2px solid #4f9cff;
+background:#31537a;
+}
+.card .cat{
+display:block;
+margin-top:4px;
+font-size:10px;
+color:#9db2d0;
+}
+
+#gameMsg,#pileInfo{
+text-align:center;
+font-size:13px;
+color:#c7d2e0;
+min-height:16px;
+margin:6px 0;
 }
