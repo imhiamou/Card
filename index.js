@@ -28,18 +28,25 @@ const ROOM_CODE_PATTERN=/^[A-Z0-9]{4,8}$/;
 // on your own hidden tile and in the game log).
 const CHARACTER_ICONS={Knight:"\u{1F6E1}\uFE0F",Mage:"\u{1F9D9}",Hunter:"\u{1F3F9}",Rogue:"\u{1F5E1}\uFE0F"};
 
-// How each card is targeted on the board. Cards without an entry
-// resolve immediately when clicked (no board target required).
-// Adding a new targeted card only needs a new entry here.
+// How each card works from the UI side: what it does (desc), how it
+// is targeted (row / column / tile / none) and how to aim it (hint).
+// Clicking a card first EXPLAINS it; then a board click plays targeted
+// cards, while a second click on the card itself plays untargeted
+// ones. Adding a new card only needs a new entry here.
 const CARD_UI={
-scanRow:{target:"row",hint:"Click any square in the row you want to scan."},
-scanColumn:{target:"column",hint:"Click any square in the column you want to scan."},
-scan2x2:{target:"tile",hint:"Click the top-left square of the 2x2 area to scan."},
-scanCross:{target:"tile",hint:"Click the centre square of the cross to scan."},
-moveOne:{target:"tile",hint:"Click an adjacent square (up, down, left or right)."},
-dash:{target:"tile",hint:"Click a square exactly two tiles away."},
-teleport:{target:"tile",hint:"Click any square to teleport to."},
-attack:{target:"tile",hint:"Click the square you want to attack."}
+scanRow:{target:"row",desc:"Asks whether the opponent hides somewhere in one row (YES/NO).",hint:"Click any square in the row you want to scan."},
+scanColumn:{target:"column",desc:"Asks whether the opponent hides somewhere in one column (YES/NO).",hint:"Click any square in the column you want to scan."},
+scanArea:{target:"tile",desc:"Checks the chosen tile and all 8 tiles around it (YES/NO).",hint:"Click the centre of the 3x3 area to scan."},
+scanCross:{target:"tile",desc:"Checks one tile's entire row AND column (YES/NO).",hint:"Click the centre square of the cross to scan."},
+moveOne:{target:"tile",desc:"Moves your hidden character exactly one tile up, down, left or right.",hint:"Click an adjacent square."},
+dash:{target:"tile",desc:"Moves your hidden character exactly two tiles (two steps in total).",hint:"Click a square exactly two steps away."},
+teleport:{target:"tile",desc:"Moves your hidden character to any other square.",hint:"Click any square to teleport to."},
+attack:{target:"tile",desc:"Strikes one tile. An exact hit wins the game!",hint:"Click the square you want to attack."},
+rest:{target:"none",desc:"Skips your action and immediately draws a replacement card."},
+revealTrail:{target:"none",desc:"Tells you whether the opponent moved during their last two turns."},
+radar:{target:"none",desc:"Tells you whether the opponent is in the North or South half."},
+compass:{target:"none",desc:"Tells you whether the opponent is in the East or West half."},
+heatMap:{target:"none",desc:"Highlights a 3x3 region that is LIKELY (not certain) to contain the opponent."}
 };
 
 // Client-side state. This is only used for RENDERING — the server
@@ -128,6 +135,16 @@ status.textContent="Other player disconnected.";
 });
 
 socket.on("errorMessage",(msg)=>{
+// During the game, a rejected play (e.g. an invalid Dash target) must
+// NOT freeze the match: unlock the hand so the player can try again,
+// and show the reason on screen instead of an alert.
+if(!gameScreen.classList.contains("hidden")&&!gameOver){
+playedThisTurn=false;
+selectedCardUid=null;
+gameMsg.textContent=msg+" Try again.";
+renderHand();
+return;
+}
 alert(msg);
 });
 
@@ -401,24 +418,29 @@ handEl.appendChild(el);
    PLAYING CARDS
    ============================================================ */
 
-// Selecting a card either plays it immediately (cards without a
-// board target, e.g. Radar or Rest) or puts the board into targeting
-// mode. Clicking the same card again cancels the selection.
+// First click on a card EXPLAINS what it does. Then:
+//   - targeted cards (row/column/tile): click a board square to play;
+//     clicking the card again cancels the selection.
+//   - untargeted cards (Rest, Radar, ...): click the SAME card again
+//     to actually use it.
 function onCardClick(card){
 if(!myTurn||playedThisTurn||gameOver)return;
-const ui=CARD_UI[card.id];
-if(!ui){
-// No board target needed: play the card straight away.
-emitPlayCard(card,{});
-return;
-}
+const ui=CARD_UI[card.id]||{target:"none",desc:""};
 if(selectedCardUid===card.uid){
+if(ui.target==="none"){
+// Second click on an untargeted card: use it.
+emitPlayCard(card,{});
+}else{
+// Second click on a targeted card: cancel the selection.
 selectedCardUid=null;
 gameMsg.textContent="";
-}else{
-selectedCardUid=card.uid;
-gameMsg.textContent=ui.hint;
+renderHand();
 }
+return;
+}
+// First click: select the card and explain it.
+selectedCardUid=card.uid;
+gameMsg.textContent=card.name+": "+ui.desc+" "+(ui.target==="none"?"Click the card again to use it.":ui.hint);
 renderHand();
 }
 
@@ -429,7 +451,9 @@ function onGameBoardClick(tile){
 if(!myTurn||playedThisTurn||gameOver||selectedCardUid===null)return;
 const card=hand.find((c)=>c.uid===selectedCardUid);
 if(!card)return;
-const ui=CARD_UI[card.id];
+const ui=CARD_UI[card.id]||{target:"none"};
+// Untargeted cards are played by clicking the card again, not the board.
+if(ui.target==="none")return;
 const row=Number(tile.dataset.row);
 const col=Number(tile.dataset.col);
 let target;
@@ -466,7 +490,7 @@ const p=d.public||{};
 switch(d.cardId){
 case "scanRow":return who+" scanned Row "+(p.row+1)+".";
 case "scanColumn":return who+" scanned Column "+String.fromCharCode(65+p.col)+".";
-case "scan2x2":return who+" scanned a 2x2 area at "+tileLabel(p.row,p.col)+".";
+case "scanArea":return who+" scanned a 3x3 area around "+tileLabel(p.row,p.col)+".";
 case "scanCross":return who+" scanned a cross at "+tileLabel(p.row,p.col)+".";
 case "attack":return who+" attacked "+tileLabel(p.row,p.col)+(p.hit?" — HIT!":" — miss.");
 case "heatMap":return who+" used Heat Map: region "+tileLabel(p.row,p.col)+" to "+tileLabel(p.row+2,p.col+2)+" highlighted.";
@@ -509,7 +533,7 @@ const p=d.public||{};
 switch(d.cardId){
 case "scanRow":markScanned(tilesInRow(p.row));break;
 case "scanColumn":markScanned(tilesInCol(p.col));break;
-case "scan2x2":markScanned(tilesInArea(p.row,p.col,2));break;
+case "scanArea":markScanned(tilesInArea(p.row-1,p.col-1,3));break;
 case "scanCross":markScanned([...tilesInRow(p.row),...tilesInCol(p.col)]);break;
 case "attack":markAttacked(p.row,p.col);break;
 case "heatMap":flashHeat(tilesInArea(p.row,p.col,3));break;

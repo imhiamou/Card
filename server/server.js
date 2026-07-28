@@ -97,17 +97,16 @@ const CARD_DEFINITIONS = {
     })
   },
 
-  // Scan 2x2: pick the top-left square of a 2x2 area; learn ONLY
-  // whether the opponent is inside any of those four tiles.
-  scan2x2: {
-    name: "Scan 2x2", category: "Scanning", copies: 2,
-    validateTarget: ({ target }) =>
-      inBounds(target.row, target.col) && target.row <= BOARD_SIZE - 2 && target.col <= BOARD_SIZE - 2
-        ? null : "The 2x2 area must fit on the board.",
+  // Scan Area: pick one tile; learn ONLY whether the opponent is on
+  // that tile or any of the 8 tiles around it (a 3x3 area, clipped at
+  // the board edges).
+  scanArea: {
+    name: "Scan Area", category: "Scanning", copies: 2,
+    validateTarget: ({ target }) => inBounds(target.row, target.col) ? null : "Invalid tile.",
     resolve: ({ target, opponentPosition }) => {
       const inside =
-        opponentPosition.row >= target.row && opponentPosition.row <= target.row + 1 &&
-        opponentPosition.col >= target.col && opponentPosition.col <= target.col + 1;
+        Math.abs(opponentPosition.row - target.row) <= 1 &&
+        Math.abs(opponentPosition.col - target.col) <= 1;
       return {
         public: { row: target.row, col: target.col },
         private: { answer: inside ? "YES" : "NO" }
