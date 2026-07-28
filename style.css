@@ -42,6 +42,27 @@ display:none;
 display:flex;
 gap:8px;
 }
+/* Name selection (Knight / Mage / Hunter / Rogue) — 2x2 grid */
+.nameSelect{
+display:grid;
+grid-template-columns:1fr 1fr;
+}
+.nameOption{
+background:#3a4256;
+border:2px solid transparent;
+border-radius:8px;
+padding:10px;
+text-align:center;
+cursor:pointer;
+user-select:none;
+}
+.nameOption:hover{
+background:#4a5470;
+}
+.nameOption.selected{
+border-color:#4f9cff;
+background:#31537a;
+}
 .charOption{
 flex:1;
 background:#3a4256;
