@@ -44,6 +44,7 @@ attack:{target:"tile",hint:"Click the square you want to attack."}
 // owns the real game state (decks, hands, turn, positions).
 let currentRoom=null;    // lobby code of the room this client is in
 let lobbyPlayers=[];     // public player info (id, name, character)
+let selectedName="Knight";
 let selectedCharacter="Wolf";
 let selectedTile=null;   // placement: currently selected tile
 let myPosition=null;     // my own hidden square (updates when I move)
@@ -58,6 +59,15 @@ let gameOver=false;
 /* ============================================================
    LOBBY
    ============================================================ */
+
+// Name selection: no typing — click one of the classic names.
+document.querySelectorAll(".nameOption").forEach((option)=>{
+option.onclick=()=>{
+document.querySelectorAll(".nameOption").forEach((o)=>o.classList.remove("selected"));
+option.classList.add("selected");
+selectedName=option.dataset.name;
+};
+});
 
 // Character selection: click one of the two options to choose it.
 document.querySelectorAll(".charOption").forEach((option)=>{
@@ -75,19 +85,16 @@ input.addEventListener("input",()=>{input.value=input.value.toUpperCase();});
 });
 
 document.getElementById("createBtn").onclick=()=>{
-const name=document.getElementById("playerName").value.trim();
 const room=document.getElementById("createCode").value.trim().toUpperCase();
-if(!name){alert("Enter name");return;}
 if(!ROOM_CODE_PATTERN.test(room)){alert("Lobby code must be 4-8 letters or numbers");return;}
-socket.emit("createLobby",{name,character:selectedCharacter,room});
+socket.emit("createLobby",{name:selectedName,character:selectedCharacter,room});
 status.textContent="Creating lobby...";
 };
 
 document.getElementById("joinBtn").onclick=()=>{
-const name=document.getElementById("playerName").value.trim();
 const room=document.getElementById("roomCode").value.trim().toUpperCase();
-if(!name||!room){alert("Enter name and code");return;}
-socket.emit("joinLobby",{name,character:selectedCharacter,room});
+if(!room){alert("Enter lobby code");return;}
+socket.emit("joinLobby",{name:selectedName,character:selectedCharacter,room});
 // Remember the code we tried to join; confirmed once "gameStart" arrives.
 currentRoom=room;
 status.textContent="Joining...";

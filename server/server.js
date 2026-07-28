@@ -21,6 +21,9 @@ const STARTING_HAND_SIZE = 3;
 // The only selectable characters. Anything else is rejected.
 const CHARACTERS = ["Wolf", "Mermaid"];
 
+// Display names are picked, not typed: only the classic names allowed.
+const PLAYER_NAMES = ["Knight", "Mage", "Hunter", "Rogue"];
+
 // Lobby codes are chosen by the creator: 4-8 letters/numbers only.
 const ROOM_CODE_PATTERN = /^[A-Z0-9]{4,8}$/;
 
@@ -442,6 +445,7 @@ io.on("connection", (socket) => {
    * "createLobby" — a player creates a new lobby with a code THEY
    * chose (4-8 letters/numbers, auto-uppercased, must be unique).
    * Payload: { name, character, room }
+   * The name is one of the fixed classic names (picked, not typed).
    * Replies with "lobbyCreated" { room } to the creator.
    */
   socket.on("createLobby", (data) => {
@@ -449,8 +453,8 @@ io.on("connection", (socket) => {
     const character = data && typeof data.character === "string" ? data.character : "";
     const roomCode = data && typeof data.room === "string" ? data.room.trim().toUpperCase() : "";
 
-    if (!name) {
-      socket.emit("errorMessage", "Enter a valid name.");
+    if (!PLAYER_NAMES.includes(name)) {
+      socket.emit("errorMessage", "Choose a valid name.");
       return;
     }
     if (!CHARACTERS.includes(character)) {
@@ -493,8 +497,12 @@ io.on("connection", (socket) => {
     const character = data && typeof data.character === "string" ? data.character : "";
     const roomCode = data && typeof data.room === "string" ? data.room.trim().toUpperCase() : "";
 
-    if (!name || !roomCode) {
-      socket.emit("errorMessage", "Enter a valid name and lobby code.");
+    if (!PLAYER_NAMES.includes(name)) {
+      socket.emit("errorMessage", "Choose a valid name.");
+      return;
+    }
+    if (!roomCode) {
+      socket.emit("errorMessage", "Enter a valid lobby code.");
       return;
     }
     if (!CHARACTERS.includes(character)) {
