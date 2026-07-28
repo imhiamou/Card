@@ -15,45 +15,258 @@ app.get("/", (req, res) => {
 
 const BOARD_SIZE = 8;
 const MAX_PLAYERS = 2;
-
-/* ============================================================
-   CARD SYSTEM
-   ============================================================
-   The server is the ONLY source of cards. Clients never generate
-   cards locally — they only render what the server sends them.
-*/
-
-// Framework of card categories. Only "Scan Row" and "Attack" are
-// playable today; the other entries are registered placeholders so
-// future cards slot into the same pipeline (deck -> hand -> playCard
-// -> resolve -> discard -> pass turn).
-const CARD_LIBRARY = {
-  scanRow:    { id: "scanRow",    name: "Scan Row",    category: "Scanning", implemented: true  },
-  scanColumn: { id: "scanColumn", name: "Scan Column", category: "Scanning", implemented: false },
-  move:       { id: "move",       name: "Move",        category: "Movement", implemented: false },
-  attack:     { id: "attack",     name: "Attack",      category: "Attack",   implemented: true  },
-  trap:       { id: "trap",       name: "Trap",        category: "Trap",     implemented: false },
-  decoy:      { id: "decoy",      name: "Decoy",       category: "Special",  implemented: false }
-};
-
-// Deck recipe: each player's personal deck is built from multiple
-// copies of the implemented cards, then shuffled.
-const DECK_COMPOSITION = [
-  { cardId: "scanRow", copies: 8 },
-  { cardId: "attack",  copies: 7 }
-];
-
 const MAX_HAND_SIZE = 5;
 const STARTING_HAND_SIZE = 3;
+
+// The only selectable characters. Anything else is rejected.
+const CHARACTERS = ["Wolf", "Mermaid"];
+
+// Lobby codes are chosen by the creator: 4-8 letters/numbers only.
+const ROOM_CODE_PATTERN = /^[A-Z0-9]{4,8}$/;
+
+/* ============================================================
+   MODULAR CARD SYSTEM
+   ============================================================
+   The server is the ONLY source of cards; clients never generate
+   cards locally and only render what the server tells them.
+
+   Adding a new card requires nothing but a new entry in
+   CARD_DEFINITIONS. Each definition provides:
+
+     name           display name
+     category       Scanning | Movement | Attack | Special
+     copies         how many copies go into each player's deck
+     validateTarget optional (ctx) => error string | null
+     resolve        (ctx) => outcome object
+
+   The resolve context (ctx) contains:
+     room, game, playerId, opponent (player object),
+     myPosition, opponentPosition, target (raw client payload)
+
+   The outcome object may contain:
+     public   info EVERY player may see (broadcast via "actionPlayed",
+              e.g. which row was scanned, which tile was attacked).
+              Movement cards return {} here: the opponent only learns
+              that a movement card was played, never the destination.
+     private  info ONLY the acting player may see (sent via
+              "cardResult", e.g. the YES/NO answer of a scan or the
+              player's own new position).
+     winner   playerId when the card ended the game (Attack hit).
+     drawOne  true when the player immediately draws a replacement
+              card (Rest).
+
+   The generic "playCard" pipeline below handles everything else:
+   validation, discard, hand updates, game over and turn passing.
+   No card ever needs to touch that pipeline.
+*/
+
+function inBounds(row, col) {
+  return Number.isInteger(row) && Number.isInteger(col) &&
+    row >= 0 && row < BOARD_SIZE && col >= 0 && col < BOARD_SIZE;
+}
+
+// Manhattan distance between two squares (movement validation).
+function manhattan(a, b) {
+  return Math.abs(a.row - b.row) + Math.abs(a.col - b.col);
+}
+
+const CARD_DEFINITIONS = {
+
+  /* ---------------- Scanning cards ---------------- */
+
+  // Scan Row: pick a row, learn ONLY whether the opponent is in it.
+  scanRow: {
+    name: "Scan Row", category: "Scanning", copies: 3,
+    validateTarget: ({ target }) => inBounds(target.row, 0) ? null : "Invalid row.",
+    resolve: ({ target, opponentPosition }) => ({
+      public: { row: target.row },
+      private: { answer: opponentPosition.row === target.row ? "YES" : "NO" }
+    })
+  },
+
+  // Scan Column: pick a column, learn ONLY whether the opponent is in it.
+  scanColumn: {
+    name: "Scan Column", category: "Scanning", copies: 3,
+    validateTarget: ({ target }) => inBounds(0, target.col) ? null : "Invalid column.",
+    resolve: ({ target, opponentPosition }) => ({
+      public: { col: target.col },
+      private: { answer: opponentPosition.col === target.col ? "YES" : "NO" }
+    })
+  },
+
+  // Scan 2x2: pick the top-left square of a 2x2 area; learn ONLY
+  // whether the opponent is inside any of those four tiles.
+  scan2x2: {
+    name: "Scan 2x2", category: "Scanning", copies: 2,
+    validateTarget: ({ target }) =>
+      inBounds(target.row, target.col) && target.row <= BOARD_SIZE - 2 && target.col <= BOARD_SIZE - 2
+        ? null : "The 2x2 area must fit on the board.",
+    resolve: ({ target, opponentPosition }) => {
+      const inside =
+        opponentPosition.row >= target.row && opponentPosition.row <= target.row + 1 &&
+        opponentPosition.col >= target.col && opponentPosition.col <= target.col + 1;
+      return {
+        public: { row: target.row, col: target.col },
+        private: { answer: inside ? "YES" : "NO" }
+      };
+    }
+  },
+
+  // Scan Cross: pick one tile; learn ONLY whether the opponent is
+  // somewhere in that tile's row OR column.
+  scanCross: {
+    name: "Scan Cross", category: "Scanning", copies: 2,
+    validateTarget: ({ target }) => inBounds(target.row, target.col) ? null : "Invalid tile.",
+    resolve: ({ target, opponentPosition }) => ({
+      public: { row: target.row, col: target.col },
+      private: {
+        answer: (opponentPosition.row === target.row || opponentPosition.col === target.col) ? "YES" : "NO"
+      }
+    })
+  },
+
+  /* ---------------- Movement cards ----------------
+     Movement resolves by updating the server-side position. The
+     opponent is told WHICH movement card was played (public: {})
+     but never the destination — that stays private. */
+
+  // Move One: move exactly one tile up, down, left or right.
+  moveOne: {
+    name: "Move One", category: "Movement", copies: 3,
+    validateTarget: ({ target, myPosition }) => {
+      if (!inBounds(target.row, target.col)) return "Invalid destination.";
+      return manhattan(target, myPosition) === 1 ? null : "Move One must move exactly one tile.";
+    },
+    resolve: ({ room, playerId, target }) => {
+      room.positions[playerId] = { row: target.row, col: target.col };
+      return { public: {}, private: { position: { row: target.row, col: target.col } } };
+    }
+  },
+
+  // Dash: move exactly two tiles (two steps of movement in total).
+  dash: {
+    name: "Dash", category: "Movement", copies: 2,
+    validateTarget: ({ target, myPosition }) => {
+      if (!inBounds(target.row, target.col)) return "Invalid destination.";
+      return manhattan(target, myPosition) === 2 ? null : "Dash must move exactly two tiles.";
+    },
+    resolve: ({ room, playerId, target }) => {
+      room.positions[playerId] = { row: target.row, col: target.col };
+      return { public: {}, private: { position: { row: target.row, col: target.col } } };
+    }
+  },
+
+  // Teleport: move to ANY other square. Opponent only knows a
+  // teleport occurred.
+  teleport: {
+    name: "Teleport", category: "Movement", copies: 1,
+    validateTarget: ({ target, myPosition }) => {
+      if (!inBounds(target.row, target.col)) return "Invalid destination.";
+      return manhattan(target, myPosition) > 0 ? null : "Teleport must move you to a different square.";
+    },
+    resolve: ({ room, playerId, target }) => {
+      room.positions[playerId] = { row: target.row, col: target.col };
+      return { public: {}, private: { position: { row: target.row, col: target.col } } };
+    }
+  },
+
+  /* ---------------- Attack cards ---------------- */
+
+  // Attack: name one tile. Exact match = immediate victory; anything
+  // else is a public miss. The attacked tile is public information.
+  attack: {
+    name: "Attack", category: "Attack", copies: 5,
+    validateTarget: ({ target }) => inBounds(target.row, target.col) ? null : "Invalid attack target.",
+    resolve: ({ target, opponentPosition, playerId }) => {
+      const hit = opponentPosition.row === target.row && opponentPosition.col === target.col;
+      return {
+        public: { row: target.row, col: target.col, hit },
+        winner: hit ? playerId : null
+      };
+    }
+  },
+
+  /* ---------------- Special cards ---------------- */
+
+  // Rest: skip the action and immediately draw one replacement card.
+  rest: {
+    name: "Rest", category: "Special", copies: 2,
+    resolve: () => ({
+      public: {},
+      private: { answer: "You rested and drew a replacement card." },
+      drawOne: true
+    })
+  },
+
+  // Reveal Trail: learn whether the opponent played a movement card
+  // during their last two turns.
+  revealTrail: {
+    name: "Reveal Trail", category: "Special", copies: 1,
+    resolve: ({ game, opponent }) => {
+      const moved = game.moveHistory[opponent.id].slice(-2).some(Boolean);
+      return {
+        public: {},
+        private: {
+          answer: moved ? "The opponent moved during the last two turns." : "The opponent has not moved."
+        }
+      };
+    }
+  },
+
+  // Radar: learn whether the opponent is in the north or south half.
+  radar: {
+    name: "Radar", category: "Special", copies: 2,
+    resolve: ({ opponentPosition }) => ({
+      public: {},
+      private: { answer: opponentPosition.row < BOARD_SIZE / 2 ? "North Half" : "South Half" }
+    })
+  },
+
+  // Compass: learn whether the opponent is in the east or west half.
+  compass: {
+    name: "Compass", category: "Special", copies: 2,
+    resolve: ({ opponentPosition }) => ({
+      public: {},
+      private: { answer: opponentPosition.col >= BOARD_SIZE / 2 ? "East Half" : "West Half" }
+    })
+  },
+
+  // Heat Map: the server highlights a random 3x3 region that is
+  // MORE LIKELY (70%) to contain the opponent — intentionally
+  // imprecise, so a highlight is a hint, never a guarantee.
+  heatMap: {
+    name: "Heat Map", category: "Special", copies: 2,
+    resolve: ({ opponentPosition }) => {
+      const maxTL = BOARD_SIZE - 3; // top-left range so the 3x3 fits
+      let row, col;
+      if (Math.random() < 0.7) {
+        // Pick a region that covers the opponent's square.
+        const rMin = Math.max(0, opponentPosition.row - 2);
+        const rMax = Math.min(maxTL, opponentPosition.row);
+        const cMin = Math.max(0, opponentPosition.col - 2);
+        const cMax = Math.min(maxTL, opponentPosition.col);
+        row = rMin + Math.floor(Math.random() * (rMax - rMin + 1));
+        col = cMin + Math.floor(Math.random() * (cMax - cMin + 1));
+      } else {
+        // Pick a fully random region as noise.
+        row = Math.floor(Math.random() * (maxTL + 1));
+        col = Math.floor(Math.random() * (maxTL + 1));
+      }
+      // The highlighted region is public for both players.
+      return { public: { row, col } };
+    }
+  }
+};
 
 // Every physical card instance gets a unique id so the server can
 // verify that a played card really sits in the sender's hand.
 let nextCardUid = 1;
 
+// Build one player's personal deck from the card definitions.
 function buildShuffledDeck() {
   const deck = [];
-  for (const { cardId, copies } of DECK_COMPOSITION) {
-    for (let i = 0; i < copies; i++) {
+  for (const cardId of Object.keys(CARD_DEFINITIONS)) {
+    for (let i = 0; i < CARD_DEFINITIONS[cardId].copies; i++) {
       deck.push({ uid: nextCardUid++, id: cardId });
     }
   }
@@ -70,9 +283,8 @@ function serializeHand(hand) {
   return hand.map((card) => ({
     uid: card.uid,
     id: card.id,
-    name: CARD_LIBRARY[card.id].name,
-    category: CARD_LIBRARY[card.id].category,
-    implemented: CARD_LIBRARY[card.id].implemented
+    name: CARD_DEFINITIONS[card.id].name,
+    category: CARD_DEFINITIONS[card.id].category
   }));
 }
 
@@ -80,17 +292,18 @@ function serializeHand(hand) {
  * Authoritative in-memory game state, keyed by room code:
  *
  * rooms = {
- *   ABC123: {
+ *   DUEL42: {
  *     players:   [{ id, name, character }, ...],
  *     positions: { <socketId>: { row, col }, ... },  // hidden squares
  *     ready:     { <socketId>: true/false, ... },    // confirmed placement
- *     currentTurn: <socketId> | null,                // whose turn it is
+ *     rematch:   { <socketId>: true, ... },          // Play Again votes
+ *     currentTurn: <socketId> | null,
  *     game: {                                        // created at game start
- *       decks:    { <socketId>: [card, ...] },       // face-down draw piles
- *       hands:    { <socketId>: [card, ...] },       // private hands
- *       discards: { <socketId>: [card, ...] },       // face-up discard piles
- *       scannedRows: [row, ...],                     // public information
- *       attackedSquares: [{ row, col }, ...],        // public information
+ *       decks:       { <socketId>: [card, ...] },    // face-down draw piles
+ *       hands:       { <socketId>: [card, ...] },    // private hands
+ *       discards:    { <socketId>: [card, ...] },    // discard piles
+ *       moveHistory: { <socketId>: [bool, ...] },    // one entry per turn:
+ *                                                    // did that turn move?
  *       over: false
  *     }
  *   }
@@ -100,19 +313,6 @@ function serializeHand(hand) {
  * server keeps them private and validates every action itself.
  */
 const rooms = {};
-
-// Generate a unique 6-character lobby code.
-function generateRoomCode() {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  let roomCode;
-  do {
-    roomCode = "";
-    for (let i = 0; i < 6; i++) {
-      roomCode += chars[Math.floor(Math.random() * chars.length)];
-    }
-  } while (rooms[roomCode]);
-  return roomCode;
-}
 
 // Find the room a given socket belongs to (or null).
 function findRoomOfSocket(socketId) {
@@ -126,17 +326,6 @@ function findRoomOfSocket(socketId) {
 
 function getOpponent(room, socketId) {
   return room.players.find((p) => p.id !== socketId) || null;
-}
-
-// Validate a board coordinate pair: integer row/col within the 8x8 board.
-function isValidPosition(position) {
-  return (
-    position &&
-    Number.isInteger(position.row) &&
-    Number.isInteger(position.col) &&
-    position.row >= 0 && position.row < BOARD_SIZE &&
-    position.col >= 0 && position.col < BOARD_SIZE
-  );
 }
 
 /* ============================================================
@@ -183,13 +372,12 @@ function sendHandUpdate(room, playerId) {
  * "turnChanged" — sent to each player individually with { yourTurn }
  * so each client only learns whether it is now THEIR turn.
  */
-function passTurn(room, roomCode) {
-  const game = room.game;
+function passTurn(room) {
   const next = getOpponent(room, room.currentTurn);
   room.currentTurn = next.id;
 
   // Beginning of a turn: the new active player draws one card.
-  drawCards(game, next.id, 1);
+  drawCards(room.game, next.id, 1);
   sendHandUpdate(room, next.id);
 
   room.players.forEach((player) => {
@@ -207,13 +395,12 @@ function passTurn(room, roomCode) {
  * "gameStarted" — sent to each player individually with ONLY their
  * own hand/pile counts plus whether it is their turn.
  */
-function startGame(room, roomCode) {
+function startGame(room) {
   room.game = {
     decks: {},
     hands: {},
     discards: {},
-    scannedRows: [],
-    attackedSquares: [],
+    moveHistory: {},
     over: false
   };
 
@@ -221,6 +408,7 @@ function startGame(room, roomCode) {
     room.game.decks[player.id] = buildShuffledDeck();
     room.game.hands[player.id] = [];
     room.game.discards[player.id] = [];
+    room.game.moveHistory[player.id] = [];
     drawCards(room.game, player.id, STARTING_HAND_SIZE);
   });
 
@@ -248,81 +436,43 @@ function discardCard(game, playerId, cardIndex) {
   game.discards[playerId].push(card);
 }
 
-/* ============================================================
-   CARD RESOLUTION
-   ============================================================ */
-
-/*
- * Resolve "Scan Row": the server checks the opponent's hidden row and
- * answers ONLY yes/no. The exact position is never transmitted.
- *
- * "scanResult"      — sent ONLY to the scanning player: { row, hit }.
- * "opponentScanned" — sent ONLY to the scanned player: { row }, so
- *                     they can see which row was scanned (the scan
- *                     itself is public information, the answer tells
- *                     them nothing they don't already know).
- */
-function resolveScanRow(room, roomCode, socket, target) {
-  const game = room.game;
-  const opponent = getOpponent(room, socket.id);
-  const opponentPosition = room.positions[opponent.id];
-
-  const hit = opponentPosition.row === target.row;
-  game.scannedRows.push(target.row);
-
-  socket.emit("scanResult", { row: target.row, hit });
-  io.to(opponent.id).emit("opponentScanned", { row: target.row });
-}
-
-/*
- * Resolve "Attack": the attacker names one square. On an exact match
- * the game ends and the attacker wins; otherwise the attack misses.
- *
- * "attackResult" — sent to BOTH players: { row, col, hit }. Attacked
- *                  squares are public information for both boards.
- * "gameOver"     — sent to each player individually: { youWin }.
- *
- * Returns true when the attack ended the game.
- */
-function resolveAttack(room, roomCode, socket, target) {
-  const game = room.game;
-  const opponent = getOpponent(room, socket.id);
-  const opponentPosition = room.positions[opponent.id];
-
-  const hit = opponentPosition.row === target.row && opponentPosition.col === target.col;
-  game.attackedSquares.push({ row: target.row, col: target.col });
-
-  io.to(roomCode).emit("attackResult", { row: target.row, col: target.col, hit });
-
-  if (hit) {
-    game.over = true;
-    room.players.forEach((player) => {
-      io.to(player.id).emit("gameOver", { youWin: player.id === socket.id });
-    });
-  }
-  return hit;
-}
-
 io.on("connection", (socket) => {
 
   /*
-   * "createLobby" — a player creates a new lobby.
-   * Payload: { name, character }
+   * "createLobby" — a player creates a new lobby with a code THEY
+   * chose (4-8 letters/numbers, auto-uppercased, must be unique).
+   * Payload: { name, character, room }
    * Replies with "lobbyCreated" { room } to the creator.
    */
   socket.on("createLobby", (data) => {
     const name = data && typeof data.name === "string" ? data.name.trim() : "";
     const character = data && typeof data.character === "string" ? data.character : "";
+    const roomCode = data && typeof data.room === "string" ? data.room.trim().toUpperCase() : "";
+
     if (!name) {
       socket.emit("errorMessage", "Enter a valid name.");
       return;
     }
+    if (!CHARACTERS.includes(character)) {
+      socket.emit("errorMessage", "Choose a valid character.");
+      return;
+    }
+    // Validate: 4-8 characters, letters and numbers only.
+    if (!ROOM_CODE_PATTERN.test(roomCode)) {
+      socket.emit("errorMessage", "Lobby code must be 4-8 letters or numbers.");
+      return;
+    }
+    // Validate: reject duplicate room codes.
+    if (rooms[roomCode]) {
+      socket.emit("errorMessage", "That lobby code is already taken.");
+      return;
+    }
 
-    const roomCode = generateRoomCode();
     rooms[roomCode] = {
       players: [{ id: socket.id, name, character }],
       positions: {},
       ready: {},
+      rematch: {},
       currentTurn: null,
       game: null
     };
@@ -336,7 +486,7 @@ io.on("connection", (socket) => {
    * Payload: { name, character, room }
    * On success emits "gameStart" { room, players } to both players in
    * the room (players carries only public info: id, name, character —
-   * used by clients to render both character portraits).
+   * used by clients to render the player information panel).
    */
   socket.on("joinLobby", (data) => {
     const name = data && typeof data.name === "string" ? data.name.trim() : "";
@@ -345,6 +495,10 @@ io.on("connection", (socket) => {
 
     if (!name || !roomCode) {
       socket.emit("errorMessage", "Enter a valid name and lobby code.");
+      return;
+    }
+    if (!CHARACTERS.includes(character)) {
+      socket.emit("errorMessage", "Choose a valid character.");
       return;
     }
 
@@ -389,32 +543,26 @@ io.on("connection", (socket) => {
     const roomCode = data && typeof data.roomCode === "string" ? data.roomCode.trim().toUpperCase() : "";
     const room = rooms[roomCode];
 
-    // Validate: room exists and this socket is one of its players.
     if (!room || !room.players.some((p) => p.id === socket.id)) {
       socket.emit("errorMessage", "You are not in this lobby.");
       return;
     }
-    // Validate: placement only happens once both players have joined.
     if (room.players.length < MAX_PLAYERS) {
       socket.emit("errorMessage", "Waiting for a second player before placement.");
       return;
     }
-    // Validate: a confirmed placement cannot be changed.
     if (room.ready[socket.id]) {
       socket.emit("errorMessage", "You have already confirmed your position.");
       return;
     }
-    // Validate: the square must be inside the 8x8 board.
-    if (!isValidPosition(data.position)) {
+    const position = data && data.position;
+    if (!position || !inBounds(position.row, position.col)) {
       socket.emit("errorMessage", "Invalid board position.");
       return;
     }
 
     // Store the hidden position server-side only.
-    room.positions[socket.id] = {
-      row: data.position.row,
-      col: data.position.col
-    };
+    room.positions[socket.id] = { row: position.row, col: position.col };
     room.ready[socket.id] = true;
 
     const everyoneReady = room.players.every((p) => room.ready[p.id]);
@@ -431,7 +579,7 @@ io.on("connection", (socket) => {
     io.to(roomCode).emit("bothPlayersReady");
 
     // Deal hands, pick the starting player and begin the card game.
-    startGame(room, roomCode);
+    startGame(room);
   });
 
   /*
@@ -441,75 +589,161 @@ io.on("connection", (socket) => {
    *
    * Payload: { roomCode, cardUid, target }
    *   - cardUid: unique id of a card instance in the sender's hand
-   *   - target:  card-specific, validated per card:
-   *       Scan Row -> { row }
-   *       Attack   -> { row, col }
+   *   - target:  card-specific, validated by the card definition
    *
-   * The server validates everything: room membership, game running,
-   * turn ownership, card ownership, card availability and target.
+   * The generic pipeline: validate -> resolve -> broadcast the PUBLIC
+   * part to both players ("actionPlayed") -> send the PRIVATE result
+   * to the acting player only ("cardResult") -> discard -> game over
+   * or automatic turn pass. Cards plug into this pipeline purely via
+   * their definition object.
    */
   socket.on("playCard", (data) => {
     const roomCode = data && typeof data.roomCode === "string" ? data.roomCode.trim().toUpperCase() : "";
     const room = rooms[roomCode];
 
-    // Validate: room exists and this socket is one of its players.
     if (!room || !room.players.some((p) => p.id === socket.id)) {
       socket.emit("errorMessage", "You are not in this lobby.");
       return;
     }
     const game = room.game;
-    // Validate: the card game has started and is still running.
     if (!game || game.over) {
       socket.emit("errorMessage", "The game is not running.");
       return;
     }
-    // Validate: only the active player may act.
     if (room.currentTurn !== socket.id) {
       socket.emit("errorMessage", "It is not your turn.");
       return;
     }
-    // Validate: the card must actually be in the sender's hand.
     const cardIndex = game.hands[socket.id].findIndex((c) => c.uid === data.cardUid);
     if (cardIndex === -1) {
       socket.emit("errorMessage", "That card is not in your hand.");
       return;
     }
+
     const card = game.hands[socket.id][cardIndex];
-    // Validate: placeholder categories cannot be played yet.
-    if (!CARD_LIBRARY[card.id].implemented) {
-      socket.emit("errorMessage", "That card is not available yet.");
-      return;
-    }
+    const definition = CARD_DEFINITIONS[card.id];
+    const me = room.players.find((p) => p.id === socket.id);
+    const opponent = getOpponent(room, socket.id);
 
-    const target = data.target || {};
+    const ctx = {
+      room,
+      game,
+      playerId: socket.id,
+      opponent,
+      myPosition: room.positions[socket.id],
+      opponentPosition: room.positions[opponent.id],
+      target: (data.target && typeof data.target === "object") ? data.target : {}
+    };
 
-    if (card.id === "scanRow") {
-      // Validate: the scanned row must be inside the board.
-      if (!Number.isInteger(target.row) || target.row < 0 || target.row >= BOARD_SIZE) {
-        socket.emit("errorMessage", "Invalid row.");
+    // Card-specific target validation.
+    if (definition.validateTarget) {
+      const error = definition.validateTarget(ctx);
+      if (error) {
+        socket.emit("errorMessage", error);
         return;
       }
-      resolveScanRow(room, roomCode, socket, target);
-      discardCard(game, socket.id, cardIndex);
-      sendHandUpdate(room, socket.id);
-      passTurn(room, roomCode); // playing a card IS the turn
+    }
+
+    const outcome = definition.resolve(ctx);
+
+    // Track movement per turn so Reveal Trail can answer honestly.
+    game.moveHistory[socket.id].push(definition.category === "Movement");
+
+    /*
+     * "actionPlayed" — broadcast to BOTH players: who played which
+     * card plus the card's public target info (scanned row/column/
+     * area, attacked tile, heat map region). Movement and information
+     * cards publish an empty target — the opponent learns WHAT was
+     * played but never destinations or private answers. Clients use
+     * this event for the game log and the board animations.
+     */
+    io.to(roomCode).emit("actionPlayed", {
+      by: socket.id,
+      name: me.name,
+      character: me.character,
+      cardId: card.id,
+      cardName: definition.name,
+      category: definition.category,
+      public: outcome.public || {}
+    });
+
+    /*
+     * "cardResult" — sent ONLY to the acting player: the private part
+     * of the resolution (scan YES/NO answers, radar/compass halves,
+     * the player's own new position after moving, ...).
+     */
+    if (outcome.private) {
+      socket.emit("cardResult", {
+        cardId: card.id,
+        cardName: definition.name,
+        result: outcome.private
+      });
+    }
+
+    discardCard(game, socket.id, cardIndex);
+    sendHandUpdate(room, socket.id);
+
+    if (outcome.winner) {
+      /*
+       * "gameOver" — the attack hit the opponent's exact square. Sent
+       * to each player individually: { youWin }.
+       */
+      game.over = true;
+      room.players.forEach((player) => {
+        io.to(player.id).emit("gameOver", { youWin: player.id === outcome.winner });
+      });
       return;
     }
 
-    if (card.id === "attack") {
-      // Validate: the attacked square must be inside the board.
-      if (!isValidPosition(target)) {
-        socket.emit("errorMessage", "Invalid attack target.");
-        return;
-      }
-      const won = resolveAttack(room, roomCode, socket, target);
-      discardCard(game, socket.id, cardIndex);
+    // Rest: immediately draw one replacement card before passing.
+    if (outcome.drawOne) {
+      drawCards(game, socket.id, 1);
       sendHandUpdate(room, socket.id);
-      if (!won) {
-        passTurn(room, roomCode); // miss: turn passes automatically
-      }
+    }
+
+    passTurn(room); // playing a card IS the turn
+  });
+
+  /*
+   * "playAgain" — after a game ends, either player can vote for a
+   * rematch. When BOTH players have voted the server resets the whole
+   * match state (positions, ready flags, decks, hands, discards, turn
+   * order) and sends "gameReset" to both clients, which return to the
+   * placement phase while staying in the same lobby.
+   *
+   * "playAgainWait" — sent ONLY to a player whose vote is in while
+   * the opponent has not voted yet.
+   */
+  socket.on("playAgain", (data) => {
+    const roomCode = data && typeof data.roomCode === "string" ? data.roomCode.trim().toUpperCase() : "";
+    const room = rooms[roomCode];
+
+    if (!room || !room.players.some((p) => p.id === socket.id)) {
+      socket.emit("errorMessage", "You are not in this lobby.");
       return;
     }
+    // A rematch can only be requested once a game has finished.
+    if (!room.game || !room.game.over) {
+      socket.emit("errorMessage", "The game is still running.");
+      return;
+    }
+
+    room.rematch[socket.id] = true;
+
+    const everyoneAgreed = room.players.every((p) => room.rematch[p.id]);
+    if (!everyoneAgreed) {
+      socket.emit("playAgainWait");
+      return;
+    }
+
+    // Full reset: back to the hidden placement phase, same lobby.
+    room.positions = {};
+    room.ready = {};
+    room.rematch = {};
+    room.currentTurn = null;
+    room.game = null;
+
+    io.to(roomCode).emit("gameReset");
   });
 
   /*
