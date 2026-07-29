@@ -55,8 +55,13 @@
 
 <!-- Gameplay screen (shown once both players have confirmed).
      Turn flow is entirely card-driven: draw, play ONE card, the card
-     resolves and the turn passes automatically. No End Turn button. -->
-<div class="box wide hidden" id="gameScreen">
+     resolves and the turn passes automatically. No End Turn button.
+     Layout: the game itself sits on the LEFT, all game text (messages
+     and the log) on the RIGHT. -->
+<div class="box gamebox hidden" id="gameScreen">
+<div class="gameColumns">
+
+<div class="gameLeft">
 
 <!-- Player information panel: both characters are always visible -->
 <div class="playerPanel">
@@ -69,18 +74,26 @@
 
 <div id="gameBoard" class="board"></div>
 
-<p id="gameMsg"></p>
-
+<!-- Character ability + hand of cards -->
+<div class="actionRow">
+<div id="abilityCard" class="ability hidden"></div>
 <div id="hand" class="hand"></div>
+</div>
 
 <p id="pileInfo"></p>
 
 <!-- Rematch: shown after game over; resets when both players accept -->
 <button id="playAgainBtn" class="hidden">Play Again</button>
 
+</div>
+
+<div class="gameRight">
+<p id="gameMsg"></p>
 <!-- Public game log: never contains hidden positions -->
 <div id="gameLog" class="log"></div>
+</div>
 
+</div>
 </div>
 
 <script src="index.js"></script>

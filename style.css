@@ -18,6 +18,31 @@ margin:16px 0;
 .box.wide{
 width:440px;
 }
+/* Gameplay layout: game on the left, game text on the right */
+.box.gamebox{
+width:780px;
+max-width:96vw;
+}
+.gameColumns{
+display:flex;
+gap:16px;
+align-items:stretch;
+}
+.gameLeft{
+flex:3;
+min-width:0;
+}
+.gameRight{
+flex:2;
+min-width:0;
+display:flex;
+flex-direction:column;
+}
+@media(max-width:700px){
+.gameColumns{
+flex-direction:column;
+}
+}
 input,select,button{
 width:100%;
 padding:10px;
@@ -100,21 +125,40 @@ pointer-events:none;
 opacity:.55;
 }
 
-/* Your own hidden position (only visible to you) */
-.tile.you{
-background:#2e6b46;
+/* Reveal colours (later rules override earlier ones on overlap):
+   green = areas YOU scanned, red = areas the OPPONENT scanned,
+   yellow = half of the map indicated by your Radar/Compass (stays
+   highlighted as a reminder). */
+.tile.scannedMe{
+background:#2e5d43;
 }
-/* Tiles that have been scanned (public info for both players) */
-.tile.scanned{
-background:#54607d;
+.tile.scannedOpp{
+background:#5d3340;
 }
-/* Squares that have been attacked (public info for both players) */
-.tile.attacked{
-background:#6b2e38;
+.tile.halfKnown{
+background:#6e622a;
 }
 /* Temporary heat map highlight (public for both players) */
 .tile.heat{
 background:#8a6a2f;
+}
+/* Squares that have been attacked (public info for both players) */
+.tile.attacked{
+background:#8a2f3d;
+}
+/* Your own hidden position (only visible to you) */
+.tile.you{
+background:#2e4b6b;
+outline:1px solid #4f9cff;
+}
+/* Your Mage mirror image decoy (only visible to you) */
+.tile.mirror{
+outline:1px dashed #b48fd0;
+}
+/* "?" = tiles where the enemy might be, deduced from YOUR scans */
+.tile.maybe{
+color:#ffd866;
+font-weight:bold;
 }
 /* Brief highlight animation whenever a tile is part of a played card */
 .tile.flash{
@@ -154,6 +198,40 @@ text-align:center;
 font-size:18px;
 }
 
+/* Ability + hand row underneath the board */
+.actionRow{
+display:flex;
+gap:8px;
+align-items:flex-start;
+}
+/* Character ability "card" (golden accent) */
+.ability{
+background:#4a3d26;
+border:1px solid #b89b4e;
+border-radius:6px;
+padding:10px 6px;
+width:74px;
+text-align:center;
+cursor:pointer;
+font-size:12px;
+flex-shrink:0;
+}
+.ability:hover{
+background:#5a4b2f;
+}
+.ability.selected{
+outline:2px solid #ffd866;
+}
+.ability.unavailable{
+opacity:.55;
+}
+.ability .cat{
+display:block;
+margin-top:4px;
+font-size:10px;
+color:#d8c48a;
+}
+
 /* Hand of cards underneath the board */
 .hand{
 display:flex;
@@ -161,6 +239,7 @@ gap:6px;
 flex-wrap:wrap;
 justify-content:center;
 min-height:70px;
+flex:1;
 }
 .hand.disabled{
 opacity:.5;
@@ -204,7 +283,9 @@ background:#232936;
 border-radius:6px;
 padding:8px 10px;
 margin-top:8px;
-max-height:130px;
+flex:1;
+min-height:200px;
+max-height:460px;
 overflow-y:auto;
 font-size:12px;
 text-align:left;

@@ -21,6 +21,7 @@ const myInfo=document.getElementById("myInfo");
 const oppInfo=document.getElementById("oppInfo");
 const gameLogEl=document.getElementById("gameLog");
 const playAgainBtn=document.getElementById("playAgainBtn");
+const abilityCard=document.getElementById("abilityCard");
 
 const BOARD_SIZE=8;
 const ROOM_CODE_PATTERN=/^[A-Z0-9]{4,8}$/;
@@ -44,9 +45,18 @@ teleport:{target:"tile",desc:"Moves your hidden character to any other square.",
 attack:{target:"tile",desc:"Strikes one tile. An exact hit wins the game!",hint:"Click the square you want to attack."},
 rest:{target:"none",desc:"Skips your action and immediately draws a replacement card."},
 revealTrail:{target:"none",desc:"Tells you whether the opponent moved during their last two turns."},
-radar:{target:"none",desc:"Tells you whether the opponent is in the North or South half."},
-compass:{target:"none",desc:"Tells you whether the opponent is in the East or West half."},
+radar:{target:"none",desc:"Tells you whether the opponent is in the North or South half. The half stays highlighted in yellow."},
+compass:{target:"none",desc:"Tells you whether the opponent is in the East or West half. The half stays highlighted in yellow."},
 heatMap:{target:"none",desc:"Highlights a 3x3 region that is LIKELY (not certain) to contain the opponent."}
+};
+
+// How each character ability is aimed (descriptions come from the
+// server via "abilityUpdate").
+const ABILITY_UI={
+knightStrike:{target:"tile",hint:"Click the tile you want to strike."},
+mirrorImage:{target:"tile",hint:"Click a tile to place your mirror image."},
+eagleEye:{target:"tile",hint:"Click the centre of the 3x3 area to scan."},
+shadowStep:{target:"none",hint:""}
 };
 
 // Client-side state. This is only used for RENDERING — the server
@@ -62,8 +72,20 @@ let hand=[];             // my cards (as sent by the server)
 let deckCount=0;
 let discardCount=0;
 let selectedCardUid=null;// card currently awaiting a board target
+let selectedAbility=false;// ability currently awaiting a board target
 let playedThisTurn=false;// locks the hand after playing until turnChanged
 let gameOver=false;
+let abilityInfo=null;    // my ability status (from "abilityUpdate")
+let mirrorPos=null;      // my Mage mirror position (only mine)
+
+// Deduction knowledge built from MY private scan results:
+// - excluded: tiles known NOT to hold the enemy (NO answers, and the
+//   ruled-out half after Radar/Compass)
+// - lastMyAction: my most recent play (cardId + public target), used
+//   to know WHICH area a YES/NO answer refers to
+let excluded=new Set();
+let lastMyAction=null;
+function tileKey(row,col){return row+","+col;}
 
 /* ============================================================
    LOBBY
@@ -141,8 +163,10 @@ socket.on("errorMessage",(msg)=>{
 if(!gameScreen.classList.contains("hidden")&&!gameOver){
 playedThisTurn=false;
 selectedCardUid=null;
+selectedAbility=false;
 gameMsg.textContent=msg+" Try again.";
 renderHand();
+renderAbility();
 return;
 }
 alert(msg);
@@ -251,7 +275,22 @@ socket.on("turnChanged",(data)=>{
 myTurn=data.yourTurn;
 playedThisTurn=false;
 selectedCardUid=null;
+selectedAbility=false;
 renderGameState();
+});
+
+// "abilityUpdate" — my own character ability status: readiness,
+// cooldown, mirror position (Mage), passive used (Rogue). Private.
+socket.on("abilityUpdate",(data)=>{
+abilityInfo=data;
+// If my mirror was destroyed, remove its marker from my board.
+if(mirrorPos&&!data.mirror){
+const tile=tileAt(mirrorPos.row,mirrorPos.col);
+if(tile){tile.classList.remove("mirror");refreshTile(tile);}
+mirrorPos=null;
+addLog("Your mirror image was destroyed!",true);
+}
+renderAbility();
 });
 
 // "actionPlayed" — public broadcast for EVERY card either player
@@ -261,21 +300,37 @@ renderGameState();
 // played but never destinations or private answers. Drives the game
 // log and the board animations for both players.
 socket.on("actionPlayed",(data)=>{
+// Remember MY latest play so the private result that follows knows
+// which board area it refers to (for the "?" deduction marks).
+if(data.by===socket.id)lastMyAction={cardId:data.cardId,public:data.public||{}};
 addLog(actionLogText(data),false);
 animateAction(data);
 });
 
-// "cardResult" — private result of MY card: scan YES/NO answers,
-// radar/compass halves, my own new position after moving, etc.
+// "cardResult" — private result of MY card or ability: scan YES/NO
+// answers, radar/compass halves, my new position, my mirror position.
 socket.on("cardResult",(data)=>{
 const result=data.result||{};
 if(result.position){
 moveMyMarker(result.position);
-gameMsg.textContent="You moved to "+tileLabel(result.position.row,result.position.col)+".";
-addLog("You moved to "+tileLabel(result.position.row,result.position.col)+". (only you can see this)",true);
-}else if(result.answer){
+gameMsg.textContent=(data.cardId==="shadowStep"?"Shadow Step! You escaped to ":"You moved to ")+tileLabel(result.position.row,result.position.col)+".";
+addLog((data.cardId==="shadowStep"?"Shadow Step teleported you to ":"You moved to ")+tileLabel(result.position.row,result.position.col)+". (only you can see this)",true);
+return;
+}
+if(result.mirror){
+placeMirrorMarker(result.mirror);
+gameMsg.textContent="Mirror image placed at "+tileLabel(result.mirror.row,result.mirror.col)+".";
+addLog("Your mirror image stands at "+tileLabel(result.mirror.row,result.mirror.col)+". (only you can see this)",true);
+return;
+}
+if(result.answer){
 gameMsg.textContent=data.cardName+": "+result.answer;
 addLog("Result ("+data.cardName+"): "+result.answer,true);
+if(result.answer==="YES"||result.answer==="NO"){
+applyScanKnowledge(result.answer);
+}else if(data.cardId==="radar"||data.cardId==="compass"){
+applyHalfKnowledge(data.cardId,result.answer);
+}
 }
 });
 
@@ -318,8 +373,13 @@ hand=[];
 deckCount=0;
 discardCount=0;
 selectedCardUid=null;
+selectedAbility=false;
 playedThisTurn=false;
 gameOver=false;
+abilityInfo=null;
+mirrorPos=null;
+excluded=new Set();
+lastMyAction=null;
 gameMsg.textContent="";
 gameLogEl.innerHTML="";
 playAgainBtn.classList.add("hidden");
@@ -333,6 +393,9 @@ showPlacementScreen();
 function showGameScreen(){
 placementScreen.classList.add("hidden");
 gameScreen.classList.remove("hidden");
+excluded=new Set();
+lastMyAction=null;
+mirrorPos=null;
 buildGameBoard();
 renderPlayerPanel();
 renderGameState();
@@ -390,6 +453,65 @@ function renderGameState(){
 if(!gameOver)turnIndicator.textContent=myTurn?"Your Turn":"Opponent's Turn";
 pileInfo.textContent="Deck: "+deckCount+" | Discard: "+discardCount;
 renderHand();
+renderAbility();
+}
+
+// Render my character ability as a golden card next to the hand,
+// with its readiness / cooldown / passive status.
+function renderAbility(){
+if(!abilityInfo){
+abilityCard.classList.add("hidden");
+return;
+}
+abilityCard.classList.remove("hidden");
+let statusText;
+if(abilityInfo.type==="passive"){
+statusText=abilityInfo.passiveUsed?"Used":"Passive";
+}else if(abilityInfo.mirror){
+statusText="Mirror active";
+}else if(abilityInfo.cooldownLeft>0){
+statusText="Cooldown: "+abilityInfo.cooldownLeft;
+}else if(abilityInfo.usedThisTurn){
+statusText="Used this turn";
+}else{
+statusText="Ready";
+}
+abilityCard.innerHTML="";
+const nameNode=document.createElement("span");
+nameNode.textContent=abilityInfo.name;
+const statusNode=document.createElement("span");
+statusNode.className="cat";
+statusNode.textContent=statusText;
+abilityCard.appendChild(nameNode);
+abilityCard.appendChild(statusNode);
+abilityCard.classList.toggle("selected",selectedAbility);
+const usable=abilityInfo.type==="active"&&abilityInfo.ready&&myTurn&&!gameOver;
+abilityCard.classList.toggle("unavailable",!usable);
+abilityCard.onclick=onAbilityClick;
+}
+
+// Ability click: first click explains it; for targeted abilities a
+// board click then uses it (clicking the ability again cancels).
+function onAbilityClick(){
+if(!abilityInfo)return;
+const ui=ABILITY_UI[abilityInfo.id]||{target:"none",hint:""};
+if(selectedAbility){
+selectedAbility=false;
+gameMsg.textContent="";
+renderAbility();
+return;
+}
+const usable=abilityInfo.type==="active"&&abilityInfo.ready&&myTurn&&!gameOver;
+if(!usable){
+// Not usable right now: just explain the ability.
+gameMsg.textContent=abilityInfo.name+": "+abilityInfo.desc;
+return;
+}
+selectedAbility=true;
+selectedCardUid=null;
+gameMsg.textContent=abilityInfo.name+": "+abilityInfo.desc+" "+ui.hint;
+renderHand();
+renderAbility();
 }
 
 // Render the hand underneath the board. Cards are only clickable for
@@ -440,22 +562,34 @@ return;
 }
 // First click: select the card and explain it.
 selectedCardUid=card.uid;
+selectedAbility=false;
 gameMsg.textContent=card.name+": "+ui.desc+" "+(ui.target==="none"?"Click the card again to use it.":ui.hint);
 renderHand();
+renderAbility();
 }
 
 // Board click while a card is selected: build the card-specific
 // target and send the play to the server. The server validates the
 // card, the target and the turn.
 function onGameBoardClick(tile){
-if(!myTurn||playedThisTurn||gameOver||selectedCardUid===null)return;
+if(!myTurn||gameOver)return;
+const row=Number(tile.dataset.row);
+const col=Number(tile.dataset.col);
+// An armed ability takes priority over card targeting.
+if(selectedAbility){
+// "useAbility" — abilities never consume the card turn.
+socket.emit("useAbility",{roomCode:currentRoom,target:{row,col}});
+selectedAbility=false;
+gameMsg.textContent="";
+renderAbility();
+return;
+}
+if(playedThisTurn||selectedCardUid===null)return;
 const card=hand.find((c)=>c.uid===selectedCardUid);
 if(!card)return;
 const ui=CARD_UI[card.id]||{target:"none"};
 // Untargeted cards are played by clicking the card again, not the board.
 if(ui.target==="none")return;
-const row=Number(tile.dataset.row);
-const col=Number(tile.dataset.col);
 let target;
 if(ui.target==="row")target={row};
 else if(ui.target==="column")target={col};
@@ -492,8 +626,12 @@ case "scanRow":return who+" scanned Row "+(p.row+1)+".";
 case "scanColumn":return who+" scanned Column "+String.fromCharCode(65+p.col)+".";
 case "scanArea":return who+" scanned a 3x3 area around "+tileLabel(p.row,p.col)+".";
 case "scanCross":return who+" scanned a cross at "+tileLabel(p.row,p.col)+".";
-case "attack":return who+" attacked "+tileLabel(p.row,p.col)+(p.hit?" — HIT!":" — miss.");
+case "attack":return who+" attacked "+tileLabel(p.row,p.col)+(p.mirror?" — destroyed a Mirror Image!":p.hit?" — HIT!":" — miss.");
 case "heatMap":return who+" used Heat Map: region "+tileLabel(p.row,p.col)+" to "+tileLabel(p.row+2,p.col+2)+" highlighted.";
+case "knightStrike":return who+" used Power Strike on "+tileLabel(p.row,p.col)+(p.mirror?" — destroyed a Mirror Image!":p.hit?" — HIT!":" — miss.");
+case "eagleEye":return who+" used Eagle Eye around "+tileLabel(p.row,p.col)+".";
+case "mirrorImage":return who+" created a Mirror Image somewhere on the board.";
+case "shadowStep":return who+"'s Shadow Step activated — they vanished to a new hiding spot!";
 default:return who+" played "+d.cardName+".";
 }
 }
@@ -527,23 +665,47 @@ if(t)tiles.push(t);
 return tiles;
 }
 
-// Small board animation for every played card (both players see it).
-function animateAction(d){
-const p=d.public||{};
-switch(d.cardId){
-case "scanRow":markScanned(tilesInRow(p.row));break;
-case "scanColumn":markScanned(tilesInCol(p.col));break;
-case "scanArea":markScanned(tilesInArea(p.row-1,p.col-1,3));break;
-case "scanCross":markScanned([...tilesInRow(p.row),...tilesInCol(p.col)]);break;
-case "attack":markAttacked(p.row,p.col);break;
-case "heatMap":flashHeat(tilesInArea(p.row,p.col,3));break;
+// The board tiles a public action touched (used for both the reveal
+// tinting and the "?" deduction marks).
+function regionForAction(cardId,p){
+switch(cardId){
+case "scanRow":return tilesInRow(p.row);
+case "scanColumn":return tilesInCol(p.col);
+case "scanArea":case "eagleEye":return tilesInArea(p.row-1,p.col-1,3);
+case "scanCross":return [...tilesInRow(p.row),...tilesInCol(p.col)];
+default:return [];
 }
 }
 
-// Scanned tiles flash briefly and stay tinted (public knowledge).
-function markScanned(tiles){
+// Small board animation for every played card (both players see it).
+// Areas scanned by ME stay green; areas scanned by the OPPONENT stay
+// red.
+function animateAction(d){
+const p=d.public||{};
+const mine=d.by===socket.id;
+switch(d.cardId){
+case "scanRow":
+case "scanColumn":
+case "scanArea":
+case "scanCross":
+case "eagleEye":
+markScanned(regionForAction(d.cardId,p),mine);
+break;
+case "attack":
+case "knightStrike":
+markAttacked(p.row,p.col);
+break;
+case "heatMap":
+flashHeat(tilesInArea(p.row,p.col,3));
+break;
+}
+}
+
+// Scanned tiles flash briefly and stay tinted: green for my scans,
+// red for the opponent's.
+function markScanned(tiles,mine){
 tiles.forEach((tile)=>{
-tile.classList.add("scanned");
+tile.classList.add(mine?"scannedMe":"scannedOpp");
 flashTile(tile);
 });
 }
@@ -553,7 +715,7 @@ function markAttacked(row,col){
 const tile=tileAt(row,col);
 if(!tile)return;
 tile.classList.add("attacked");
-if(!tile.classList.contains("you"))tile.textContent="\u2716";
+refreshTile(tile);
 flashTile(tile);
 }
 
@@ -572,6 +734,16 @@ tile.classList.add("flash");
 setTimeout(()=>tile.classList.remove("flash"),950);
 }
 
+// A tile's visible content, by priority: my own character marker,
+// my mirror image, an attack cross, then a "?" deduction mark.
+function refreshTile(tile){
+if(tile.classList.contains("you")){tile.textContent=myCharacterIcon();return;}
+if(tile.classList.contains("mirror")){tile.textContent="\u{1FA9E}";return;}
+if(tile.classList.contains("attacked")){tile.textContent="\u2716";return;}
+if(tile.classList.contains("maybe")){tile.textContent="?";return;}
+tile.textContent="";
+}
+
 // Move my own character marker after a movement card resolved. Only
 // this client ever sees this — the opponent just gets the log entry.
 function moveMyMarker(position){
@@ -579,14 +751,85 @@ if(myPosition){
 const oldTile=tileAt(myPosition.row,myPosition.col);
 if(oldTile){
 oldTile.classList.remove("you");
-oldTile.textContent=oldTile.classList.contains("attacked")?"\u2716":"";
+refreshTile(oldTile);
 }
 }
 myPosition={row:position.row,col:position.col};
 const newTile=tileAt(position.row,position.col);
 if(newTile){
 newTile.classList.add("you");
-newTile.textContent=myCharacterIcon();
+refreshTile(newTile);
 flashTile(newTile);
+}
+}
+
+// Show my Mage mirror image on my own board (never on the opponent's).
+function placeMirrorMarker(position){
+mirrorPos={row:position.row,col:position.col};
+const tile=tileAt(position.row,position.col);
+if(tile){
+tile.classList.add("mirror");
+refreshTile(tile);
+flashTile(tile);
+}
+}
+
+/* ============================================================
+   DEDUCTION KNOWLEDGE ("?" marks and yellow halves)
+   ============================================================ */
+
+// A tile is known to be empty: remember it and clear any "?" on it.
+function excludeTile(tile){
+excluded.add(tileKey(Number(tile.dataset.row),Number(tile.dataset.col)));
+if(tile.classList.contains("maybe")){
+tile.classList.remove("maybe");
+refreshTile(tile);
+}
+}
+
+// Mark a tile as a possible enemy location ("?").
+function setMaybe(tile){
+tile.classList.add("maybe");
+refreshTile(tile);
+}
+
+// Apply a YES/NO answer for the area of MY latest scan:
+// - NO: every tile of the area is known empty (clear its "?").
+// - YES: mark the area's tiles with "?", but SKIP tiles already known
+//   to be empty (e.g. a half ruled out by Compass, or a previous NO).
+function applyScanKnowledge(answer){
+if(!lastMyAction)return;
+const tiles=regionForAction(lastMyAction.cardId,lastMyAction.public);
+if(tiles.length===0)return;
+if(answer==="NO"){
+tiles.forEach(excludeTile);
+}else{
+tiles.forEach((tile)=>{
+const key=tileKey(Number(tile.dataset.row),Number(tile.dataset.col));
+if(!excluded.has(key))setMaybe(tile);
+});
+}
+}
+
+// Radar/Compass: the indicated half stays highlighted in yellow as a
+// reminder, and the OTHER half is known empty (its "?" marks clear).
+function applyHalfKnowledge(cardId,answer){
+for(let row=0;row<BOARD_SIZE;row++){
+for(let col=0;col<BOARD_SIZE;col++){
+const tile=tileAt(row,col);
+if(!tile)continue;
+let inside;
+if(cardId==="radar"){
+inside=(answer==="North Half")?row<BOARD_SIZE/2:row>=BOARD_SIZE/2;
+}else{
+inside=(answer==="East Half")?col>=BOARD_SIZE/2:col<BOARD_SIZE/2;
+}
+if(inside){
+tile.classList.add("halfKnown");
+flashTile(tile);
+}else{
+excludeTile(tile);
+}
+}
 }
 }

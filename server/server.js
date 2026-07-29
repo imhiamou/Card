@@ -99,16 +99,19 @@ const CARD_DEFINITIONS = {
 
   // Scan Area: pick one tile; learn ONLY whether the opponent is on
   // that tile or any of the 8 tiles around it (a 3x3 area, clipped at
-  // the board edges).
+  // the board edges). If the opponent is a Mage with an active mirror
+  // image, there is a 50% chance the scan checks the MIRROR's tile
+  // instead of the real position.
   scanArea: {
     name: "Scan Area", category: "Scanning", copies: 2,
     validateTarget: ({ target }) => inBounds(target.row, target.col) ? null : "Invalid tile.",
-    resolve: ({ target, opponentPosition }) => {
+    resolve: (ctx) => {
+      const checked = areaScanCheckPosition(ctx.game, ctx.opponent, ctx.opponentPosition);
       const inside =
-        Math.abs(opponentPosition.row - target.row) <= 1 &&
-        Math.abs(opponentPosition.col - target.col) <= 1;
+        Math.abs(checked.row - ctx.target.row) <= 1 &&
+        Math.abs(checked.col - ctx.target.col) <= 1;
       return {
-        public: { row: target.row, col: target.col },
+        public: { row: ctx.target.row, col: ctx.target.col },
         private: { answer: inside ? "YES" : "NO" }
       };
     }
@@ -176,10 +179,14 @@ const CARD_DEFINITIONS = {
 
   // Attack: name one tile. Exact match = immediate victory; anything
   // else is a public miss. The attacked tile is public information.
+  // Hitting a Mage's mirror image destroys the DECOY, not the Mage —
+  // both players learn a mirror was destroyed.
   attack: {
     name: "Attack", category: "Attack", copies: 5,
     validateTarget: ({ target }) => inBounds(target.row, target.col) ? null : "Invalid attack target.",
-    resolve: ({ target, opponentPosition, playerId }) => {
+    resolve: ({ game, opponent, target, opponentPosition, playerId }) => {
+      const mirrorOutcome = tryHitMirror(game, opponent, target);
+      if (mirrorOutcome) return mirrorOutcome;
       const hit = opponentPosition.row === target.row && opponentPosition.col === target.col;
       return {
         public: { row: target.row, col: target.col, hit },
@@ -259,6 +266,73 @@ const CARD_DEFINITIONS = {
     }
   }
 };
+
+/* ============================================================
+   CHARACTER ABILITIES
+   ============================================================
+   Every character has one ability. Active abilities are used ON TOP
+   of the normal card turn — they never consume it — and are limited
+   by a cooldown counted in the player's OWN turns (plus at most one
+   ability use per turn). Rogue's ability is a passive that triggers
+   automatically.
+*/
+const CHARACTER_ABILITIES = {
+  // Knight: a free attack that does not use up the card turn,
+  // available every 3 of his turns.
+  Knight: {
+    id: "knightStrike", name: "Power Strike", type: "active", cooldown: 3,
+    desc: "Free attack on one tile that does NOT use up your card turn. Available every 3 turns."
+  },
+  // Mage: place a mirror image decoy anywhere. Attacks that hit the
+  // mirror destroy the decoy instead of the Mage, and area scans have
+  // a 50% chance of checking the mirror instead of the real position.
+  // A new mirror can be created once the old one is destroyed.
+  Mage: {
+    id: "mirrorImage", name: "Mirror Image", type: "active", cooldown: 0,
+    desc: "Create a mirror image decoy on any tile. Attacks that hit it destroy the decoy instead of you, and area scans may be fooled by it."
+  },
+  // Hunter: a free 3x3 scan around a chosen centre tile, available
+  // every 5 of his turns.
+  Hunter: {
+    id: "eagleEye", name: "Eagle Eye", type: "active", cooldown: 5,
+    desc: "Free 3x3 scan around a chosen tile that does NOT use up your card turn. Available every 5 turns."
+  },
+  // Rogue: passive — the first time an enemy scan finds him (a YES
+  // answer), he automatically teleports to a random square. Once per
+  // game. Both players see that Shadow Step fired; only the Rogue
+  // learns the new position.
+  Rogue: {
+    id: "shadowStep", name: "Shadow Step", type: "passive", cooldown: 0,
+    desc: "Passive: the first time an enemy scan finds you, you instantly teleport to a random square. Once per game."
+  }
+};
+
+// Area scans (Scan Area card and Hunter's Eagle Eye) can be fooled by
+// a Mage's mirror image: with an active mirror there is a 50% chance
+// the scan checks the mirror's tile instead of the real position.
+function areaScanCheckPosition(game, opponent, opponentPosition) {
+  const state = game.abilityState[opponent.id];
+  if (opponent.character === "Mage" && state.mirror && Math.random() < 0.5) {
+    return state.mirror;
+  }
+  return opponentPosition;
+}
+
+// Shared by the Attack card and Knight's Power Strike: if the target
+// square holds the opponent's mirror image, the decoy is destroyed
+// (publicly) and the Mage survives. Returns the outcome or null.
+function tryHitMirror(game, opponent, target) {
+  const state = game.abilityState[opponent.id];
+  if (opponent.character === "Mage" && state.mirror &&
+      state.mirror.row === target.row && state.mirror.col === target.col) {
+    state.mirror = null;
+    return {
+      public: { row: target.row, col: target.col, hit: false, mirror: true },
+      mirrorDestroyed: true
+    };
+  }
+  return null;
+}
 
 // Every physical card instance gets a unique id so the server can
 // verify that a played card really sits in the sender's hand.
@@ -354,6 +428,85 @@ function drawCards(game, playerId, count) {
 }
 
 /*
+ * "abilityUpdate" — sent to ONE player only, describing their own
+ * ability: readiness, cooldown, mirror position (Mage) and whether
+ * the passive has been consumed (Rogue). Never sent to the opponent.
+ */
+function sendAbilityUpdate(room, playerId) {
+  const player = room.players.find((p) => p.id === playerId);
+  const def = CHARACTER_ABILITIES[player.character];
+  const state = room.game.abilityState[playerId];
+  io.to(playerId).emit("abilityUpdate", {
+    id: def.id,
+    name: def.name,
+    desc: def.desc,
+    type: def.type,
+    cooldown: def.cooldown,
+    cooldownLeft: state.cooldownLeft,
+    usedThisTurn: state.usedThisTurn,
+    mirror: state.mirror,
+    passiveUsed: state.passiveUsed,
+    ready: def.type === "active" && state.cooldownLeft === 0 && !state.usedThisTurn &&
+      !(def.id === "mirrorImage" && state.mirror)
+  });
+}
+
+// Called whenever a player's turn begins: tick their ability cooldown
+// down and allow one ability use this turn.
+function beginTurnAbilityTick(room, playerId) {
+  const state = room.game.abilityState[playerId];
+  if (state.cooldownLeft > 0) state.cooldownLeft--;
+  state.usedThisTurn = false;
+  sendAbilityUpdate(room, playerId);
+}
+
+// End the game with a winner. "gameOver" is sent to each player
+// individually: { youWin }.
+function endGame(room, winnerId) {
+  room.game.over = true;
+  room.players.forEach((player) => {
+    io.to(player.id).emit("gameOver", { youWin: player.id === winnerId });
+  });
+}
+
+/*
+ * Rogue's Shadow Step passive: the first time an enemy scan FINDS the
+ * Rogue (a YES answer), he teleports to a random different square.
+ * Both players are told the passive fired (via "actionPlayed", so the
+ * scanner knows their information is now stale) but ONLY the Rogue
+ * receives the new position (via "cardResult").
+ */
+function maybeTriggerRogueEscape(room, roomCode, player) {
+  const state = room.game.abilityState[player.id];
+  if (player.character !== "Rogue" || state.passiveUsed) return;
+  state.passiveUsed = true;
+
+  const current = room.positions[player.id];
+  let row, col;
+  do {
+    row = Math.floor(Math.random() * BOARD_SIZE);
+    col = Math.floor(Math.random() * BOARD_SIZE);
+  } while (row === current.row && col === current.col);
+  room.positions[player.id] = { row, col };
+
+  io.to(roomCode).emit("actionPlayed", {
+    by: player.id,
+    name: player.name,
+    character: player.character,
+    cardId: "shadowStep",
+    cardName: "Shadow Step",
+    category: "Ability",
+    public: {}
+  });
+  io.to(player.id).emit("cardResult", {
+    cardId: "shadowStep",
+    cardName: "Shadow Step",
+    result: { position: { row, col } }
+  });
+  sendAbilityUpdate(room, player.id);
+}
+
+/*
  * "handUpdate" — sent to ONE player only, with their own private hand
  * and their own pile counts. The opponent never receives this data.
  */
@@ -378,9 +531,11 @@ function passTurn(room) {
   const next = getOpponent(room, room.currentTurn);
   room.currentTurn = next.id;
 
-  // Beginning of a turn: the new active player draws one card.
+  // Beginning of a turn: the new active player draws one card and
+  // their ability cooldown ticks down.
   drawCards(room.game, next.id, 1);
   sendHandUpdate(room, next.id);
+  beginTurnAbilityTick(room, next.id);
 
   room.players.forEach((player) => {
     io.to(player.id).emit("turnChanged", {
@@ -403,6 +558,7 @@ function startGame(room) {
     hands: {},
     discards: {},
     moveHistory: {},
+    abilityState: {},
     over: false
   };
 
@@ -411,6 +567,12 @@ function startGame(room) {
     room.game.hands[player.id] = [];
     room.game.discards[player.id] = [];
     room.game.moveHistory[player.id] = [];
+    room.game.abilityState[player.id] = {
+      cooldownLeft: 0,
+      usedThisTurn: false,
+      mirror: null,      // Mage's mirror image position
+      passiveUsed: false // Rogue's once-per-game Shadow Step
+    };
     drawCards(room.game, player.id, STARTING_HAND_SIZE);
   });
 
@@ -429,6 +591,8 @@ function startGame(room) {
       deckCount: room.game.decks[player.id].length,
       discardCount: room.game.discards[player.id].length
     });
+    // Each player also learns their own ability status.
+    sendAbilityUpdate(room, player.id);
   });
 }
 
@@ -690,16 +854,20 @@ io.on("connection", (socket) => {
     discardCard(game, socket.id, cardIndex);
     sendHandUpdate(room, socket.id);
 
+    // A Mage whose mirror was destroyed learns it via abilityUpdate.
+    if (outcome.mirrorDestroyed) {
+      sendAbilityUpdate(room, opponent.id);
+    }
+
     if (outcome.winner) {
-      /*
-       * "gameOver" — the attack hit the opponent's exact square. Sent
-       * to each player individually: { youWin }.
-       */
-      game.over = true;
-      room.players.forEach((player) => {
-        io.to(player.id).emit("gameOver", { youWin: player.id === outcome.winner });
-      });
+      // "gameOver" — the attack hit the opponent's exact square.
+      endGame(room, outcome.winner);
       return;
+    }
+
+    // A scan that FOUND the opponent may trigger Rogue's Shadow Step.
+    if (definition.category === "Scanning" && outcome.private && outcome.private.answer === "YES") {
+      maybeTriggerRogueEscape(room, roomCode, opponent);
     }
 
     // Rest: immediately draw one replacement card before passing.
@@ -709,6 +877,134 @@ io.on("connection", (socket) => {
     }
 
     passTurn(room); // playing a card IS the turn
+  });
+
+  /*
+   * "useAbility" — the active player uses their character's ability.
+   * Payload: { roomCode, target: { row, col } }
+   *
+   * Abilities do NOT consume the card turn: after using one, the
+   * player still plays their card as normal. Limits enforced here:
+   * it must be your turn, at most one ability use per turn, and the
+   * ability must be off cooldown (cooldowns tick down at the start of
+   * each of your turns). Rogue's ability is passive and cannot be
+   * activated manually.
+   */
+  socket.on("useAbility", (data) => {
+    const roomCode = data && typeof data.roomCode === "string" ? data.roomCode.trim().toUpperCase() : "";
+    const room = rooms[roomCode];
+
+    if (!room || !room.players.some((p) => p.id === socket.id)) {
+      socket.emit("errorMessage", "You are not in this lobby.");
+      return;
+    }
+    const game = room.game;
+    if (!game || game.over) {
+      socket.emit("errorMessage", "The game is not running.");
+      return;
+    }
+    if (room.currentTurn !== socket.id) {
+      socket.emit("errorMessage", "It is not your turn.");
+      return;
+    }
+
+    const me = room.players.find((p) => p.id === socket.id);
+    const opponent = getOpponent(room, socket.id);
+    const def = CHARACTER_ABILITIES[me.character];
+    const state = game.abilityState[socket.id];
+
+    if (def.type !== "active") {
+      socket.emit("errorMessage", "Your ability is passive and triggers automatically.");
+      return;
+    }
+    if (state.usedThisTurn) {
+      socket.emit("errorMessage", "You already used your ability this turn.");
+      return;
+    }
+    if (state.cooldownLeft > 0) {
+      socket.emit("errorMessage", "Your ability is on cooldown (" + state.cooldownLeft + " more turn" + (state.cooldownLeft === 1 ? "" : "s") + ").");
+      return;
+    }
+
+    const target = (data.target && typeof data.target === "object") ? data.target : {};
+    if (!inBounds(target.row, target.col)) {
+      socket.emit("errorMessage", "Invalid target.");
+      return;
+    }
+
+    // Shared broadcast for the public part of an ability use.
+    const announce = (publicInfo) => {
+      io.to(roomCode).emit("actionPlayed", {
+        by: socket.id,
+        name: me.name,
+        character: me.character,
+        cardId: def.id,
+        cardName: def.name,
+        category: "Ability",
+        public: publicInfo
+      });
+    };
+
+    // Knight — Power Strike: a free attack (mirror rules apply).
+    if (def.id === "knightStrike") {
+      state.usedThisTurn = true;
+      state.cooldownLeft = def.cooldown;
+      const mirrorOutcome = tryHitMirror(game, opponent, target);
+      if (mirrorOutcome) {
+        announce(mirrorOutcome.public);
+        sendAbilityUpdate(room, opponent.id); // Mage learns the mirror is gone
+        sendAbilityUpdate(room, socket.id);
+        return;
+      }
+      const oppPos = room.positions[opponent.id];
+      const hit = oppPos.row === target.row && oppPos.col === target.col;
+      announce({ row: target.row, col: target.col, hit });
+      sendAbilityUpdate(room, socket.id);
+      if (hit) endGame(room, socket.id);
+      return; // the turn continues — the Knight still plays a card
+    }
+
+    // Mage — Mirror Image: place a decoy on any tile except your own.
+    if (def.id === "mirrorImage") {
+      if (state.mirror) {
+        socket.emit("errorMessage", "Your mirror image is still active.");
+        return;
+      }
+      const myPos = room.positions[socket.id];
+      if (myPos.row === target.row && myPos.col === target.col) {
+        socket.emit("errorMessage", "The mirror image cannot be placed on your own tile.");
+        return;
+      }
+      state.usedThisTurn = true;
+      state.mirror = { row: target.row, col: target.col };
+      announce({}); // the opponent learns a mirror exists, not where
+      socket.emit("cardResult", {
+        cardId: def.id,
+        cardName: def.name,
+        result: { mirror: { row: target.row, col: target.col } }
+      });
+      sendAbilityUpdate(room, socket.id);
+      return;
+    }
+
+    // Hunter — Eagle Eye: a free 3x3 scan (mirror rules apply).
+    if (def.id === "eagleEye") {
+      state.usedThisTurn = true;
+      state.cooldownLeft = def.cooldown;
+      const checked = areaScanCheckPosition(game, opponent, room.positions[opponent.id]);
+      const inside =
+        Math.abs(checked.row - target.row) <= 1 &&
+        Math.abs(checked.col - target.col) <= 1;
+      announce({ row: target.row, col: target.col });
+      socket.emit("cardResult", {
+        cardId: def.id,
+        cardName: def.name,
+        result: { answer: inside ? "YES" : "NO" }
+      });
+      sendAbilityUpdate(room, socket.id);
+      if (inside) maybeTriggerRogueEscape(room, roomCode, opponent);
+      return;
+    }
   });
 
   /*
