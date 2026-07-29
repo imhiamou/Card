@@ -88,13 +88,10 @@ let mirrorPos=null;      // my Mage mirror position (only mine)
 // - confirmedIn: true once a YES answer has pinned the enemy inside a
 //   known region, which is when "?" marks become meaningful.
 // - oppScanned: tiles the OPPONENT has scanned (shown with a red edge).
-// - oppMirrorActive: a Mage decoy makes AREA scans unreliable, so no
-//   deduction is drawn from them while it stands.
 let candidates=new Set();
 let narrowed=false;
 let confirmedIn=false;
 let oppScanned=new Set();
-let oppMirrorActive=false;
 let lastMyAction=null;
 function tileKey(row,col){return row+","+col;}
 
@@ -391,7 +388,6 @@ abilityInfo=null;
 mirrorPos=null;
 resetKnowledge();
 oppScanned=new Set();
-oppMirrorActive=false;
 lastMyAction=null;
 gameMsg.textContent="";
 gameLogEl.innerHTML="";
@@ -408,7 +404,6 @@ placementScreen.classList.add("hidden");
 gameScreen.classList.remove("hidden");
 resetKnowledge();
 oppScanned=new Set();
-oppMirrorActive=false;
 lastMyAction=null;
 mirrorPos=null;
 buildGameBoard();
@@ -715,14 +710,9 @@ markAttacked(p.row,p.col);
 // A miss proves that tile is empty. Hitting the decoy proves it too:
 // the server never lets a Mage place a mirror on its own tile.
 if(mine&&!p.hit)applyMissKnowledge(p.row,p.col);
-// My attack destroyed their decoy: area scans are trustworthy again.
-if(mine&&p.mirror)oppMirrorActive=false;
 }
 
 if(d.cardId==="heatMap")flashHeat(tilesInArea(p.row,p.col,3));
-
-// The opponent creating a decoy makes my area scans unreliable.
-if(!mine&&d.cardId==="mirrorImage")oppMirrorActive=true;
 
 // The opponent changing tiles invalidates every earlier deduction.
 if(!mine&&(d.category==="Movement"||d.cardId==="shadowStep"))staleKnowledge();
@@ -855,18 +845,13 @@ refreshTile(tile);
 // Apply a YES/NO answer to the region of my latest scan.
 // YES -> the enemy is inside that region (intersect).
 // NO  -> the enemy is not inside it (eliminate).
+// A Mage's decoy can answer area scans in the real character's place;
+// the answer is still treated at face value, so a decoy hit narrows
+// the map exactly as a real hit would.
 function applyScanKnowledge(answer){
 if(!lastMyAction)return;
 const tiles=regionForAction(lastMyAction.cardId,lastMyAction.public);
 if(tiles.length===0)return;
-
-// A Mage's mirror image can answer AREA scans in place of the real
-// position, so those answers prove nothing while it is active.
-const areaScan=lastMyAction.cardId==="scanArea"||lastMyAction.cardId==="eagleEye";
-if(areaScan&&opponentIsMage()&&oppMirrorActive){
-addLog("Area scan unreliable: the opponent's Mirror Image may have answered.",true);
-return;
-}
 
 if(answer==="YES"){
 intersectKnowledge(tiles);
@@ -904,9 +889,4 @@ const tile=tileAt(row,col);
 if(!tile)return;
 eliminateKnowledge([tile]);
 renderKnowledge();
-}
-
-function opponentIsMage(){
-const opp=getOpp();
-return !!opp&&opp.character==="Mage";
 }
