@@ -78,54 +78,54 @@ const CARD_DEFINITIONS = {
   /* ---------------- Scanning cards ---------------- */
 
   // Scan Row: pick a row, learn ONLY whether the opponent is in it.
+  // A Mage's mirror image counts as the opponent here.
   scanRow: {
     name: "Scan Row", category: "Scanning", copies: 3,
     validateTarget: ({ target }) => inBounds(target.row, 0) ? null : "Invalid row.",
-    resolve: ({ target, opponentPosition }) => ({
-      public: { row: target.row },
-      private: { answer: opponentPosition.row === target.row ? "YES" : "NO" }
+    resolve: (ctx) => ({
+      public: { row: ctx.target.row },
+      private: { answer: scanFinds(ctx, (b) => b.row === ctx.target.row) ? "YES" : "NO" }
     })
   },
 
   // Scan Column: pick a column, learn ONLY whether the opponent is in it.
+  // A Mage's mirror image counts as the opponent here.
   scanColumn: {
     name: "Scan Column", category: "Scanning", copies: 3,
     validateTarget: ({ target }) => inBounds(0, target.col) ? null : "Invalid column.",
-    resolve: ({ target, opponentPosition }) => ({
-      public: { col: target.col },
-      private: { answer: opponentPosition.col === target.col ? "YES" : "NO" }
+    resolve: (ctx) => ({
+      public: { col: ctx.target.col },
+      private: { answer: scanFinds(ctx, (b) => b.col === ctx.target.col) ? "YES" : "NO" }
     })
   },
 
   // Scan Area: pick one tile; learn ONLY whether the opponent is on
   // that tile or any of the 8 tiles around it (a 3x3 area, clipped at
-  // the board edges). If the opponent is a Mage with an active mirror
-  // image, there is a 50% chance the scan checks the MIRROR's tile
-  // instead of the real position.
+  // the board edges). A Mage's mirror image counts as the opponent here.
   scanArea: {
     name: "Scan Area", category: "Scanning", copies: 2,
     validateTarget: ({ target }) => inBounds(target.row, target.col) ? null : "Invalid tile.",
-    resolve: (ctx) => {
-      const checked = areaScanCheckPosition(ctx.game, ctx.opponent, ctx.opponentPosition);
-      const inside =
-        Math.abs(checked.row - ctx.target.row) <= 1 &&
-        Math.abs(checked.col - ctx.target.col) <= 1;
-      return {
-        public: { row: ctx.target.row, col: ctx.target.col },
-        private: { answer: inside ? "YES" : "NO" }
-      };
-    }
+    resolve: (ctx) => ({
+      public: { row: ctx.target.row, col: ctx.target.col },
+      private: {
+        answer: scanFinds(ctx, (b) =>
+          Math.abs(b.row - ctx.target.row) <= 1 &&
+          Math.abs(b.col - ctx.target.col) <= 1) ? "YES" : "NO"
+      }
+    })
   },
 
   // Scan Cross: pick one tile; learn ONLY whether the opponent is
-  // somewhere in that tile's row OR column.
+  // somewhere in that tile's row OR column. A Mage's mirror image
+  // counts as the opponent here.
   scanCross: {
     name: "Scan Cross", category: "Scanning", copies: 2,
     validateTarget: ({ target }) => inBounds(target.row, target.col) ? null : "Invalid tile.",
-    resolve: ({ target, opponentPosition }) => ({
-      public: { row: target.row, col: target.col },
+    resolve: (ctx) => ({
+      public: { row: ctx.target.row, col: ctx.target.col },
       private: {
-        answer: (opponentPosition.row === target.row || opponentPosition.col === target.col) ? "YES" : "NO"
+        answer: scanFinds(ctx, (b) =>
+          b.row === ctx.target.row || b.col === ctx.target.col) ? "YES" : "NO"
       }
     })
   },
@@ -289,7 +289,7 @@ const CHARACTER_ABILITIES = {
   // A new mirror can be created once the old one is destroyed.
   Mage: {
     id: "mirrorImage", name: "Mirror Image", type: "active", cooldown: 0,
-    desc: "Create a mirror image decoy on any tile. Attacks that hit it destroy the decoy instead of you, and area scans may be fooled by it."
+    desc: "Create a mirror image decoy on any tile. Attacks that hit it destroy the decoy instead of you, and every scan reports it as if it were you."
   },
   // Hunter: a free 3x3 scan around a chosen centre tile, available
   // every 5 of his turns.
@@ -307,15 +307,22 @@ const CHARACTER_ABILITIES = {
   }
 };
 
-// Area scans (Scan Area card and Hunter's Eagle Eye) can be fooled by
-// a Mage's mirror image: with an active mirror there is a 50% chance
-// the scan checks the mirror's tile instead of the real position.
-function areaScanCheckPosition(game, opponent, opponentPosition) {
+// Every position a scan can find the opponent at: their real square
+// plus a Mage's active mirror image. Any scan that touches the decoy
+// reports YES exactly as if it had found the real character — that is
+// the whole point of the mirror.
+function opponentBodies(game, opponent, opponentPosition) {
+  const bodies = [opponentPosition];
   const state = game.abilityState[opponent.id];
-  if (opponent.character === "Mage" && state.mirror && Math.random() < 0.5) {
-    return state.mirror;
+  if (opponent.character === "Mage" && state.mirror) {
+    bodies.push(state.mirror);
   }
-  return opponentPosition;
+  return bodies;
+}
+
+// True when any of the opponent's bodies satisfies the scan predicate.
+function scanFinds(ctx, predicate) {
+  return opponentBodies(ctx.game, ctx.opponent, ctx.opponentPosition).some(predicate);
 }
 
 // Shared by the Attack card and Knight's Power Strike: if the target
@@ -987,14 +994,13 @@ io.on("connection", (socket) => {
       return;
     }
 
-    // Hunter — Eagle Eye: a free 3x3 scan (mirror rules apply).
+    // Hunter — Eagle Eye: a free 3x3 scan (a Mage's mirror counts too).
     if (def.id === "eagleEye") {
       state.usedThisTurn = true;
       state.cooldownLeft = def.cooldown;
-      const checked = areaScanCheckPosition(game, opponent, room.positions[opponent.id]);
-      const inside =
-        Math.abs(checked.row - target.row) <= 1 &&
-        Math.abs(checked.col - target.col) <= 1;
+      const inside = opponentBodies(game, opponent, room.positions[opponent.id]).some((b) =>
+        Math.abs(b.row - target.row) <= 1 &&
+        Math.abs(b.col - target.col) <= 1);
       announce({ row: target.row, col: target.col });
       socket.emit("cardResult", {
         cardId: def.id,
