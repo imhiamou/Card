@@ -1,0 +1,46 @@
+name: Deploy static site to GitHub Pages
+
+# Replaces GitHub's built-in ("legacy") Pages builder, which
+# intermittently uploads the github-pages artifact more than once in a
+# single run and then fails with:
+#   "Multiple artifacts named github-pages were unexpectedly found"
+# This workflow uploads exactly one artifact per run.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one Pages deployment at a time; newer pushes wait rather than
+# racing an in-flight deployment.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      # The site is plain HTML/CSS/JS — upload the repo root as-is.
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
