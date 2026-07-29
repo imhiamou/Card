@@ -78,12 +78,23 @@ let gameOver=false;
 let abilityInfo=null;    // my ability status (from "abilityUpdate")
 let mirrorPos=null;      // my Mage mirror position (only mine)
 
-// Deduction knowledge built from MY private scan results:
-// - excluded: tiles known NOT to hold the enemy (NO answers, and the
-//   ruled-out half after Radar/Compass)
-// - lastMyAction: my most recent play (cardId + public target), used
-//   to know WHICH area a YES/NO answer refers to
-let excluded=new Set();
+// Deduction knowledge, driven ONLY by facts I am entitled to know
+// (my own private scan answers plus public attack results):
+// - candidates: every tile the enemy could still be on. Starts as the
+//   whole board and shrinks as scans rule areas in or out. Rendered
+//   yellow; everything ruled out is rendered green.
+// - narrowed: true once any real information exists, so the board
+//   stays neutral before the first scan.
+// - confirmedIn: true once a YES answer has pinned the enemy inside a
+//   known region, which is when "?" marks become meaningful.
+// - oppScanned: tiles the OPPONENT has scanned (shown with a red edge).
+// - oppMirrorActive: a Mage decoy makes AREA scans unreliable, so no
+//   deduction is drawn from them while it stands.
+let candidates=new Set();
+let narrowed=false;
+let confirmedIn=false;
+let oppScanned=new Set();
+let oppMirrorActive=false;
 let lastMyAction=null;
 function tileKey(row,col){return row+","+col;}
 
@@ -378,7 +389,9 @@ playedThisTurn=false;
 gameOver=false;
 abilityInfo=null;
 mirrorPos=null;
-excluded=new Set();
+resetKnowledge();
+oppScanned=new Set();
+oppMirrorActive=false;
 lastMyAction=null;
 gameMsg.textContent="";
 gameLogEl.innerHTML="";
@@ -393,7 +406,9 @@ showPlacementScreen();
 function showGameScreen(){
 placementScreen.classList.add("hidden");
 gameScreen.classList.remove("hidden");
-excluded=new Set();
+resetKnowledge();
+oppScanned=new Set();
+oppMirrorActive=false;
 lastMyAction=null;
 mirrorPos=null;
 buildGameBoard();
@@ -678,36 +693,39 @@ default:return [];
 }
 
 // Small board animation for every played card (both players see it).
-// Areas scanned by ME stay green; areas scanned by the OPPONENT stay
-// red.
+// Scans I play feed the deduction map; scans the OPPONENT plays are
+// outlined in red so I can see what they are learning about me.
 function animateAction(d){
 const p=d.public||{};
 const mine=d.by===socket.id;
-switch(d.cardId){
-case "scanRow":
-case "scanColumn":
-case "scanArea":
-case "scanCross":
-case "eagleEye":
-markScanned(regionForAction(d.cardId,p),mine);
-break;
-case "attack":
-case "knightStrike":
-markAttacked(p.row,p.col);
-break;
-case "heatMap":
-flashHeat(tilesInArea(p.row,p.col,3));
-break;
+const isScan=["scanRow","scanColumn","scanArea","scanCross","eagleEye"].includes(d.cardId);
+
+if(isScan){
+const region=regionForAction(d.cardId,p);
+region.forEach(flashTile);
+if(!mine){
+// Record what the opponent scanned (public knowledge).
+region.forEach((t)=>oppScanned.add(tileKey(Number(t.dataset.row),Number(t.dataset.col))));
+renderKnowledge();
 }
 }
 
-// Scanned tiles flash briefly and stay tinted: green for my scans,
-// red for the opponent's.
-function markScanned(tiles,mine){
-tiles.forEach((tile)=>{
-tile.classList.add(mine?"scannedMe":"scannedOpp");
-flashTile(tile);
-});
+if(d.cardId==="attack"||d.cardId==="knightStrike"){
+markAttacked(p.row,p.col);
+// A miss proves that tile is empty. Hitting the decoy proves it too:
+// the server never lets a Mage place a mirror on its own tile.
+if(mine&&!p.hit)applyMissKnowledge(p.row,p.col);
+// My attack destroyed their decoy: area scans are trustworthy again.
+if(mine&&p.mirror)oppMirrorActive=false;
+}
+
+if(d.cardId==="heatMap")flashHeat(tilesInArea(p.row,p.col,3));
+
+// The opponent creating a decoy makes my area scans unreliable.
+if(!mine&&d.cardId==="mirrorImage")oppMirrorActive=true;
+
+// The opponent changing tiles invalidates every earlier deduction.
+if(!mine&&(d.category==="Movement"||d.cardId==="shadowStep"))staleKnowledge();
 }
 
 // Attacked squares flash and stay marked with a cross.
@@ -735,12 +753,14 @@ setTimeout(()=>tile.classList.remove("flash"),950);
 }
 
 // A tile's visible content, by priority: my own character marker,
-// my mirror image, an attack cross, then a "?" deduction mark.
+// my mirror image, an attack cross, then a "?" on tiles where the
+// enemy could still be hiding.
 function refreshTile(tile){
 if(tile.classList.contains("you")){tile.textContent=myCharacterIcon();return;}
 if(tile.classList.contains("mirror")){tile.textContent="\u{1FA9E}";return;}
 if(tile.classList.contains("attacked")){tile.textContent="\u2716";return;}
-if(tile.classList.contains("maybe")){tile.textContent="?";return;}
+const key=tileKey(Number(tile.dataset.row),Number(tile.dataset.col));
+if(confirmedIn&&candidates.has(key)){tile.textContent="?";return;}
 tile.textContent="";
 }
 
@@ -775,61 +795,118 @@ flashTile(tile);
 }
 
 /* ============================================================
-   DEDUCTION KNOWLEDGE ("?" marks and yellow halves)
+   DEDUCTION KNOWLEDGE
+   ============================================================
+   The enemy's exact tile is never sent to this client. Everything
+   below is inferred from my OWN private answers plus public results,
+   then painted as: yellow = the enemy could be here,
+   green = the enemy is definitely NOT here.
    ============================================================ */
 
-// A tile is known to be empty: remember it and clear any "?" on it.
-function excludeTile(tile){
-excluded.add(tileKey(Number(tile.dataset.row),Number(tile.dataset.col)));
-if(tile.classList.contains("maybe")){
-tile.classList.remove("maybe");
-refreshTile(tile);
+// Reset to "no information": every tile is a candidate again.
+function resetKnowledge(){
+candidates=new Set();
+for(let row=0;row<BOARD_SIZE;row++){
+for(let col=0;col<BOARD_SIZE;col++)candidates.add(tileKey(row,col));
 }
-}
-
-// Mark a tile as a possible enemy location ("?").
-function setMaybe(tile){
-tile.classList.add("maybe");
-refreshTile(tile);
+narrowed=false;
+confirmedIn=false;
 }
 
-// Apply a YES/NO answer for the area of MY latest scan:
-// - NO: every tile of the area is known empty (clear its "?").
-// - YES: mark the area's tiles with "?", but SKIP tiles already known
-//   to be empty (e.g. a half ruled out by Compass, or a previous NO).
-function applyScanKnowledge(answer){
-if(!lastMyAction)return;
-const tiles=regionForAction(lastMyAction.cardId,lastMyAction.public);
-if(tiles.length===0)return;
-if(answer==="NO"){
-tiles.forEach(excludeTile);
-}else{
-tiles.forEach((tile)=>{
-const key=tileKey(Number(tile.dataset.row),Number(tile.dataset.col));
-if(!excluded.has(key))setMaybe(tile);
-});
-}
+// The enemy is somewhere in `tiles`: everything outside is ruled out.
+// Two overlapping facts therefore leave only their intersection — a
+// Radar half plus a Compass half leaves just the crossed quadrant.
+function intersectKnowledge(tiles){
+const keep=new Set(tiles.map((t)=>tileKey(Number(t.dataset.row),Number(t.dataset.col))));
+candidates.forEach((key)=>{if(!keep.has(key))candidates.delete(key);});
+narrowed=true;
 }
 
-// Radar/Compass: the indicated half stays highlighted in yellow as a
-// reminder, and the OTHER half is known empty (its "?" marks clear).
-function applyHalfKnowledge(cardId,answer){
+// The enemy is NOT in `tiles`: rule exactly those out, keep the rest.
+function eliminateKnowledge(tiles){
+tiles.forEach((t)=>candidates.delete(tileKey(Number(t.dataset.row),Number(t.dataset.col))));
+narrowed=true;
+}
+
+// The opponent moved (movement card or Shadow Step), so every previous
+// positional fact is stale — start the deduction map over.
+function staleKnowledge(){
+resetKnowledge();
+renderKnowledge();
+addLog("The opponent moved — your scan knowledge was reset.",true);
+}
+
+// Repaint the whole board from the current knowledge set.
+function renderKnowledge(){
 for(let row=0;row<BOARD_SIZE;row++){
 for(let col=0;col<BOARD_SIZE;col++){
 const tile=tileAt(row,col);
 if(!tile)continue;
-let inside;
-if(cardId==="radar"){
-inside=(answer==="North Half")?row<BOARD_SIZE/2:row>=BOARD_SIZE/2;
-}else{
-inside=(answer==="East Half")?col>=BOARD_SIZE/2:col<BOARD_SIZE/2;
+const key=tileKey(row,col);
+const possible=candidates.has(key);
+tile.classList.toggle("possible",narrowed&&possible);
+tile.classList.toggle("known",narrowed&&!possible);
+tile.classList.toggle("oppScan",oppScanned.has(key));
+refreshTile(tile);
 }
+}
+}
+
+// Apply a YES/NO answer to the region of my latest scan.
+// YES -> the enemy is inside that region (intersect).
+// NO  -> the enemy is not inside it (eliminate).
+function applyScanKnowledge(answer){
+if(!lastMyAction)return;
+const tiles=regionForAction(lastMyAction.cardId,lastMyAction.public);
+if(tiles.length===0)return;
+
+// A Mage's mirror image can answer AREA scans in place of the real
+// position, so those answers prove nothing while it is active.
+const areaScan=lastMyAction.cardId==="scanArea"||lastMyAction.cardId==="eagleEye";
+if(areaScan&&opponentIsMage()&&oppMirrorActive){
+addLog("Area scan unreliable: the opponent's Mirror Image may have answered.",true);
+return;
+}
+
+if(answer==="YES"){
+intersectKnowledge(tiles);
+confirmedIn=true;
+}else{
+eliminateKnowledge(tiles);
+}
+renderKnowledge();
+}
+
+// Radar/Compass name the half the enemy is in: keep that half, rule
+// out the other. Combined with a previous half this leaves only the
+// overlapping quarter highlighted.
+function applyHalfKnowledge(cardId,answer){
+const tiles=[];
+for(let row=0;row<BOARD_SIZE;row++){
+for(let col=0;col<BOARD_SIZE;col++){
+const inside=cardId==="radar"
+?((answer==="North Half")?row<BOARD_SIZE/2:row>=BOARD_SIZE/2)
+:((answer==="East Half")?col>=BOARD_SIZE/2:col<BOARD_SIZE/2);
 if(inside){
-tile.classList.add("halfKnown");
-flashTile(tile);
-}else{
-excludeTile(tile);
+const tile=tileAt(row,col);
+if(tile)tiles.push(tile);
 }
 }
 }
+intersectKnowledge(tiles);
+confirmedIn=true;
+renderKnowledge();
+}
+
+// A missed attack proves that one tile is empty.
+function applyMissKnowledge(row,col){
+const tile=tileAt(row,col);
+if(!tile)return;
+eliminateKnowledge([tile]);
+renderKnowledge();
+}
+
+function opponentIsMage(){
+const opp=getOpp();
+return !!opp&&opp.character==="Mage";
 }
