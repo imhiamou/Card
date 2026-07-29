@@ -44,7 +44,6 @@ dash:{target:"tile",desc:"Moves your hidden character exactly two tiles (two ste
 teleport:{target:"tile",desc:"Moves your hidden character to any other square.",hint:"Click any square to teleport to."},
 attack:{target:"tile",desc:"Strikes one tile. An exact hit wins the game!",hint:"Click the square you want to attack."},
 rest:{target:"none",desc:"Skips your action and immediately draws a replacement card."},
-revealTrail:{target:"none",desc:"Tells you whether the opponent moved during their last two turns."},
 radar:{target:"none",desc:"Tells you whether the opponent is in the North or South half. The half stays highlighted in yellow."},
 compass:{target:"none",desc:"Tells you whether the opponent is in the East or West half. The half stays highlighted in yellow."},
 heatMap:{target:"none",desc:"Highlights a 3x3 region that is LIKELY (not certain) to contain the opponent."}
