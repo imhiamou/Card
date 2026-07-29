@@ -46,7 +46,8 @@ attack:{target:"tile",desc:"Strikes one tile. An exact hit wins the game!",hint:
 rest:{target:"none",desc:"Skips your action and immediately draws a replacement card."},
 radar:{target:"none",desc:"Tells you whether the opponent is in the North or South half. The half stays highlighted in yellow."},
 compass:{target:"none",desc:"Tells you whether the opponent is in the East or West half. The half stays highlighted in yellow."},
-heatMap:{target:"none",desc:"Highlights a 3x3 region that is LIKELY (not certain) to contain the opponent."}
+heatMap:{target:"none",desc:"Highlights a 3x3 region that ALWAYS contains the opponent or their clone."},
+revealTrail:{target:"none",desc:"Learns the opponent's last movement card and starting square. Move One → 3x3 ?, Dash → 4x4 ?, Teleport → text only."}
 };
 
 // How each character ability is aimed (descriptions come from the
@@ -83,9 +84,9 @@ let mirrorPos=null;      // my Mage mirror position (only mine)
 // - confined:   null until a YES answer proves the enemy is inside a
 //               region; then the surviving candidates of that region.
 //               Rendered YELLOW with "?".
-// - hinted:     Heat Map's probabilistic region. Also rendered YELLOW
-//               with "?", but it proves nothing so it never turns any
-//               other tile green.
+// - hinted:     Heat Map / Reveal Trail hint region. Also rendered
+//               YELLOW with "?", but it proves nothing so it never
+//               turns any other tile green.
 // - oppScanned: tiles the OPPONENT has scanned (shown with a red edge).
 let eliminated=new Set();
 let confined=null;
@@ -337,6 +338,12 @@ if(result.answer==="YES"||result.answer==="NO"){
 applyScanKnowledge(result.answer);
 }else if(data.cardId==="radar"||data.cardId==="compass"){
 applyHalfKnowledge(data.cardId,result.answer);
+}else if(data.cardId==="revealTrail"&&result.cells&&result.cells.length){
+// Move One → 3×3 ?, Dash → 4×4 ? around the start square.
+const tiles=result.cells.map((c)=>tileAt(c.row,c.col)).filter(Boolean);
+hintKnowledge(tiles);
+tiles.forEach(flashTile);
+renderKnowledge();
 }
 }
 });
@@ -637,6 +644,7 @@ case "scanArea":return who+" scanned a 3x3 area around "+tileLabel(p.row,p.col)+
 case "scanCross":return who+" scanned a cross at "+tileLabel(p.row,p.col)+".";
 case "attack":return who+" attacked "+tileLabel(p.row,p.col)+(p.mirror?" — destroyed a Mirror Image!":p.hit?" — HIT!":" — miss.");
 case "heatMap":return who+" used Heat Map: region "+tileLabel(p.row,p.col)+" to "+tileLabel(p.row+2,p.col+2)+" highlighted.";
+case "revealTrail":return who+" used Reveal Trail.";
 case "knightStrike":return who+" used Power Strike on "+tileLabel(p.row,p.col)+(p.mirror?" — destroyed a Mirror Image!":p.hit?" — HIT!":" — miss.");
 case "eagleEye":return who+" used Eagle Eye around "+tileLabel(p.row,p.col)+".";
 case "mirrorImage":return who+" created a Mirror Image somewhere on the board.";
@@ -721,17 +729,29 @@ renderKnowledge();
 }
 }
 
-// The opponent changing tiles invalidates every earlier deduction.
-if(!mine&&(d.category==="Movement"||d.cardId==="shadowStep"))staleKnowledge();
+// The opponent changing tiles invalidates every earlier deduction
+// and clears attack X marks (they only last until the target moves).
+if(!mine&&(d.category==="Movement"||d.cardId==="shadowStep")){
+clearAttackMarks();
+staleKnowledge();
+}
 }
 
-// Attacked squares flash and stay marked with a cross.
+// Attacked squares flash and stay marked with a cross until the
+// opponent moves (then clearAttackMarks wipes them).
 function markAttacked(row,col){
 const tile=tileAt(row,col);
 if(!tile)return;
 tile.classList.add("attacked");
 refreshTile(tile);
 flashTile(tile);
+}
+
+function clearAttackMarks(){
+gameBoardEl.querySelectorAll(".tile.attacked").forEach((tile)=>{
+tile.classList.remove("attacked");
+refreshTile(tile);
+});
 }
 
 function flashTile(tile){
@@ -832,8 +852,8 @@ hinted.delete(key);
 });
 }
 
-// Heat Map: a region that is LIKELY to hold the enemy. Shown yellow
-// with "?" but never used to prove anything, so it replaces the
+// Heat Map / Reveal Trail: a region that may hold the enemy. Shown
+// yellow with "?" but never used to prove anything, so it replaces the
 // previous hint and leaves every other tile untouched.
 function hintKnowledge(tiles){
 hinted=new Set(keysOf(tiles).filter((k)=>!eliminated.has(k)));
