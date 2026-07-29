@@ -137,7 +137,7 @@ const CARD_DEFINITIONS = {
 
   // Move One: move exactly one tile up, down, left or right.
   moveOne: {
-    name: "Move One", category: "Movement", copies: 3,
+    name: "Move One", category: "Movement", copies: 2,
     validateTarget: ({ target, myPosition }) => {
       if (!inBounds(target.row, target.col)) return "Invalid destination.";
       return manhattan(target, myPosition) === 1 ? null : "Move One must move exactly one tile.";
@@ -150,7 +150,7 @@ const CARD_DEFINITIONS = {
 
   // Dash: move exactly two tiles (two steps of movement in total).
   dash: {
-    name: "Dash", category: "Movement", copies: 2,
+    name: "Dash", category: "Movement", copies: 1,
     validateTarget: ({ target, myPosition }) => {
       if (!inBounds(target.row, target.col)) return "Invalid destination.";
       return manhattan(target, myPosition) === 2 ? null : "Dash must move exactly two tiles.";
@@ -205,21 +205,6 @@ const CARD_DEFINITIONS = {
       private: { answer: "You rested and drew a replacement card." },
       drawOne: true
     })
-  },
-
-  // Reveal Trail: learn whether the opponent played a movement card
-  // during their last two turns.
-  revealTrail: {
-    name: "Reveal Trail", category: "Special", copies: 1,
-    resolve: ({ game, opponent }) => {
-      const moved = game.moveHistory[opponent.id].slice(-2).some(Boolean);
-      return {
-        public: {},
-        private: {
-          answer: moved ? "The opponent moved during the last two turns." : "The opponent has not moved."
-        }
-      };
-    }
   },
 
   // Radar: learn whether the opponent is in the north or south half.
@@ -385,8 +370,6 @@ function serializeHand(hand) {
  *       decks:       { <socketId>: [card, ...] },    // face-down draw piles
  *       hands:       { <socketId>: [card, ...] },    // private hands
  *       discards:    { <socketId>: [card, ...] },    // discard piles
- *       moveHistory: { <socketId>: [bool, ...] },    // one entry per turn:
- *                                                    // did that turn move?
  *       over: false
  *     }
  *   }
@@ -564,7 +547,6 @@ function startGame(room) {
     decks: {},
     hands: {},
     discards: {},
-    moveHistory: {},
     abilityState: {},
     over: false
   };
@@ -573,7 +555,6 @@ function startGame(room) {
     room.game.decks[player.id] = buildShuffledDeck();
     room.game.hands[player.id] = [];
     room.game.discards[player.id] = [];
-    room.game.moveHistory[player.id] = [];
     room.game.abilityState[player.id] = {
       cooldownLeft: 0,
       usedThisTurn: false,
@@ -823,9 +804,6 @@ io.on("connection", (socket) => {
     }
 
     const outcome = definition.resolve(ctx);
-
-    // Track movement per turn so Reveal Trail can answer honestly.
-    game.moveHistory[socket.id].push(definition.category === "Movement");
 
     /*
      * "actionPlayed" — broadcast to BOTH players: who played which
