@@ -1,0 +1,85 @@
+/* Word Chain — styles only. Does not alter Hidden Hunt layout. */
+
+#wordChainScreen{
+width:440px;
+max-width:96vw;
+}
+
+.wcPlayers{
+display:flex;
+justify-content:space-between;
+align-items:center;
+gap:8px;
+margin-bottom:8px;
+}
+
+.wcPlayer{
+background:#3a4256;
+border-radius:8px;
+padding:8px 12px;
+min-width:110px;
+text-align:center;
+font-size:14px;
+}
+
+.wcVs{
+font-weight:bold;
+color:#9db2d0;
+}
+
+#wcTurnIndicator{
+text-align:center;
+font-size:18px;
+margin:8px 0;
+}
+
+#wcRequiredLetter{
+text-align:center;
+color:#c5d2e8;
+font-size:14px;
+min-height:1.4em;
+}
+
+.wcInputRow{
+display:flex;
+gap:8px;
+align-items:stretch;
+}
+
+.wcInputRow input{
+flex:1;
+margin:8px 0;
+}
+
+.wcInputRow button{
+width:auto;
+margin:8px 0;
+padding:10px 16px;
+}
+
+#wcChainList{
+background:#1e2430;
+border-radius:8px;
+max-height:260px;
+overflow-y:auto;
+padding:10px;
+margin-top:10px;
+font-size:14px;
+}
+
+.wcChainItem{
+padding:4px 0;
+border-bottom:1px solid #2f3848;
+}
+
+.wcChainItem:last-child{
+border-bottom:none;
+color:#ffd866;
+font-weight:bold;
+}
+
+#wcMsg{
+min-height:1.4em;
+color:#c5d2e8;
+font-size:14px;
+}

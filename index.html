@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Hidden Duel</title>
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="wordchain.css">
 <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
 </head>
 <body>
@@ -28,6 +29,12 @@
 <div class="charOption" data-character="Hunter"><span class="charEmoji">&#x1F3F9;</span> Hunter</div>
 <div class="charOption" data-character="Rogue"><span class="charEmoji">&#x1F5E1;&#xFE0F;</span> Rogue</div>
 </div>
+
+<h3>Game</h3>
+<select id="gameSelect">
+<option value="hidden-hunt" selected>Hidden Hunt</option>
+<option value="word-chain">Word Chain</option>
+</select>
 
 <!-- The lobby creator chooses their own code (4-8 letters/numbers) -->
 <input id="createCode" placeholder="Choose Lobby Code (4-8 letters/numbers)" maxlength="8">
@@ -96,6 +103,10 @@
 </div>
 </div>
 
+<!-- Word Chain screen (mounted by wordchain.js; unused for Hidden Hunt) -->
+<div class="box hidden" id="wordChainScreen"></div>
+
+<script src="wordchain.js"></script>
 <script src="index.js"></script>
 </body>
 </html>
