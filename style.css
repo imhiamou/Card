@@ -125,18 +125,23 @@ pointer-events:none;
 opacity:.55;
 }
 
-/* Reveal colours (later rules override earlier ones on overlap):
-   green = areas YOU scanned, red = areas the OPPONENT scanned,
-   yellow = half of the map indicated by your Radar/Compass (stays
-   highlighted as a reminder). */
-.tile.scannedMe{
+/* Deduction map (only ever drawn from facts this client may know):
+   green  = the enemy is definitely NOT here (ruled out)
+   yellow = the enemy could still be here (narrowed candidates)
+   A Radar half plus a Compass half therefore leaves only the crossed
+   quadrant yellow, with the rest of both halves turning green. */
+.tile.known{
 background:#2e5d43;
 }
-.tile.scannedOpp{
-background:#5d3340;
-}
-.tile.halfKnown{
+.tile.possible{
 background:#6e622a;
+color:#ffd866;
+font-weight:bold;
+}
+/* The opponent scanned here (public info) — red edge, so it composes
+   with the green/yellow deduction colours instead of hiding them. */
+.tile.oppScan{
+box-shadow:inset 0 0 0 2px #a8455a;
 }
 /* Temporary heat map highlight (public for both players) */
 .tile.heat{
@@ -155,10 +160,9 @@ outline:1px solid #4f9cff;
 .tile.mirror{
 outline:1px dashed #b48fd0;
 }
-/* "?" = tiles where the enemy might be, deduced from YOUR scans */
-.tile.maybe{
-color:#ffd866;
-font-weight:bold;
+/* Hover feedback that works on top of any deduction colour */
+.tile:hover{
+filter:brightness(1.25);
 }
 /* Brief highlight animation whenever a tile is part of a played card */
 .tile.flash{
