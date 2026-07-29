@@ -999,3 +999,6 @@ rebuildKnowledgeAfterMirror();
 renderKnowledge();
 addLog("Mirror Image destroyed — scan traps on the decoy were cleared. Radar/Compass halves kept.",true);
 }
+
+// Wire Word Chain to the shared lobby socket (no Hidden Hunt gameplay changes).
+if(window.WordChain)WordChain.init(socket);

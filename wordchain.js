@@ -114,8 +114,27 @@
     wcWordInput.value = "";
   }
 
+  function wireControls() {
+    if (!wcSubmitBtn || wcSubmitBtn.dataset.wired) return;
+    wcSubmitBtn.dataset.wired = "1";
+    wcSubmitBtn.onclick = submitWord;
+    wcWordInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") submitWord();
+    });
+    wcPlayAgainBtn.onclick = () => {
+      if (!currentRoom) return;
+      socket.emit("wordChainPlayAgain", { roomCode: currentRoom });
+      wcPlayAgainBtn.disabled = true;
+      wcPlayAgainBtn.textContent = "Waiting for opponent...";
+    };
+  }
+
   function onStarted(data) {
-    if (!bindDom()) return;
+    if (!bindDom()) {
+      console.error("Word Chain screen missing from the page.");
+      return;
+    }
+    wireControls();
     currentRoom = data.room;
     players = data.players || [];
     myTurn = data.yourTurn;
@@ -131,20 +150,9 @@
 
   function init(sharedSocket) {
     socket = sharedSocket;
-    if (!bindDom()) return;
 
-    wcSubmitBtn.onclick = submitWord;
-    wcWordInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") submitWord();
-    });
-
-    wcPlayAgainBtn.onclick = () => {
-      if (!currentRoom) return;
-      socket.emit("wordChainPlayAgain", { roomCode: currentRoom });
-      wcPlayAgainBtn.disabled = true;
-      wcPlayAgainBtn.textContent = "Waiting for opponent...";
-    };
-
+    // Register listeners immediately — do not depend on DOM bind succeeding
+    // first, or a merge/DOM miss would leave players stuck on "Waiting...".
     socket.on("wordChainStarted", onStarted);
 
     socket.on("wordPlayed", (data) => {
@@ -179,6 +187,8 @@
       hideWordChainScreen();
       currentRoom = null;
     });
+
+    if (bindDom()) wireControls();
   }
 
   function isActive() {
