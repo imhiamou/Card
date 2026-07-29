@@ -88,10 +88,15 @@ let mirrorPos=null;      // my Mage mirror position (only mine)
 //               YELLOW with "?", but it proves nothing so it never
 //               turns any other tile green.
 // - oppScanned: tiles the OPPONENT has scanned (shown with a red edge).
+// - halfFacts:  Radar/Compass answers kept so they can be re-applied
+//               after a Mirror Image destroy collapses scan traps.
+// - attackMisses: tiles proven empty by a missed attack / destroyed decoy.
 let eliminated=new Set();
 let confined=null;
 let hinted=new Set();
 let oppScanned=new Set();
+let halfFacts=[];
+let attackMisses=new Set();
 let lastMyAction=null;
 function tileKey(row,col){return row+","+col;}
 
@@ -488,6 +493,8 @@ if(abilityInfo.type==="passive"){
 statusText=abilityInfo.passiveUsed?"Used":"Passive";
 }else if(abilityInfo.mirror){
 statusText="Mirror active";
+}else if(abilityInfo.mirrorUsed){
+statusText="Used";
 }else if(abilityInfo.cooldownLeft>0){
 statusText="Cooldown: "+abilityInfo.cooldownLeft;
 }else if(abilityInfo.usedThisTurn){
@@ -717,9 +724,13 @@ renderKnowledge();
 
 if(d.cardId==="attack"||d.cardId==="knightStrike"){
 markAttacked(p.row,p.col);
-// A miss proves that tile is empty. Hitting the decoy proves it too:
-// the server never lets a Mage place a mirror on its own tile.
-if(mine&&!p.hit)applyMissKnowledge(p.row,p.col);
+// A miss proves that tile is empty. Hitting the decoy proves it too,
+// and also rebuilds the deduction map so Radar/Compass ? return
+// (YES-scan traps may have collapsed onto the decoy alone).
+if(mine&&!p.hit){
+if(p.mirror)applyMirrorDestroyedKnowledge(p.row,p.col);
+else applyMissKnowledge(p.row,p.col);
+}
 }
 
 if(d.cardId==="heatMap"){
@@ -822,10 +833,29 @@ function resetKnowledge(){
 eliminated=new Set();
 confined=null;
 hinted=new Set();
+halfFacts=[];
+attackMisses=new Set();
 }
 
 function keysOf(tiles){
 return tiles.map((t)=>tileKey(Number(t.dataset.row),Number(t.dataset.col)));
+}
+
+// Tiles belonging to a Radar/Compass half answer.
+function halfTiles(cardId,answer){
+const tiles=[];
+for(let row=0;row<BOARD_SIZE;row++){
+for(let col=0;col<BOARD_SIZE;col++){
+const inside=cardId==="radar"
+?((answer==="North Half")?row<BOARD_SIZE/2:row>=BOARD_SIZE/2)
+:((answer==="East Half")?col>=BOARD_SIZE/2:col<BOARD_SIZE/2);
+if(inside){
+const tile=tileAt(row,col);
+if(tile)tiles.push(tile);
+}
+}
+}
+return tiles;
 }
 
 // The enemy IS somewhere in `tiles` (a YES answer). Narrow the confined
@@ -860,6 +890,38 @@ hinted.delete(key);
 // previous hint and leaves every other tile untouched.
 function hintKnowledge(tiles){
 hinted=new Set(keysOf(tiles).filter((k)=>!eliminated.has(k)));
+}
+
+// Rebuild deduction from facts that survive a destroyed Mirror Image:
+// attack misses stay green; Radar/Compass halves are re-applied so "?"
+// candidates return. YES-scan traps are dropped — they may have been
+// the decoy alone.
+function rebuildKnowledgeAfterMirror(){
+const misses=new Set(attackMisses);
+const halves=halfFacts.slice();
+resetKnowledge();
+attackMisses=misses;
+halfFacts=halves;
+eliminated=new Set(attackMisses);
+halves.forEach((fact)=>{
+const tiles=halfTiles(fact.cardId,fact.answer);
+if(tiles.length)confineKnowledge(tiles);
+});
+// If there is still no candidate region (no Radar/Compass yet), mark
+// every non-eliminated tile as a soft "?" so the board is not blank.
+if(!confined||confined.size===0){
+confined=null;
+const open=[];
+for(let row=0;row<BOARD_SIZE;row++){
+for(let col=0;col<BOARD_SIZE;col++){
+const key=tileKey(row,col);
+if(eliminated.has(key))continue;
+const tile=tileAt(row,col);
+if(tile)open.push(tile);
+}
+}
+hintKnowledge(open);
+}
 }
 
 // The opponent moved (movement card or Shadow Step), so every previous
@@ -911,29 +973,29 @@ renderKnowledge();
 // Radar/Compass name the half the enemy is in: that is a YES for the
 // whole half, so it confines and rules out the other half.
 function applyHalfKnowledge(cardId,answer){
-const tiles=[];
-for(let row=0;row<BOARD_SIZE;row++){
-for(let col=0;col<BOARD_SIZE;col++){
-const inside=cardId==="radar"
-?((answer==="North Half")?row<BOARD_SIZE/2:row>=BOARD_SIZE/2)
-:((answer==="East Half")?col>=BOARD_SIZE/2:col<BOARD_SIZE/2);
-if(inside){
-const tile=tileAt(row,col);
-if(tile)tiles.push(tile);
-}
-}
-}
+halfFacts=halfFacts.filter((f)=>f.cardId!==cardId);
+halfFacts.push({cardId,answer});
+const tiles=halfTiles(cardId,answer);
 confineKnowledge(tiles);
 renderKnowledge();
 }
 
 // A missed attack proves that one tile is empty.
 function applyMissKnowledge(row,col){
+attackMisses.add(tileKey(row,col));
 const tile=tileAt(row,col);
 if(!tile)return;
 eliminateKnowledge([tile]);
 renderKnowledge();
 }
 
-// Wire Word Chain to the shared lobby socket (no Hidden Hunt gameplay changes).
-if(window.WordChain)WordChain.init(socket);
+// Destroying a Mirror Image proves that tile empty, but YES-scan
+// confinement may have narrowed onto the decoy alone — leaving the
+// board with no "?" even though the Mage is still alive. Rebuild from
+// attack misses + Radar/Compass halves so candidates return.
+function applyMirrorDestroyedKnowledge(row,col){
+attackMisses.add(tileKey(row,col));
+rebuildKnowledgeAfterMirror();
+renderKnowledge();
+addLog("Mirror Image destroyed — scan traps on the decoy were cleared. Radar/Compass halves kept.",true);
+}

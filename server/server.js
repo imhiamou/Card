@@ -328,13 +328,13 @@ const CHARACTER_ABILITIES = {
     id: "knightStrike", name: "Power Strike", type: "active", cooldown: 3,
     desc: "Free attack on one tile that does NOT use up your card turn. Available every 3 turns."
   },
-  // Mage: place a mirror image decoy anywhere. Attacks that hit the
-  // mirror destroy the decoy instead of the Mage, and area scans have
-  // a 50% chance of checking the mirror instead of the real position.
-  // A new mirror can be created once the old one is destroyed.
+  // Mage: place a mirror image decoy anywhere — once per game.
+  // Attacks that hit the mirror destroy the decoy instead of the Mage,
+  // and every scan reports it as if it were you. After it is destroyed
+  // it cannot be recreated.
   Mage: {
     id: "mirrorImage", name: "Mirror Image", type: "active", cooldown: 0,
-    desc: "Create a mirror image decoy on any tile. Attacks that hit it destroy the decoy instead of you, and every scan reports it as if it were you."
+    desc: "Once per game: create a mirror image decoy on any tile. Attacks that hit it destroy the decoy instead of you, and every scan reports it as if it were you. Cannot be used again after it is destroyed."
   },
   // Hunter: a free 3x3 scan around a chosen centre tile, available
   // every 5 of his turns.
@@ -495,9 +495,10 @@ function sendAbilityUpdate(room, playerId) {
     cooldownLeft: state.cooldownLeft,
     usedThisTurn: state.usedThisTurn,
     mirror: state.mirror,
+    mirrorUsed: !!state.mirrorUsed,
     passiveUsed: state.passiveUsed,
     ready: def.type === "active" && state.cooldownLeft === 0 && !state.usedThisTurn &&
-      !(def.id === "mirrorImage" && state.mirror)
+      !(def.id === "mirrorImage" && (state.mirror || state.mirrorUsed))
   });
 }
 
@@ -620,8 +621,9 @@ function startGame(room) {
     room.game.abilityState[player.id] = {
       cooldownLeft: 0,
       usedThisTurn: false,
-      mirror: null,      // Mage's mirror image position
-      passiveUsed: false // Rogue's once-per-game Shadow Step
+      mirror: null,       // Mage's mirror image position (while active)
+      mirrorUsed: false,  // Mage: Mirror Image is once per game
+      passiveUsed: false  // Rogue's once-per-game Shadow Step
     };
     drawCards(room.game, player.id, STARTING_HAND_SIZE);
   });
@@ -1025,8 +1027,13 @@ io.on("connection", (socket) => {
       return; // the turn continues — the Knight still plays a card
     }
 
-    // Mage — Mirror Image: place a decoy on any tile except your own.
+    // Mage — Mirror Image: once per game, place a decoy on any tile
+    // except your own. Destroyed decoys cannot be replaced.
     if (def.id === "mirrorImage") {
+      if (state.mirrorUsed) {
+        socket.emit("errorMessage", "Mirror Image can only be used once per game.");
+        return;
+      }
       if (state.mirror) {
         socket.emit("errorMessage", "Your mirror image is still active.");
         return;
@@ -1037,6 +1044,7 @@ io.on("connection", (socket) => {
         return;
       }
       state.usedThisTurn = true;
+      state.mirrorUsed = true;
       state.mirror = { row: target.row, col: target.col };
       announce({}); // the opponent learns a mirror exists, not where
       socket.emit("cardResult", {
