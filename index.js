@@ -57,6 +57,9 @@ input.addEventListener("input",()=>{input.value=input.value.toUpperCase();});
 document.getElementById("createBtn").onclick=()=>{
 const room=document.getElementById("createCode").value.trim().toUpperCase();
 if(!ROOM_CODE_PATTERN.test(room)){alert("Lobby code must be 4-8 letters or numbers");return;}
+// Always read the selected mode from the UI at click time.
+const modeInput=document.querySelector('input[name="gameMode"]:checked');
+if(modeInput)selectedGameMode=modeInput.value;
 socket.emit("createLobby",{
 name:selectedName,
 character:selectedGameMode==="hidden-hunt"?selectedCharacter:null,
