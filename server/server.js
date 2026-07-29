@@ -73,6 +73,20 @@ function manhattan(a, b) {
   return Math.abs(a.row - b.row) + Math.abs(a.col - b.col);
 }
 
+// Build an NxN square of tiles centred as near as possible on `center`
+// (clipped to the board). Odd sizes sit on the tile; even sizes bias
+// toward top-left of the four near-centre tiles.
+function squareAround(center, size) {
+  const half = Math.floor((size - 1) / 2);
+  const top = Math.max(0, Math.min(BOARD_SIZE - size, center.row - half));
+  const left = Math.max(0, Math.min(BOARD_SIZE - size, center.col - half));
+  const cells = [];
+  for (let r = top; r < top + size; r++) {
+    for (let c = left; c < left + size; c++) cells.push({ row: r, col: c });
+  }
+  return { top, left, size, cells };
+}
+
 const CARD_DEFINITIONS = {
 
   /* ---------------- Scanning cards ---------------- */
@@ -142,7 +156,12 @@ const CARD_DEFINITIONS = {
       if (!inBounds(target.row, target.col)) return "Invalid destination.";
       return manhattan(target, myPosition) === 1 ? null : "Move One must move exactly one tile.";
     },
-    resolve: ({ room, playerId, target }) => {
+    resolve: ({ room, game, playerId, myPosition, target }) => {
+      // Record the start tile so Reveal Trail can reconstruct the move.
+      game.lastMovement[playerId] = {
+        cardId: "moveOne",
+        from: { row: myPosition.row, col: myPosition.col }
+      };
       room.positions[playerId] = { row: target.row, col: target.col };
       return { public: {}, private: { position: { row: target.row, col: target.col } } };
     }
@@ -155,7 +174,11 @@ const CARD_DEFINITIONS = {
       if (!inBounds(target.row, target.col)) return "Invalid destination.";
       return manhattan(target, myPosition) === 2 ? null : "Dash must move exactly two tiles.";
     },
-    resolve: ({ room, playerId, target }) => {
+    resolve: ({ room, game, playerId, myPosition, target }) => {
+      game.lastMovement[playerId] = {
+        cardId: "dash",
+        from: { row: myPosition.row, col: myPosition.col }
+      };
       room.positions[playerId] = { row: target.row, col: target.col };
       return { public: {}, private: { position: { row: target.row, col: target.col } } };
     }
@@ -169,7 +192,11 @@ const CARD_DEFINITIONS = {
       if (!inBounds(target.row, target.col)) return "Invalid destination.";
       return manhattan(target, myPosition) > 0 ? null : "Teleport must move you to a different square.";
     },
-    resolve: ({ room, playerId, target }) => {
+    resolve: ({ room, game, playerId, myPosition, target }) => {
+      game.lastMovement[playerId] = {
+        cardId: "teleport",
+        from: { row: myPosition.row, col: myPosition.col }
+      };
       room.positions[playerId] = { row: target.row, col: target.col };
       return { public: {}, private: { position: { row: target.row, col: target.col } } };
     }
@@ -225,29 +252,61 @@ const CARD_DEFINITIONS = {
     })
   },
 
-  // Heat Map: the server highlights a random 3x3 region that is
-  // MORE LIKELY (70%) to contain the opponent — intentionally
-  // imprecise, so a highlight is a hint, never a guarantee.
+  // Heat Map: highlight a random 3x3 that ALWAYS covers the opponent
+  // or their active Mage mirror (clone). Never a miss.
   heatMap: {
     name: "Heat Map", category: "Special", copies: 2,
-    resolve: ({ opponentPosition }) => {
-      const maxTL = BOARD_SIZE - 3; // top-left range so the 3x3 fits
-      let row, col;
-      if (Math.random() < 0.7) {
-        // Pick a region that covers the opponent's square.
-        const rMin = Math.max(0, opponentPosition.row - 2);
-        const rMax = Math.min(maxTL, opponentPosition.row);
-        const cMin = Math.max(0, opponentPosition.col - 2);
-        const cMax = Math.min(maxTL, opponentPosition.col);
-        row = rMin + Math.floor(Math.random() * (rMax - rMin + 1));
-        col = cMin + Math.floor(Math.random() * (cMax - cMin + 1));
-      } else {
-        // Pick a fully random region as noise.
-        row = Math.floor(Math.random() * (maxTL + 1));
-        col = Math.floor(Math.random() * (maxTL + 1));
-      }
-      // The highlighted region is public for both players.
+    resolve: ({ game, opponent, opponentPosition }) => {
+      const bodies = opponentBodies(game, opponent, opponentPosition);
+      const body = bodies[Math.floor(Math.random() * bodies.length)];
+      const maxTL = BOARD_SIZE - 3;
+      const rMin = Math.max(0, body.row - 2);
+      const rMax = Math.min(maxTL, body.row);
+      const cMin = Math.max(0, body.col - 2);
+      const cMax = Math.min(maxTL, body.col);
+      const row = rMin + Math.floor(Math.random() * (rMax - rMin + 1));
+      const col = cMin + Math.floor(Math.random() * (cMax - cMin + 1));
       return { public: { row, col } };
+    }
+  },
+
+  // Reveal Trail: learn the opponent's last movement card and the
+  // square they left. Move One → private 3×3 ? around the start;
+  // Dash → private 4×4 ? around the start; Teleport → text only.
+  // Deck carries one Reveal Trail per movement card (2+1+1 = 4).
+  revealTrail: {
+    name: "Reveal Trail", category: "Special", copies: 4,
+    resolve: ({ game, opponent }) => {
+      const last = game.lastMovement[opponent.id];
+      if (!last) {
+        return {
+          public: {},
+          private: { answer: "Opponent has not moved yet.", cells: [] }
+        };
+      }
+      const card = CARD_DEFINITIONS[last.cardId];
+      const cardName = card ? card.name : last.cardId;
+      const from = last.from;
+      const fromLabel = String.fromCharCode(65 + from.col) + (from.row + 1);
+      let cells = [];
+      let size = 0;
+      if (last.cardId === "moveOne") {
+        ({ size, cells } = squareAround(from, 3));
+      } else if (last.cardId === "dash") {
+        ({ size, cells } = squareAround(from, 4));
+      }
+      // Teleport: no board highlight — text only.
+      return {
+        public: {},
+        private: {
+          answer: "Opponent used " + cardName + " from " + fromLabel + ".",
+          cardId: last.cardId,
+          cardName,
+          from,
+          size,
+          cells
+        }
+      };
     }
   }
 };
@@ -548,6 +607,8 @@ function startGame(room) {
     hands: {},
     discards: {},
     abilityState: {},
+    // Last movement card each player played, for Reveal Trail.
+    lastMovement: {},
     over: false
   };
 
