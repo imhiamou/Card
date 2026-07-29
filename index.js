@@ -131,7 +131,8 @@ input.addEventListener("input",()=>{input.value=input.value.toUpperCase();});
 document.getElementById("createBtn").onclick=()=>{
 const room=document.getElementById("createCode").value.trim().toUpperCase();
 if(!ROOM_CODE_PATTERN.test(room)){alert("Lobby code must be 4-8 letters or numbers");return;}
-socket.emit("createLobby",{name:selectedName,character:selectedCharacter,room});
+const game=document.getElementById("gameSelect").value==="word-chain"?"word-chain":"hidden-hunt";
+socket.emit("createLobby",{name:selectedName,character:selectedCharacter,room,game});
 status.textContent="Creating lobby...";
 };
 
@@ -170,6 +171,8 @@ status.textContent="Other player disconnected.";
 });
 
 socket.on("errorMessage",(msg)=>{
+// Word Chain handles its own rejected-word messages when active.
+if(window.WordChain&&WordChain.isActive()&&WordChain.showError(msg))return;
 // During the game, a rejected play (e.g. an invalid Dash target) must
 // NOT freeze the match: unlock the hand so the player can try again,
 // and show the reason on screen instead of an alert.

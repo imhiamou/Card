@@ -1,6 +1,7 @@
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
+const wordchain = require("./wordchain");
 
 const app = express();
 const server = http.createServer(app);
@@ -655,6 +656,9 @@ function discardCard(game, playerId, cardIndex) {
 
 io.on("connection", (socket) => {
 
+  // Word Chain socket handlers (no-ops unless the lobby gameMode is word-chain).
+  wordchain.registerSocket(socket, io, rooms);
+
   /*
    * "createLobby" — a player creates a new lobby with a code THEY
    * chose (4-8 letters/numbers, auto-uppercased, must be unique).
@@ -666,6 +670,8 @@ io.on("connection", (socket) => {
     const name = data && typeof data.name === "string" ? data.name.trim() : "";
     const character = data && typeof data.character === "string" ? data.character : "";
     const roomCode = data && typeof data.room === "string" ? data.room.trim().toUpperCase() : "";
+    // Lobby game mode: default Hidden Hunt. "word-chain" launches Word Chain only.
+    const gameMode = data && data.game === "word-chain" ? "word-chain" : "hidden-hunt";
 
     if (!PLAYER_NAMES.includes(name)) {
       socket.emit("errorMessage", "Choose a valid name.");
@@ -687,6 +693,9 @@ io.on("connection", (socket) => {
     }
 
     rooms[roomCode] = {
+      // Which game this lobby runs. Stored separately from room.game
+      // (Hidden Hunt's card-match state) so existing HH logic is untouched.
+      gameMode,
       players: [{ id: socket.id, name, character }],
       positions: {},
       ready: {},
@@ -696,7 +705,7 @@ io.on("connection", (socket) => {
     };
 
     socket.join(roomCode);
-    socket.emit("lobbyCreated", { room: roomCode });
+    socket.emit("lobbyCreated", { room: roomCode, game: gameMode });
   });
 
   /*
@@ -740,6 +749,12 @@ io.on("connection", (socket) => {
 
     room.players.push({ id: socket.id, name, character });
     socket.join(roomCode);
+
+    // Router: Word Chain lobbies never enter Hidden Hunt placement.
+    if (room.gameMode === "word-chain") {
+      wordchain.onBothPlayersJoined(room, io, roomCode);
+      return;
+    }
 
     // Both players are in — start the placement phase on both clients.
     io.to(roomCode).emit("gameStart", {

@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Word Chain</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="wordchain.css">
+</head>
+<body>
+<!--
+  Word Chain UI lives in the shared lobby page (index.html).
+  This file documents the isolated Word Chain screen markup and
+  styles; the live game is mounted by wordchain.js into #wordChainScreen.
+-->
+<div class="box" id="wordChainScreen">
+<h2>Word Chain</h2>
+<div class="wcPlayers">
+<div class="wcPlayer" id="wcMyName">You</div>
+<div class="wcVs">VS</div>
+<div class="wcPlayer" id="wcOppName">Opponent</div>
+</div>
+<h2 id="wcTurnIndicator"></h2>
+<p id="wcRequiredLetter"></p>
+<div class="wcInputRow">
+<input id="wcWordInput" placeholder="Enter a word" autocomplete="off" maxlength="40">
+<button type="button" id="wcSubmitBtn">Submit</button>
+</div>
+<p id="wcMsg"></p>
+<div id="wcChainList"></div>
+<button type="button" id="wcPlayAgainBtn" class="hidden">Play Again</button>
+</div>
+<p style="text-align:center;color:#9db2d0">Open <a href="index.html" style="color:#ffd866">index.html</a> to play via the lobby.</p>
+</body>
+</html>
