@@ -33,6 +33,27 @@ font-size:18px;
 margin:8px 0;
 }
 
+#wcTimer,
+.wcTimer{
+text-align:center;
+font-size:28px;
+font-weight:bold;
+margin:4px 0 8px;
+color:#ffd866;
+letter-spacing:1px;
+}
+
+#wcTimer.urgent,
+.wcTimer.urgent{
+color:#ff6b6b;
+animation:wcPulse .6s ease infinite alternate;
+}
+
+@keyframes wcPulse{
+from{opacity:1;}
+to{opacity:.55;}
+}
+
 #wcRequiredLetter{
 text-align:center;
 color:#c5d2e8;

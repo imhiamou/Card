@@ -4,15 +4,23 @@
  * Loaded by server.js only as a lobby router target. Does not alter
  * Hidden Hunt handlers or card logic. Uses its own events so it cannot
  * collide with Hidden Hunt's "turnChanged" / "gameStarted" / etc.
+ *
+ * Each turn has a 20-second timer. Timing out ends the game (opponent wins).
+ * Words must be at least 3 letters (no 2-letter words).
  */
-const { isValidWord, normalizeWord } = require("./dictionary");
+const { isValidWord, normalizeWord, MIN_WORD_LENGTH } = require("./dictionary");
+
+const TURN_SECONDS = 20;
 
 function initRoomState(room) {
+  clearTurnTimer(room);
   room.wc = {
     usedWords: [],
     lastWord: null,
     currentTurn: null,
-    over: false
+    over: false,
+    timer: null,
+    turnEndsAt: null
   };
   room.wcRematch = {};
 }
@@ -26,6 +34,59 @@ function getOpponent(room, playerId) {
   return room.players.find((p) => p.id !== playerId);
 }
 
+function clearTurnTimer(room) {
+  if (room.wc && room.wc.timer) {
+    clearTimeout(room.wc.timer);
+    room.wc.timer = null;
+  }
+  if (room.wc) room.wc.turnEndsAt = null;
+}
+
+function emitTurnState(room, io) {
+  const requiredLetter = getRequiredLetter(room);
+  room.players.forEach((player) => {
+    io.to(player.id).emit("wcTurnChanged", {
+      yourTurn: player.id === room.wc.currentTurn,
+      requiredLetter,
+      chain: room.wc.usedWords.slice(),
+      turnEndsAt: room.wc.turnEndsAt,
+      turnSeconds: TURN_SECONDS
+    });
+  });
+}
+
+function endGameOnTimeout(room, io, roomCode, timedPlayerId) {
+  if (!room.wc || room.wc.over) return;
+  if (room.wc.currentTurn !== timedPlayerId) return;
+
+  clearTurnTimer(room);
+  room.wc.over = true;
+
+  const loser = room.players.find((p) => p.id === timedPlayerId);
+  const winner = getOpponent(room, timedPlayerId);
+  if (!winner || !loser) return;
+
+  io.to(roomCode).emit("wordChainOver", {
+    reason: "timeout",
+    winnerId: winner.id,
+    winnerName: winner.name,
+    loserId: loser.id,
+    loserName: loser.name,
+    message: loser.name + " ran out of time. " + winner.name + " wins!"
+  });
+}
+
+function startTurnTimer(room, io, roomCode) {
+  clearTurnTimer(room);
+  if (!room.wc || room.wc.over) return;
+
+  const timedPlayerId = room.wc.currentTurn;
+  room.wc.turnEndsAt = Date.now() + TURN_SECONDS * 1000;
+  room.wc.timer = setTimeout(() => {
+    endGameOnTimeout(room, io, roomCode, timedPlayerId);
+  }, TURN_SECONDS * 1000);
+}
+
 /*
  * Called when both players have joined a lobby whose gameMode is
  * "word-chain". Never called for Hidden Hunt lobbies.
@@ -34,6 +95,7 @@ function onBothPlayersJoined(room, io, roomCode) {
   initRoomState(room);
   const starter = room.players[Math.floor(Math.random() * room.players.length)];
   room.wc.currentTurn = starter.id;
+  startTurnTimer(room, io, roomCode);
 
   room.players.forEach((player) => {
     io.to(player.id).emit("wordChainStarted", {
@@ -42,7 +104,10 @@ function onBothPlayersJoined(room, io, roomCode) {
       yourTurn: player.id === room.wc.currentTurn,
       requiredLetter: null,
       chain: [],
-      players: room.players.map((p) => ({ id: p.id, name: p.name }))
+      players: room.players.map((p) => ({ id: p.id, name: p.name })),
+      turnEndsAt: room.wc.turnEndsAt,
+      turnSeconds: TURN_SECONDS,
+      minWordLength: MIN_WORD_LENGTH
     });
   });
 }
@@ -80,6 +145,10 @@ function registerSocket(socket, io, rooms) {
       socket.emit("errorMessage", "Words may only contain letters.");
       return;
     }
+    if (word.length < MIN_WORD_LENGTH) {
+      socket.emit("errorMessage", "Words must be at least " + MIN_WORD_LENGTH + " letters.");
+      return;
+    }
     if (!isValidWord(word)) {
       socket.emit("errorMessage", "\"" + raw + "\" is not in the dictionary.");
       return;
@@ -107,16 +176,8 @@ function registerSocket(socket, io, rooms) {
 
     const next = getOpponent(room, socket.id);
     room.wc.currentTurn = next.id;
-    const nextLetter = word[word.length - 1];
-
-    // Dedicated WC event — never emit Hidden Hunt's "turnChanged".
-    room.players.forEach((player) => {
-      io.to(player.id).emit("wcTurnChanged", {
-        yourTurn: player.id === room.wc.currentTurn,
-        requiredLetter: nextLetter,
-        chain: room.wc.usedWords.slice()
-      });
-    });
+    startTurnTimer(room, io, roomCode);
+    emitTurnState(room, io);
   });
 
   socket.on("wordChainPlayAgain", (data) => {
@@ -144,5 +205,7 @@ function registerSocket(socket, io, rooms) {
 
 module.exports = {
   onBothPlayersJoined,
-  registerSocket
+  registerSocket,
+  TURN_SECONDS,
+  MIN_WORD_LENGTH
 };

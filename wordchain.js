@@ -8,9 +8,10 @@
       '<div class="wcPlayer" id="wcOppName">Opponent</div>' +
     '</div>' +
     '<h2 id="wcTurnIndicator"></h2>' +
+    '<p id="wcTimer" class="wcTimer">20</p>' +
     '<p id="wcRequiredLetter"></p>' +
     '<div class="wcInputRow">' +
-      '<input id="wcWordInput" placeholder="Enter a word" autocomplete="off" maxlength="40">' +
+      '<input id="wcWordInput" placeholder="Enter a word (3+ letters)" autocomplete="off" maxlength="40">' +
       '<button type="button" id="wcSubmitBtn">Submit</button>' +
     '</div>' +
     '<p id="wcMsg"></p>' +
@@ -23,12 +24,16 @@
   let requiredLetter = null;
   let players = [];
   let active = false;
+  let gameOver = false;
+  let turnEndsAt = null;
+  let timerInterval = null;
 
   let lobbyScreen;
   let placementScreen;
   let gameScreen;
   let wordChainScreen;
   let wcTurnIndicator;
+  let wcTimer;
   let wcRequiredLetter;
   let wcWordInput;
   let wcSubmitBtn;
@@ -53,6 +58,7 @@
       wordChainScreen.dataset.ready = "1";
     }
     wcTurnIndicator = $("wcTurnIndicator");
+    wcTimer = $("wcTimer");
     wcRequiredLetter = $("wcRequiredLetter");
     wcWordInput = $("wcWordInput");
     wcSubmitBtn = $("wcSubmitBtn");
@@ -74,7 +80,35 @@
 
   function hideWordChainScreen() {
     active = false;
+    stopTimerTick();
     if (wordChainScreen) wordChainScreen.classList.add("hidden");
+  }
+
+  function stopTimerTick() {
+    if (timerInterval) {
+      clearInterval(timerInterval);
+      timerInterval = null;
+    }
+  }
+
+  function renderTimer() {
+    if (!wcTimer) return;
+    if (!turnEndsAt || gameOver) {
+      wcTimer.textContent = gameOver ? "0" : "—";
+      wcTimer.classList.toggle("urgent", false);
+      return;
+    }
+    const left = Math.max(0, Math.ceil((turnEndsAt - Date.now()) / 1000));
+    wcTimer.textContent = String(left);
+    wcTimer.classList.toggle("urgent", left <= 5);
+  }
+
+  function startTimerTick(endsAt) {
+    turnEndsAt = endsAt || null;
+    stopTimerTick();
+    renderTimer();
+    if (!turnEndsAt || gameOver) return;
+    timerInterval = setInterval(renderTimer, 200);
   }
 
   function renderChain(chain) {
@@ -93,21 +127,31 @@
     const opp = players.find((p) => p.id !== socket.id);
     wcMyName.textContent = me ? me.name : "You";
     wcOppName.textContent = opp ? opp.name : "Opponent";
-    wcTurnIndicator.textContent = myTurn ? "Your Turn" : "Opponent's Turn";
+    if (gameOver) {
+      wcTurnIndicator.textContent = "Game Over";
+    } else {
+      wcTurnIndicator.textContent = myTurn ? "Your Turn" : "Opponent's Turn";
+    }
     if (requiredLetter === null || requiredLetter === undefined) {
-      wcRequiredLetter.textContent = "Play any valid English word to start the chain.";
+      wcRequiredLetter.textContent = "Play any valid English word (3+ letters) to start the chain.";
     } else {
       wcRequiredLetter.textContent = "Next word must begin with: " + String(requiredLetter).toUpperCase();
     }
-    wcWordInput.disabled = !myTurn;
-    wcSubmitBtn.disabled = !myTurn;
+    const canPlay = myTurn && !gameOver;
+    wcWordInput.disabled = !canPlay;
+    wcSubmitBtn.disabled = !canPlay;
+    renderTimer();
   }
 
   function submitWord() {
-    if (!currentRoom || !myTurn) return;
+    if (!currentRoom || !myTurn || gameOver) return;
     const word = wcWordInput.value.trim();
     if (!word) {
       wcMsg.textContent = "Enter a word.";
+      return;
+    }
+    if (word.length < 3) {
+      wcMsg.textContent = "Words must be at least 3 letters.";
       return;
     }
     socket.emit("submitWord", { roomCode: currentRoom, word });
@@ -139,11 +183,27 @@
     players = data.players || [];
     myTurn = data.yourTurn;
     requiredLetter = data.requiredLetter;
+    gameOver = false;
     renderChain(data.chain || []);
+    startTimerTick(data.turnEndsAt);
     renderState();
     showWordChainScreen();
-    wcMsg.textContent = "Game started!";
+    wcMsg.textContent = "Game started! You have 20 seconds per turn.";
     wcPlayAgainBtn.classList.add("hidden");
+    wcPlayAgainBtn.disabled = false;
+    wcPlayAgainBtn.textContent = "Play Again";
+  }
+
+  function onGameOver(data) {
+    if (!active) return;
+    gameOver = true;
+    myTurn = false;
+    stopTimerTick();
+    turnEndsAt = null;
+    renderState();
+    const youWin = data.winnerId === socket.id;
+    wcMsg.textContent = (data.message || "Time's up!") + (youWin ? " You win!" : " You lose.");
+    wcPlayAgainBtn.classList.remove("hidden");
     wcPlayAgainBtn.disabled = false;
     wcPlayAgainBtn.textContent = "Play Again";
   }
@@ -161,12 +221,15 @@
     });
 
     socket.on("wcTurnChanged", (data) => {
-      if (!active) return;
+      if (!active || gameOver) return;
       myTurn = data.yourTurn;
       requiredLetter = data.requiredLetter;
       if (data.chain) renderChain(data.chain);
+      startTimerTick(data.turnEndsAt);
       renderState();
     });
+
+    socket.on("wordChainOver", onGameOver);
 
     socket.on("wordChainPlayAgainWait", () => {
       if (!active) return;
@@ -175,6 +238,7 @@
 
     socket.on("wordChainReset", () => {
       if (!active) return;
+      gameOver = false;
       wcMsg.textContent = "";
       wcPlayAgainBtn.classList.add("hidden");
       wcPlayAgainBtn.disabled = false;
@@ -186,6 +250,7 @@
       if (!active) return;
       hideWordChainScreen();
       currentRoom = null;
+      gameOver = false;
     });
 
     if (bindDom()) wireControls();
