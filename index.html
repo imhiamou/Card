@@ -3,46 +3,33 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Card Games</title>
+<title>Hidden Duel</title>
 <link rel="stylesheet" href="style.css">
 <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
 </head>
 <body>
 
-<!-- Lobby screen (shared by all game modes) -->
+<!-- Lobby screen -->
 <div class="box" id="lobbyScreen">
-<h1>Card Games</h1>
+<h1>Hidden Duel</h1>
 
 <h3>Name</h3>
+<!-- No typing: your display name is either Wolf or Mermaid -->
 <div class="charSelect">
 <div class="nameOption selected" data-name="Wolf"><span class="charEmoji">&#x1F43A;</span> Wolf</div>
 <div class="nameOption" data-name="Mermaid"><span class="charEmoji">&#x1F9DC;</span> Mermaid</div>
 </div>
 
-<div id="characterSection">
-<h3>Character <span class="hint">(Hidden Hunt only)</span></h3>
+<h3>Character</h3>
+<!-- The classic characters; click to choose -->
 <div class="charSelect grid4">
 <div class="charOption selected" data-character="Knight"><span class="charEmoji">&#x1F6E1;&#xFE0F;</span> Knight</div>
 <div class="charOption" data-character="Mage"><span class="charEmoji">&#x1F9D9;</span> Mage</div>
 <div class="charOption" data-character="Hunter"><span class="charEmoji">&#x1F3F9;</span> Hunter</div>
 <div class="charOption" data-character="Rogue"><span class="charEmoji">&#x1F5E1;&#xFE0F;</span> Rogue</div>
 </div>
-</div>
 
-<h3>Game Mode</h3>
-<div class="modeSelect">
-<label class="modeOption selected" data-mode="hidden-hunt">
-<input type="radio" name="gameMode" value="hidden-hunt" checked>
-<span class="modeTitle">Hidden Hunt</span>
-<span class="modeDesc">Hide-and-seek card duel</span>
-</label>
-<label class="modeOption" data-mode="word-chain">
-<input type="radio" name="gameMode" value="word-chain">
-<span class="modeTitle">Word Chain</span>
-<span class="modeDesc">Chain valid English words</span>
-</label>
-</div>
-
+<!-- The lobby creator chooses their own code (4-8 letters/numbers) -->
 <input id="createCode" placeholder="Choose Lobby Code (4-8 letters/numbers)" maxlength="8">
 
 <button id="createBtn">Create Lobby</button>
@@ -58,7 +45,7 @@
 
 </div>
 
-<!-- Hidden Hunt: placement screen -->
+<!-- Character placement screen (shown after both players join) -->
 <div class="box hidden" id="placementScreen">
 <h2 id="placementTitle">Choose your hiding location.</h2>
 <div id="board" class="board"></div>
@@ -66,55 +53,49 @@
 <h3 id="placementStatus"></h3>
 </div>
 
-<!-- Hidden Hunt: gameplay screen -->
+<!-- Gameplay screen (shown once both players have confirmed).
+     Turn flow is entirely card-driven: draw, play ONE card, the card
+     resolves and the turn passes automatically. No End Turn button.
+     Layout: the game itself sits on the LEFT, all game text (messages
+     and the log) on the RIGHT. -->
 <div class="box gamebox hidden" id="gameScreen">
 <div class="gameColumns">
+
 <div class="gameLeft">
+
+<!-- Player information panel: both characters are always visible -->
 <div class="playerPanel">
 <div class="playerInfo" id="myInfo"></div>
 <div class="vs">VS</div>
 <div class="playerInfo" id="oppInfo"></div>
 </div>
+
 <h2 id="turnIndicator"></h2>
+
 <div id="gameBoard" class="board"></div>
+
+<!-- Character ability + hand of cards -->
 <div class="actionRow">
 <div id="abilityCard" class="ability hidden"></div>
 <div id="hand" class="hand"></div>
 </div>
+
 <p id="pileInfo"></p>
+
+<!-- Rematch: shown after game over; resets when both players accept -->
 <button id="playAgainBtn" class="hidden">Play Again</button>
+
 </div>
+
 <div class="gameRight">
 <p id="gameMsg"></p>
+<!-- Public game log: never contains hidden positions -->
 <div id="gameLog" class="log"></div>
 </div>
+
 </div>
 </div>
 
-<!-- Word Chain: gameplay screen -->
-<div class="box gamebox hidden" id="wordChainScreen">
-<div class="gameColumns">
-<div class="gameLeft">
-<div class="playerPanel">
-<div class="playerInfo"><div class="charLine" id="wcMyName">You</div></div>
-<div class="vs">VS</div>
-<div class="playerInfo"><div class="charLine" id="wcOppName">Opponent</div></div>
-</div>
-<h2 id="wcTurnIndicator"></h2>
-<p id="wcRequiredLetter"></p>
-<input id="wcWordInput" placeholder="Type your word..." autocomplete="off" autocapitalize="characters">
-<button id="wcSubmitBtn">Submit Word</button>
-<button id="wcPlayAgainBtn" class="hidden">Play Again</button>
-</div>
-<div class="gameRight">
-<p id="wcMsg"></p>
-<div id="wcChainList" class="wcChain"></div>
-</div>
-</div>
-</div>
-
-<script src="games/hidden-hunt/client.js?v=2"></script>
-<script src="games/word-chain/client.js?v=2"></script>
-<script src="index.js?v=2"></script>
+<script src="index.js"></script>
 </body>
 </html>
