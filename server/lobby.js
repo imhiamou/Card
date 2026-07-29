@@ -37,7 +37,10 @@ function registerLobbyHandlers(socket, io) {
     const name = data && typeof data.name === "string" ? data.name.trim() : "";
     const character = data && typeof data.character === "string" ? data.character : "";
     const roomCode = data && typeof data.room === "string" ? data.room.trim().toUpperCase() : "";
-    const gameMode = data && typeof data.gameMode === "string" ? data.gameMode.trim() : "";
+    const gameModeRaw = data && typeof data.gameMode === "string" ? data.gameMode.trim() : "";
+    // Default to Hidden Hunt when the client omits gameMode (e.g. cached
+    // frontend from before the multi-game platform update).
+    const gameMode = gameModeRaw || "hidden-hunt";
 
     if (!PLAYER_NAMES.includes(name)) {
       socket.emit("errorMessage", "Choose a valid name.");
