@@ -127,9 +127,10 @@ opacity:.55;
 
 /* Deduction map (only ever drawn from facts this client may know):
    green  = the enemy is definitely NOT here (ruled out)
-   yellow = the enemy could still be here (narrowed candidates)
+   yellow = the enemy could still be here, shown with a "?"
    A Radar half plus a Compass half therefore leaves only the crossed
-   quadrant yellow, with the rest of both halves turning green. */
+   quadrant yellow. A NO answer greens only its own region and leaves
+   the rest of the board neutral. */
 .tile.known{
 background:#2e5d43;
 }
@@ -142,10 +143,6 @@ font-weight:bold;
    with the green/yellow deduction colours instead of hiding them. */
 .tile.oppScan{
 box-shadow:inset 0 0 0 2px #a8455a;
-}
-/* Temporary heat map highlight (public for both players) */
-.tile.heat{
-background:#8a6a2f;
 }
 /* Squares that have been attacked (public info for both players) */
 .tile.attacked{

@@ -78,19 +78,19 @@ let gameOver=false;
 let abilityInfo=null;    // my ability status (from "abilityUpdate")
 let mirrorPos=null;      // my Mage mirror position (only mine)
 
-// Deduction knowledge, driven ONLY by facts I am entitled to know
+// Deduction knowledge, built ONLY from facts I am entitled to know
 // (my own private scan answers plus public attack results):
-// - candidates: every tile the enemy could still be on. Starts as the
-//   whole board and shrinks as scans rule areas in or out. Rendered
-//   yellow; everything ruled out is rendered green.
-// - narrowed: true once any real information exists, so the board
-//   stays neutral before the first scan.
-// - confirmedIn: true once a YES answer has pinned the enemy inside a
-//   known region, which is when "?" marks become meaningful.
+// - eliminated: tiles proven empty. Rendered GREEN.
+// - confined:   null until a YES answer proves the enemy is inside a
+//               region; then the surviving candidates of that region.
+//               Rendered YELLOW with "?".
+// - hinted:     Heat Map's probabilistic region. Also rendered YELLOW
+//               with "?", but it proves nothing so it never turns any
+//               other tile green.
 // - oppScanned: tiles the OPPONENT has scanned (shown with a red edge).
-let candidates=new Set();
-let narrowed=false;
-let confirmedIn=false;
+let eliminated=new Set();
+let confined=null;
+let hinted=new Set();
 let oppScanned=new Set();
 let lastMyAction=null;
 function tileKey(row,col){return row+","+col;}
@@ -712,7 +712,15 @@ markAttacked(p.row,p.col);
 if(mine&&!p.hit)applyMissKnowledge(p.row,p.col);
 }
 
-if(d.cardId==="heatMap")flashHeat(tilesInArea(p.row,p.col,3));
+if(d.cardId==="heatMap"){
+const region=tilesInArea(p.row,p.col,3);
+region.forEach(flashTile);
+// Only MY heat map tells me anything; the opponent's is their hint.
+if(mine){
+hintKnowledge(region);
+renderKnowledge();
+}
+}
 
 // The opponent changing tiles invalidates every earlier deduction.
 if(!mine&&(d.category==="Movement"||d.cardId==="shadowStep"))staleKnowledge();
@@ -725,14 +733,6 @@ if(!tile)return;
 tile.classList.add("attacked");
 refreshTile(tile);
 flashTile(tile);
-}
-
-// Heat map: temporary highlight of the 3x3 region.
-function flashHeat(tiles){
-tiles.forEach((tile)=>{
-tile.classList.add("heat");
-setTimeout(()=>tile.classList.remove("heat"),3000);
-});
 }
 
 function flashTile(tile){
@@ -749,8 +749,7 @@ function refreshTile(tile){
 if(tile.classList.contains("you")){tile.textContent=myCharacterIcon();return;}
 if(tile.classList.contains("mirror")){tile.textContent="\u{1FA9E}";return;}
 if(tile.classList.contains("attacked")){tile.textContent="\u2716";return;}
-const key=tileKey(Number(tile.dataset.row),Number(tile.dataset.col));
-if(confirmedIn&&candidates.has(key)){tile.textContent="?";return;}
+if(isMaybeTile(tileKey(Number(tile.dataset.row),Number(tile.dataset.col)))){tile.textContent="?";return;}
 tile.textContent="";
 }
 
@@ -788,34 +787,57 @@ flashTile(tile);
    DEDUCTION KNOWLEDGE
    ============================================================
    The enemy's exact tile is never sent to this client. Everything
-   below is inferred from my OWN private answers plus public results,
-   then painted as: yellow = the enemy could be here,
-   green = the enemy is definitely NOT here.
+   below is inferred from my OWN private answers plus public results:
+     GREEN            = proven empty
+     YELLOW with "?"  = the enemy could be here
+   A NO answer only ever paints its own region green; it never turns
+   the rest of the board yellow, because ruling one area out says
+   nothing about where the enemy actually is.
    ============================================================ */
 
-// Reset to "no information": every tile is a candidate again.
+// Reset to "no information at all".
 function resetKnowledge(){
-candidates=new Set();
+eliminated=new Set();
+confined=null;
+hinted=new Set();
+}
+
+function keysOf(tiles){
+return tiles.map((t)=>tileKey(Number(t.dataset.row),Number(t.dataset.col)));
+}
+
+// The enemy IS somewhere in `tiles` (a YES answer). Narrow the confined
+// region and, since the enemy must be inside it, prove the outside
+// empty. Two overlapping YES facts therefore leave only their
+// intersection yellow — a Radar half plus a Compass half leaves just
+// the crossed quadrant.
+function confineKnowledge(tiles){
+const region=new Set(keysOf(tiles));
+confined=confined===null?region:new Set([...confined].filter((k)=>region.has(k)));
 for(let row=0;row<BOARD_SIZE;row++){
-for(let col=0;col<BOARD_SIZE;col++)candidates.add(tileKey(row,col));
+for(let col=0;col<BOARD_SIZE;col++){
+const key=tileKey(row,col);
+if(!confined.has(key))eliminated.add(key);
 }
-narrowed=false;
-confirmedIn=false;
 }
-
-// The enemy is somewhere in `tiles`: everything outside is ruled out.
-// Two overlapping facts therefore leave only their intersection — a
-// Radar half plus a Compass half leaves just the crossed quadrant.
-function intersectKnowledge(tiles){
-const keep=new Set(tiles.map((t)=>tileKey(Number(t.dataset.row),Number(t.dataset.col))));
-candidates.forEach((key)=>{if(!keep.has(key))candidates.delete(key);});
-narrowed=true;
+eliminated.forEach((k)=>confined.delete(k));
 }
 
-// The enemy is NOT in `tiles`: rule exactly those out, keep the rest.
+// The enemy is NOT in `tiles` (a NO answer, or a missed attack). Only
+// those tiles are proven empty; nothing else changes colour.
 function eliminateKnowledge(tiles){
-tiles.forEach((t)=>candidates.delete(tileKey(Number(t.dataset.row),Number(t.dataset.col))));
-narrowed=true;
+keysOf(tiles).forEach((key)=>{
+eliminated.add(key);
+if(confined)confined.delete(key);
+hinted.delete(key);
+});
+}
+
+// Heat Map: a region that is LIKELY to hold the enemy. Shown yellow
+// with "?" but never used to prove anything, so it replaces the
+// previous hint and leaves every other tile untouched.
+function hintKnowledge(tiles){
+hinted=new Set(keysOf(tiles).filter((k)=>!eliminated.has(k)));
 }
 
 // The opponent moved (movement card or Shadow Step), so every previous
@@ -826,16 +848,22 @@ renderKnowledge();
 addLog("The opponent moved — your scan knowledge was reset.",true);
 }
 
-// Repaint the whole board from the current knowledge set.
+// Is this tile somewhere the enemy might still be?
+function isMaybeTile(key){
+if(eliminated.has(key))return false;
+if(confined&&confined.has(key))return true;
+return hinted.has(key);
+}
+
+// Repaint the whole board from the current knowledge.
 function renderKnowledge(){
 for(let row=0;row<BOARD_SIZE;row++){
 for(let col=0;col<BOARD_SIZE;col++){
 const tile=tileAt(row,col);
 if(!tile)continue;
 const key=tileKey(row,col);
-const possible=candidates.has(key);
-tile.classList.toggle("possible",narrowed&&possible);
-tile.classList.toggle("known",narrowed&&!possible);
+tile.classList.toggle("known",eliminated.has(key));
+tile.classList.toggle("possible",isMaybeTile(key));
 tile.classList.toggle("oppScan",oppScanned.has(key));
 refreshTile(tile);
 }
@@ -843,28 +871,23 @@ refreshTile(tile);
 }
 
 // Apply a YES/NO answer to the region of my latest scan.
-// YES -> the enemy is inside that region (intersect).
-// NO  -> the enemy is not inside it (eliminate).
-// A Mage's decoy can answer area scans in the real character's place;
-// the answer is still treated at face value, so a decoy hit narrows
-// the map exactly as a real hit would.
+// A Mage's decoy can answer any scan in the real character's place;
+// the answer is taken at face value, so a decoy hit narrows the map
+// exactly as a real hit would.
 function applyScanKnowledge(answer){
 if(!lastMyAction)return;
 const tiles=regionForAction(lastMyAction.cardId,lastMyAction.public);
 if(tiles.length===0)return;
-
 if(answer==="YES"){
-intersectKnowledge(tiles);
-confirmedIn=true;
+confineKnowledge(tiles);
 }else{
 eliminateKnowledge(tiles);
 }
 renderKnowledge();
 }
 
-// Radar/Compass name the half the enemy is in: keep that half, rule
-// out the other. Combined with a previous half this leaves only the
-// overlapping quarter highlighted.
+// Radar/Compass name the half the enemy is in: that is a YES for the
+// whole half, so it confines and rules out the other half.
 function applyHalfKnowledge(cardId,answer){
 const tiles=[];
 for(let row=0;row<BOARD_SIZE;row++){
@@ -878,8 +901,7 @@ if(tile)tiles.push(tile);
 }
 }
 }
-intersectKnowledge(tiles);
-confirmedIn=true;
+confineKnowledge(tiles);
 renderKnowledge();
 }
 
