@@ -64,7 +64,7 @@ shadowStep:{target:"none",hint:""}
 let currentRoom=null;    // lobby code of the room this client is in
 let lobbyPlayers=[];     // public player info (id, name, character)
 let selectedName="Wolf";
-let selectedCharacter="Knight";
+let selectedCharacter=null; // chosen on the Hidden Hunt placement screen
 let selectedTile=null;   // placement: currently selected tile
 let myPosition=null;     // my own hidden square (updates when I move)
 let myTurn=null;         // true when it is this client's turn
@@ -113,12 +113,15 @@ selectedName=option.dataset.name;
 };
 });
 
-// Character selection: Knight, Mage, Hunter or Rogue.
-document.querySelectorAll(".charOption").forEach((option)=>{
+// Character selection happens on the Hidden Hunt placement screen
+// (after the hiding tile), not in the lobby.
+document.querySelectorAll("#placementCharSelect .charOption").forEach((option)=>{
 option.onclick=()=>{
-document.querySelectorAll(".charOption").forEach((o)=>o.classList.remove("selected"));
+if(boardEl.classList.contains("disabled"))return;
+document.querySelectorAll("#placementCharSelect .charOption").forEach((o)=>o.classList.remove("selected"));
 option.classList.add("selected");
 selectedCharacter=option.dataset.character;
+updateConfirmEnabled();
 };
 });
 
@@ -132,14 +135,14 @@ document.getElementById("createBtn").onclick=()=>{
 const room=document.getElementById("createCode").value.trim().toUpperCase();
 if(!ROOM_CODE_PATTERN.test(room)){alert("Lobby code must be 4-8 letters or numbers");return;}
 const game=document.getElementById("gameSelect").value==="word-chain"?"word-chain":"hidden-hunt";
-socket.emit("createLobby",{name:selectedName,character:selectedCharacter,room,game});
+socket.emit("createLobby",{name:selectedName,room,game});
 status.textContent="Creating lobby...";
 };
 
 document.getElementById("joinBtn").onclick=()=>{
 const room=document.getElementById("roomCode").value.trim().toUpperCase();
 if(!room){alert("Enter lobby code");return;}
-socket.emit("joinLobby",{name:selectedName,character:selectedCharacter,room});
+socket.emit("joinLobby",{name:selectedName,room});
 // Remember the code we tried to join; confirmed once "gameStart" arrives.
 currentRoom=room;
 status.textContent="Joining...";
@@ -198,7 +201,17 @@ function showPlacementScreen(){
 lobbyScreen.classList.add("hidden");
 gameScreen.classList.add("hidden");
 placementScreen.classList.remove("hidden");
+selectedCharacter=null;
+document.querySelectorAll("#placementCharSelect .charOption").forEach((o)=>o.classList.remove("selected"));
 buildBoard();
+}
+
+function updateConfirmEnabled(){
+if(boardEl.classList.contains("disabled")){
+confirmBtn.disabled=true;
+return;
+}
+confirmBtn.disabled=!(selectedTile&&selectedCharacter);
 }
 
 // Generate the 8x8 grid dynamically. Each tile stores its row/col
@@ -207,8 +220,8 @@ function buildBoard(){
 boardEl.innerHTML="";
 boardEl.classList.remove("disabled");
 selectedTile=null;
-confirmBtn.disabled=true;
 placementStatus.textContent="";
+updateConfirmEnabled();
 for(let row=0;row<BOARD_SIZE;row++){
 for(let col=0;col<BOARD_SIZE;col++){
 const tile=document.createElement("div");
@@ -222,24 +235,28 @@ boardEl.appendChild(tile);
 }
 
 // Move the highlight to the clicked tile. Selection stays editable
-// until the player presses Confirm Position.
+// until the player presses Confirm (tile + character required).
 function selectTile(tile){
+if(boardEl.classList.contains("disabled"))return;
 if(selectedTile)selectedTile.classList.remove("selected");
 selectedTile=tile;
 tile.classList.add("selected");
-confirmBtn.disabled=false;
+updateConfirmEnabled();
 }
 
-// Confirm Position: send the chosen square to the server, then lock
-// the board and the button so the choice can no longer change.
+// Confirm: send the chosen square AND character to the server, then
+// lock the board so the choice can no longer change.
 confirmBtn.onclick=()=>{
-if(!selectedTile||!currentRoom)return;
+if(!selectedTile||!selectedCharacter||!currentRoom)return;
 myPosition={
 row:Number(selectedTile.dataset.row),
 col:Number(selectedTile.dataset.col)
 };
-// "placeCharacter" tells the server this player's hidden position.
-socket.emit("placeCharacter",{roomCode:currentRoom,position:myPosition});
+socket.emit("placeCharacter",{
+roomCode:currentRoom,
+position:myPosition,
+character:selectedCharacter
+});
 boardEl.classList.add("disabled");
 confirmBtn.disabled=true;
 };
@@ -250,10 +267,10 @@ socket.on("waitingOpponent",()=>{
 placementStatus.textContent="Waiting for opponent...";
 });
 
-// "bothPlayersReady" — sent to both clients once both positions are
-// locked in. Hide the placement interface, show "Game Starting...",
-// then load the gameplay screen after one second.
-socket.on("bothPlayersReady",()=>{
+// "bothPlayersReady" — both hid + picked a character. Carries the
+// final public player list (now including characters) for the panel.
+socket.on("bothPlayersReady",(data)=>{
+if(data&&data.players)lobbyPlayers=data.players;
 placementStatus.textContent="Game Starting...";
 boardEl.classList.add("disabled");
 confirmBtn.disabled=true;
