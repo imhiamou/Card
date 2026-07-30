@@ -2,7 +2,8 @@
  * English dictionary — Word Chain only.
  * Hidden Hunt never loads or calls this module.
  *
- * Vocabulary: ~10.7k everyday English words (SCOWL size 10+20),
+ * Vocabulary: ~21k everyday English words (SCOWL size 10+20+35,
+ * frequency-filtered, plus common language names players expect),
  * stored in server/data/common-words.json. Obscure / technical /
  * archaic terms from the old full DWYL list are not included.
  *
