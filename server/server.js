@@ -512,11 +512,33 @@ function beginTurnAbilityTick(room, playerId) {
 }
 
 // End the game with a winner. "gameOver" is sent to each player
-// individually: { youWin }.
+// individually with a full reveal of both hiding spots (and mirrors)
+// so both clients can show an end-game board. Deduction maps are
+// shared separately via "endgameKnowledge" from each client.
 function endGame(room, winnerId) {
   room.game.over = true;
   room.players.forEach((player) => {
-    io.to(player.id).emit("gameOver", { youWin: player.id === winnerId });
+    const opponent = getOpponent(room, player.id);
+    const myAbility = room.game.abilityState[player.id] || {};
+    const oppAbility = room.game.abilityState[opponent.id] || {};
+    io.to(player.id).emit("gameOver", {
+      youWin: player.id === winnerId,
+      yourPosition: room.positions[player.id]
+        ? { row: room.positions[player.id].row, col: room.positions[player.id].col }
+        : null,
+      opponentPosition: room.positions[opponent.id]
+        ? { row: room.positions[opponent.id].row, col: room.positions[opponent.id].col }
+        : null,
+      yourMirror: myAbility.mirror
+        ? { row: myAbility.mirror.row, col: myAbility.mirror.col }
+        : null,
+      opponentMirror: oppAbility.mirror
+        ? { row: oppAbility.mirror.row, col: oppAbility.mirror.col }
+        : null,
+      yourCharacter: player.character,
+      opponentCharacter: opponent.character,
+      opponentName: opponent.name
+    });
   });
 }
 
@@ -1078,6 +1100,34 @@ io.on("connection", (socket) => {
       if (inside) maybeTriggerRogueEscape(room, roomCode, opponent);
       return;
     }
+  });
+
+  /*
+   * "endgameKnowledge" — after Hidden Hunt ends, each client shares
+   * their private deduction map so the opponent can see how they were
+   * reasoning. Only accepted when the match is over; relayed to the
+   * other player as "opponentEndgameKnowledge".
+   */
+  socket.on("endgameKnowledge", (data) => {
+    const roomCode = data && typeof data.roomCode === "string" ? data.roomCode.trim().toUpperCase() : "";
+    const room = rooms[roomCode];
+    if (!room || !room.players.some((p) => p.id === socket.id)) return;
+    if (!room.game || !room.game.over) return;
+    if (room.gameMode === "word-chain") return;
+
+    const opponent = getOpponent(room, socket.id);
+    if (!opponent) return;
+
+    const asKeys = (value) => Array.isArray(value)
+      ? value.filter((k) => typeof k === "string" && /^\d+,\d+$/.test(k)).slice(0, BOARD_SIZE * BOARD_SIZE)
+      : [];
+
+    io.to(opponent.id).emit("opponentEndgameKnowledge", {
+      eliminated: asKeys(data.eliminated),
+      confined: data.confined === null ? null : asKeys(data.confined),
+      hinted: asKeys(data.hinted),
+      oppScanned: asKeys(data.oppScanned)
+    });
   });
 
   /*
