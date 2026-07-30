@@ -22,6 +22,11 @@ const oppInfo=document.getElementById("oppInfo");
 const gameLogEl=document.getElementById("gameLog");
 const playAgainBtn=document.getElementById("playAgainBtn");
 const abilityCard=document.getElementById("abilityCard");
+const endgameReveal=document.getElementById("endgameReveal");
+const endgameSummary=document.getElementById("endgameSummary");
+const endgameMyMap=document.getElementById("endgameMyMap");
+const endgameOppMap=document.getElementById("endgameOppMap");
+const endgameOppMapStatus=document.getElementById("endgameOppMapStatus");
 
 const BOARD_SIZE=8;
 const ROOM_CODE_PATTERN=/^[A-Z0-9]{4,8}$/;
@@ -98,6 +103,7 @@ let oppScanned=new Set();
 let halfFacts=[];
 let attackMisses=new Set();
 let lastMyAction=null;
+let lastEndgameReveal=null; // positions from the latest gameOver payload
 function tileKey(row,col){return row+","+col;}
 
 /* ============================================================
@@ -214,9 +220,39 @@ return;
 confirmBtn.disabled=!(selectedTile&&selectedCharacter);
 }
 
+// Wrap a .board element with A–H column and 1–8 row labels once.
+function ensureBoardCoords(boardElement){
+if(!boardElement||!boardElement.parentElement)return;
+if(boardElement.parentElement.classList.contains("boardWrap"))return;
+const wrap=document.createElement("div");
+wrap.className="boardWrap";
+const corner=document.createElement("div");
+corner.className="boardCorner";
+const cols=document.createElement("div");
+cols.className="boardColLabels";
+for(let col=0;col<BOARD_SIZE;col++){
+const label=document.createElement("div");
+label.textContent=String.fromCharCode(65+col);
+cols.appendChild(label);
+}
+const rows=document.createElement("div");
+rows.className="boardRowLabels";
+for(let row=0;row<BOARD_SIZE;row++){
+const label=document.createElement("span");
+label.textContent=String(row+1);
+rows.appendChild(label);
+}
+boardElement.parentElement.insertBefore(wrap,boardElement);
+wrap.appendChild(corner);
+wrap.appendChild(cols);
+wrap.appendChild(rows);
+wrap.appendChild(boardElement);
+}
+
 // Generate the 8x8 grid dynamically. Each tile stores its row/col
 // and becomes selectable; only one tile can be selected at a time.
 function buildBoard(){
+ensureBoardCoords(boardEl);
 boardEl.innerHTML="";
 boardEl.classList.remove("disabled");
 selectedTile=null;
@@ -373,7 +409,8 @@ renderKnowledge();
 }
 });
 
-// "gameOver" — the server decided the winner (exact-position attack).
+// "gameOver" — the server decided the winner (exact-position attack)
+// and reveals both hiding spots so both players can inspect the maps.
 socket.on("gameOver",(data)=>{
 gameOver=true;
 turnIndicator.textContent=data.youWin?"You Win!":"You Lose!";
@@ -383,6 +420,27 @@ playAgainBtn.classList.remove("hidden");
 playAgainBtn.disabled=false;
 playAgainBtn.textContent="Play Again";
 renderHand();
+showEndgameReveal(data);
+});
+
+// Opponent's private deduction map, shared only after the game ends.
+socket.on("opponentEndgameKnowledge",(data)=>{
+if(!gameOver||!lastEndgameReveal)return;
+// Flip positions: on THEIR map, they are "you" and you are the enemy.
+paintEndgameMap(endgameOppMap,{
+eliminated:new Set(data.eliminated||[]),
+confined:data.confined===null?null:new Set(data.confined||[]),
+hinted:new Set(data.hinted||[]),
+oppScanned:new Set(data.oppScanned||[])
+},{
+yourPosition:lastEndgameReveal.opponentPosition,
+opponentPosition:lastEndgameReveal.yourPosition,
+yourCharacter:lastEndgameReveal.opponentCharacter,
+opponentCharacter:lastEndgameReveal.yourCharacter,
+yourMirror:lastEndgameReveal.opponentMirror,
+opponentMirror:lastEndgameReveal.yourMirror
+});
+if(endgameOppMapStatus)endgameOppMapStatus.textContent="How they were tracking you:";
 });
 
 /* ============================================================
@@ -420,9 +478,11 @@ mirrorPos=null;
 resetKnowledge();
 oppScanned=new Set();
 lastMyAction=null;
+lastEndgameReveal=null;
 gameMsg.textContent="";
 gameLogEl.innerHTML="";
 playAgainBtn.classList.add("hidden");
+hideEndgameReveal();
 showPlacementScreen();
 });
 
@@ -436,7 +496,9 @@ gameScreen.classList.remove("hidden");
 resetKnowledge();
 oppScanned=new Set();
 lastMyAction=null;
+lastEndgameReveal=null;
 mirrorPos=null;
+hideEndgameReveal();
 buildGameBoard();
 renderPlayerPanel();
 renderGameState();
@@ -446,6 +508,7 @@ addLog("Game started. Good luck!",true);
 // The gameplay board stays visible for the whole game. It shows your
 // own hidden position plus all public info (scans and attacks).
 function buildGameBoard(){
+ensureBoardCoords(gameBoardEl);
 gameBoardEl.innerHTML="";
 for(let row=0;row<BOARD_SIZE;row++){
 for(let col=0;col<BOARD_SIZE;col++){
@@ -1015,6 +1078,125 @@ attackMisses.add(tileKey(row,col));
 rebuildKnowledgeAfterMirror();
 renderKnowledge();
 addLog("Mirror Image destroyed — scan traps on the decoy were cleared. Radar/Compass halves kept.",true);
+}
+
+/* ============================================================
+   END-GAME REVEAL
+   ============================================================ */
+
+function hideEndgameReveal(){
+if(endgameReveal)endgameReveal.classList.add("hidden");
+if(endgameMyMap)endgameMyMap.innerHTML="";
+if(endgameOppMap)endgameOppMap.innerHTML="";
+if(endgameOppMapStatus)endgameOppMapStatus.textContent="Waiting for opponent's map...";
+if(endgameSummary)endgameSummary.textContent="";
+}
+
+function markMainBoardReveal(data){
+if(!data)return;
+if(data.opponentPosition){
+const enemy=tileAt(data.opponentPosition.row,data.opponentPosition.col);
+if(enemy){
+enemy.classList.add("enemy");
+enemy.textContent=(CHARACTER_ICONS[data.opponentCharacter]||"?");
+}
+addLog("Opponent was hiding at "+tileLabel(data.opponentPosition.row,data.opponentPosition.col)+".",true);
+}
+if(data.yourPosition){
+const you=tileAt(data.yourPosition.row,data.yourPosition.col);
+if(you){
+you.classList.add("you","allyReveal");
+you.textContent=myCharacterIcon();
+}
+}
+if(data.opponentMirror){
+const m=tileAt(data.opponentMirror.row,data.opponentMirror.col);
+if(m){
+m.classList.add("mirror");
+if(!m.classList.contains("enemy")&&!m.classList.contains("you"))m.textContent="\u{1FA9E}";
+}
+}
+if(data.yourMirror){
+const m=tileAt(data.yourMirror.row,data.yourMirror.col);
+if(m){
+m.classList.add("mirror");
+if(!m.classList.contains("enemy")&&!m.classList.contains("you"))m.textContent="\u{1FA9E}";
+}
+}
+}
+
+function paintEndgameMap(board,knowledge,reveal){
+if(!board)return;
+ensureBoardCoords(board);
+board.innerHTML="";
+const elim=knowledge.eliminated||new Set();
+const conf=knowledge.confined;
+const hint=knowledge.hinted||new Set();
+const scans=knowledge.oppScanned||new Set();
+for(let row=0;row<BOARD_SIZE;row++){
+for(let col=0;col<BOARD_SIZE;col++){
+const tile=document.createElement("div");
+tile.className="tile";
+tile.dataset.row=row;
+tile.dataset.col=col;
+const key=tileKey(row,col);
+const isYou=reveal&&reveal.yourPosition&&reveal.yourPosition.row===row&&reveal.yourPosition.col===col;
+const isEnemy=reveal&&reveal.opponentPosition&&reveal.opponentPosition.row===row&&reveal.opponentPosition.col===col;
+const isYourMirror=reveal&&reveal.yourMirror&&reveal.yourMirror.row===row&&reveal.yourMirror.col===col;
+const isOppMirror=reveal&&reveal.opponentMirror&&reveal.opponentMirror.row===row&&reveal.opponentMirror.col===col;
+if(elim.has(key))tile.classList.add("known");
+const maybe=(!elim.has(key))&&((conf&&conf.has(key))||hint.has(key));
+if(maybe)tile.classList.add("possible");
+if(scans.has(key))tile.classList.add("oppScan");
+if(isEnemy){
+tile.classList.add("enemy");
+tile.textContent=(CHARACTER_ICONS[reveal.opponentCharacter]||"E");
+}else if(isYou){
+tile.classList.add("you","allyReveal");
+tile.textContent=CHARACTER_ICONS[reveal.yourCharacter]||myCharacterIcon();
+}else if(isOppMirror||isYourMirror){
+tile.classList.add("mirror");
+tile.textContent="\u{1FA9E}";
+}else if(maybe){
+tile.textContent="?";
+}
+board.appendChild(tile);
+}
+}
+}
+
+function showEndgameReveal(data){
+lastEndgameReveal=data||null;
+if(!endgameReveal)return;
+endgameReveal.classList.remove("hidden");
+const oppLabel=data.opponentPosition
+?tileLabel(data.opponentPosition.row,data.opponentPosition.col)
+:"?";
+const myLabel=data.yourPosition
+?tileLabel(data.yourPosition.row,data.yourPosition.col)
+:"?";
+endgameSummary.textContent=
+(data.opponentName||"Opponent")+" hid at "+oppLabel+
+". You hid at "+myLabel+".";
+markMainBoardReveal(data);
+paintEndgameMap(endgameMyMap,{
+eliminated:new Set(eliminated),
+confined:confined?new Set(confined):null,
+hinted:new Set(hinted),
+oppScanned:new Set(oppScanned)
+},data);
+if(endgameOppMapStatus)endgameOppMapStatus.textContent="Waiting for opponent's map...";
+if(endgameOppMap)endgameOppMap.innerHTML="";
+// Share my deduction map so the opponent can see how I guessed.
+if(currentRoom){
+socket.emit("endgameKnowledge",{
+roomCode:currentRoom,
+eliminated:[...eliminated],
+confined:confined?[...confined]:null,
+hinted:[...hinted],
+oppScanned:[...oppScanned]
+});
+}
 }
 
 // Wire Word Chain to the shared lobby socket (no Hidden Hunt gameplay changes).

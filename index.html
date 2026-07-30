@@ -89,6 +89,23 @@
 
 <p id="pileInfo"></p>
 
+<!-- End-game reveal: both hiding spots + both deduction maps -->
+<div id="endgameReveal" class="endgameReveal hidden">
+<h3>End Game Reveal</h3>
+<p id="endgameSummary"></p>
+<div class="endgameMaps">
+<div class="endgameMapCard">
+<h4>Your deduction map</h4>
+<div id="endgameMyMap" class="board endgameBoard"></div>
+</div>
+<div class="endgameMapCard">
+<h4>Opponent's deduction map</h4>
+<p id="endgameOppMapStatus" class="endgameWait">Waiting for opponent's map...</p>
+<div id="endgameOppMap" class="board endgameBoard"></div>
+</div>
+</div>
+</div>
+
 <!-- Rematch: shown after game over; resets when both players accept -->
 <button id="playAgainBtn" class="hidden">Play Again</button>
 

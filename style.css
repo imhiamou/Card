@@ -20,7 +20,7 @@ width:440px;
 }
 /* Gameplay layout: game on the left, game text on the right */
 .box.gamebox{
-width:780px;
+width:860px;
 max-width:96vw;
 }
 .gameColumns{
@@ -92,6 +92,44 @@ background:#31537a;
 .charEmoji{
 font-size:20px;
 margin-right:4px;
+}
+
+/* Board with A–H / 1–8 coordinate labels */
+.boardWrap{
+display:grid;
+grid-template-columns:22px 1fr;
+grid-template-rows:20px 1fr;
+gap:2px 4px;
+margin:12px 0;
+align-items:stretch;
+}
+.boardCorner{min-width:22px;}
+.boardColLabels{
+display:grid;
+grid-template-columns:repeat(8,1fr);
+gap:4px;
+text-align:center;
+font-size:12px;
+color:#9db2d0;
+font-weight:bold;
+letter-spacing:.02em;
+}
+.boardRowLabels{
+display:grid;
+grid-template-rows:repeat(8,1fr);
+gap:4px;
+text-align:center;
+font-size:12px;
+color:#9db2d0;
+font-weight:bold;
+}
+.boardRowLabels span{
+display:flex;
+align-items:center;
+justify-content:center;
+}
+.boardWrap .board{
+margin:0;
 }
 
 /* 8x8 board (used for both placement and gameplay) */
@@ -297,4 +335,69 @@ color:#c7d2e0;
 }
 .log p.private{
 color:#8fd0a0;
+}
+
+/* Enemy / ally markers shown on the board after the game ends */
+.tile.enemy{
+background:#8a2f3d;
+outline:2px solid #ff6b6b;
+}
+.tile.allyReveal{
+outline:2px solid #4f9cff;
+}
+
+/* End-game reveal: both deduction maps side by side */
+.endgameReveal{
+margin-top:14px;
+padding-top:12px;
+border-top:1px solid #3a4256;
+}
+.endgameReveal h3{
+margin:0 0 6px;
+font-size:16px;
+text-align:center;
+}
+.endgameReveal h4{
+margin:0 0 6px;
+font-size:13px;
+color:#c5d2e8;
+text-align:center;
+}
+#endgameSummary{
+text-align:center;
+font-size:13px;
+color:#c7d2e0;
+margin:0 0 10px;
+}
+.endgameMaps{
+display:flex;
+gap:12px;
+flex-wrap:wrap;
+}
+.endgameMapCard{
+flex:1;
+min-width:180px;
+background:#232936;
+border-radius:8px;
+padding:8px;
+}
+.endgameBoard{
+pointer-events:none;
+margin:8px 0 0;
+}
+.endgameBoard .tile{
+font-size:11px;
+cursor:default;
+}
+.endgameWait{
+text-align:center;
+font-size:12px;
+color:#9db2d0;
+min-height:1.2em;
+margin:0 0 4px;
+}
+@media(max-width:700px){
+.endgameMaps{
+flex-direction:column;
+}
 }
