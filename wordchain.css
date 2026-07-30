@@ -104,3 +104,21 @@ min-height:1.4em;
 color:#c5d2e8;
 font-size:14px;
 }
+
+.wcEndButtons{
+display:flex;
+gap:8px;
+margin-top:10px;
+}
+
+.wcEndButtons button{
+flex:1;
+margin:0;
+}
+
+#wcKeepGoingBtn{
+background:#2e5d43;
+color:#fff;
+border:none;
+border-radius:8px;
+}

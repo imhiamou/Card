@@ -16,7 +16,10 @@
     '</div>' +
     '<p id="wcMsg"></p>' +
     '<div id="wcChainList"></div>' +
-    '<button type="button" id="wcPlayAgainBtn" class="hidden">Play Again</button>';
+    '<div id="wcEndButtons" class="wcEndButtons hidden">' +
+      '<button type="button" id="wcKeepGoingBtn">Keep Going</button>' +
+      '<button type="button" id="wcPlayAgainBtn">Play Again</button>' +
+    '</div>';
 
   let socket = null;
   let currentRoom = null;
@@ -39,6 +42,8 @@
   let wcSubmitBtn;
   let wcChainList;
   let wcMsg;
+  let wcEndButtons;
+  let wcKeepGoingBtn;
   let wcPlayAgainBtn;
   let wcMyName;
   let wcOppName;
@@ -64,10 +69,31 @@
     wcSubmitBtn = $("wcSubmitBtn");
     wcChainList = $("wcChainList");
     wcMsg = $("wcMsg");
+    wcEndButtons = $("wcEndButtons");
+    wcKeepGoingBtn = $("wcKeepGoingBtn");
     wcPlayAgainBtn = $("wcPlayAgainBtn");
     wcMyName = $("wcMyName");
     wcOppName = $("wcOppName");
     return true;
+  }
+
+  function hideEndButtons() {
+    if (!wcEndButtons) return;
+    wcEndButtons.classList.add("hidden");
+    if (wcKeepGoingBtn) {
+      wcKeepGoingBtn.disabled = false;
+      wcKeepGoingBtn.textContent = "Keep Going";
+    }
+    if (wcPlayAgainBtn) {
+      wcPlayAgainBtn.disabled = false;
+      wcPlayAgainBtn.textContent = "Play Again";
+    }
+  }
+
+  function showEndButtons() {
+    if (!wcEndButtons) return;
+    hideEndButtons();
+    wcEndButtons.classList.remove("hidden");
   }
 
   function showWordChainScreen() {
@@ -165,11 +191,19 @@
     wcWordInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") submitWord();
     });
+    wcKeepGoingBtn.onclick = () => {
+      if (!currentRoom || !gameOver) return;
+      socket.emit("wordChainKeepGoing", { roomCode: currentRoom });
+      wcKeepGoingBtn.disabled = true;
+      wcKeepGoingBtn.textContent = "Waiting for opponent...";
+      if (wcPlayAgainBtn) wcPlayAgainBtn.disabled = true;
+    };
     wcPlayAgainBtn.onclick = () => {
-      if (!currentRoom) return;
+      if (!currentRoom || !gameOver) return;
       socket.emit("wordChainPlayAgain", { roomCode: currentRoom });
       wcPlayAgainBtn.disabled = true;
       wcPlayAgainBtn.textContent = "Waiting for opponent...";
+      if (wcKeepGoingBtn) wcKeepGoingBtn.disabled = true;
     };
   }
 
@@ -189,9 +223,7 @@
     renderState();
     showWordChainScreen();
     wcMsg.textContent = "Game started! You have 20 seconds per turn.";
-    wcPlayAgainBtn.classList.add("hidden");
-    wcPlayAgainBtn.disabled = false;
-    wcPlayAgainBtn.textContent = "Play Again";
+    hideEndButtons();
   }
 
   function onGameOver(data) {
@@ -202,10 +234,22 @@
     turnEndsAt = null;
     renderState();
     const youWin = data.winnerId === socket.id;
-    wcMsg.textContent = (data.message || "Time's up!") + (youWin ? " You win!" : " You lose.");
-    wcPlayAgainBtn.classList.remove("hidden");
-    wcPlayAgainBtn.disabled = false;
-    wcPlayAgainBtn.textContent = "Play Again";
+    wcMsg.textContent = (data.message || "Time's up!") +
+      (youWin ? " You win!" : " You lose.") +
+      " Keep Going to continue this chain, or Play Again for a fresh start.";
+    showEndButtons();
+  }
+
+  function onContinued(data) {
+    if (!active) return;
+    gameOver = false;
+    hideEndButtons();
+    if (data.chain) renderChain(data.chain);
+    if (data.requiredLetter !== undefined) requiredLetter = data.requiredLetter;
+    startTimerTick(data.turnEndsAt);
+    // Turn ownership comes from the following (or concurrent) wcTurnChanged.
+    wcMsg.textContent = data.message || "Keep going! Same chain, fresh timer.";
+    renderState();
   }
 
   function init(sharedSocket) {
@@ -221,7 +265,11 @@
     });
 
     socket.on("wcTurnChanged", (data) => {
-      if (!active || gameOver) return;
+      if (!active) return;
+      // After Keep Going, over is cleared server-side and turns resume.
+      if (gameOver && !data.turnEndsAt) return;
+      if (gameOver) hideEndButtons();
+      gameOver = false;
       myTurn = data.yourTurn;
       requiredLetter = data.requiredLetter;
       if (data.chain) renderChain(data.chain);
@@ -231,8 +279,15 @@
 
     socket.on("wordChainOver", onGameOver);
 
+    socket.on("wordChainKeepGoingWait", () => {
+      if (!active || !wcKeepGoingBtn) return;
+      wcKeepGoingBtn.textContent = "Waiting for opponent...";
+    });
+
+    socket.on("wordChainContinued", onContinued);
+
     socket.on("wordChainPlayAgainWait", () => {
-      if (!active) return;
+      if (!active || !wcPlayAgainBtn) return;
       wcPlayAgainBtn.textContent = "Waiting for opponent...";
     });
 
@@ -240,9 +295,7 @@
       if (!active) return;
       gameOver = false;
       wcMsg.textContent = "";
-      wcPlayAgainBtn.classList.add("hidden");
-      wcPlayAgainBtn.disabled = false;
-      wcPlayAgainBtn.textContent = "Play Again";
+      hideEndButtons();
       wcWordInput.value = "";
     });
 
