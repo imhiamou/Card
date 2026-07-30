@@ -1,17 +1,21 @@
 /*
  * English dictionary — Word Chain only.
- * Uses the DWYL word list via an-array-of-english-words.
  * Hidden Hunt never loads or calls this module.
  *
+ * Vocabulary: ~10.7k everyday English words (SCOWL size 10+20),
+ * stored in server/data/common-words.json. Obscure / technical /
+ * archaic terms from the old full DWYL list are not included.
+ *
  * Two-letter words are excluded (minimum length 3).
+ * Lookups stay O(1) via a Set.
  */
-const wordList = require("an-array-of-english-words");
+const wordList = require("./data/common-words.json");
 
 const MIN_WORD_LENGTH = 3;
 
 const VALID_WORDS = new Set(
   wordList
-    .map((w) => w.toLowerCase())
+    .map((w) => String(w).toLowerCase())
     .filter((w) => w.length >= MIN_WORD_LENGTH)
 );
 
