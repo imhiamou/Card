@@ -662,23 +662,18 @@ io.on("connection", (socket) => {
   /*
    * "createLobby" — a player creates a new lobby with a code THEY
    * chose (4-8 letters/numbers, auto-uppercased, must be unique).
-   * Payload: { name, character, room }
-   * The name is one of the fixed classic names (picked, not typed).
+   * Payload: { name, room, game }
+   * Character is chosen later during Hidden Hunt placement.
    * Replies with "lobbyCreated" { room } to the creator.
    */
   socket.on("createLobby", (data) => {
     const name = data && typeof data.name === "string" ? data.name.trim() : "";
-    const character = data && typeof data.character === "string" ? data.character : "";
     const roomCode = data && typeof data.room === "string" ? data.room.trim().toUpperCase() : "";
     // Lobby game mode: default Hidden Hunt. "word-chain" launches Word Chain only.
     const gameMode = data && data.game === "word-chain" ? "word-chain" : "hidden-hunt";
 
     if (!PLAYER_NAMES.includes(name)) {
       socket.emit("errorMessage", "Choose a valid name.");
-      return;
-    }
-    if (!CHARACTERS.includes(character)) {
-      socket.emit("errorMessage", "Choose a valid character.");
       return;
     }
     // Validate: 4-8 characters, letters and numbers only.
@@ -696,7 +691,8 @@ io.on("connection", (socket) => {
       // Which game this lobby runs. Stored separately from room.game
       // (Hidden Hunt's card-match state) so existing HH logic is untouched.
       gameMode,
-      players: [{ id: socket.id, name, character }],
+      // character is filled in during Hidden Hunt placement (null until then).
+      players: [{ id: socket.id, name, character: null }],
       positions: {},
       ready: {},
       rematch: {},
@@ -710,14 +706,13 @@ io.on("connection", (socket) => {
 
   /*
    * "joinLobby" — a second player joins an existing lobby.
-   * Payload: { name, character, room }
-   * On success emits "gameStart" { room, players } to both players in
-   * the room (players carries only public info: id, name, character —
-   * used by clients to render the player information panel).
+   * Payload: { name, room }
+   * On success emits "gameStart" { room, players } for Hidden Hunt
+   * (placement next), or starts Word Chain. Character is still null
+   * for Hidden Hunt until placeCharacter.
    */
   socket.on("joinLobby", (data) => {
     const name = data && typeof data.name === "string" ? data.name.trim() : "";
-    const character = data && typeof data.character === "string" ? data.character : "";
     const roomCode = data && typeof data.room === "string" ? data.room.trim().toUpperCase() : "";
 
     if (!PLAYER_NAMES.includes(name)) {
@@ -726,10 +721,6 @@ io.on("connection", (socket) => {
     }
     if (!roomCode) {
       socket.emit("errorMessage", "Enter a valid lobby code.");
-      return;
-    }
-    if (!CHARACTERS.includes(character)) {
-      socket.emit("errorMessage", "Choose a valid character.");
       return;
     }
 
@@ -747,7 +738,7 @@ io.on("connection", (socket) => {
       return;
     }
 
-    room.players.push({ id: socket.id, name, character });
+    room.players.push({ id: socket.id, name, character: null });
     socket.join(roomCode);
 
     // Router: Word Chain lobbies never enter Hidden Hunt placement.
@@ -764,11 +755,12 @@ io.on("connection", (socket) => {
   });
 
   /*
-   * "placeCharacter" — a player confirms their hidden square.
-   * Payload: { roomCode, position: { row, col } }
+   * "placeCharacter" — a player confirms their hidden square AND
+   * their class character (Knight / Mage / Hunter / Rogue).
+   * Payload: { roomCode, position: { row, col }, character }
    *
-   * The server stores the position privately, marks the player ready
-   * and then either:
+   * The server stores the position privately, locks in the character,
+   * marks the player ready and then either:
    *   - emits "waitingOpponent" ONLY to this player (opponent not
    *     ready yet), or
    *   - emits "bothPlayersReady" to the whole room and starts the
@@ -784,6 +776,10 @@ io.on("connection", (socket) => {
       socket.emit("errorMessage", "You are not in this lobby.");
       return;
     }
+    if (room.gameMode === "word-chain") {
+      socket.emit("errorMessage", "This lobby is not a Hidden Hunt game.");
+      return;
+    }
     if (room.players.length < MAX_PLAYERS) {
       socket.emit("errorMessage", "Waiting for a second player before placement.");
       return;
@@ -797,9 +793,16 @@ io.on("connection", (socket) => {
       socket.emit("errorMessage", "Invalid board position.");
       return;
     }
+    const character = data && typeof data.character === "string" ? data.character : "";
+    if (!CHARACTERS.includes(character)) {
+      socket.emit("errorMessage", "Choose a valid character.");
+      return;
+    }
 
-    // Store the hidden position server-side only.
+    // Store the hidden position server-side only; lock in character now.
     room.positions[socket.id] = { row: position.row, col: position.col };
+    const me = room.players.find((p) => p.id === socket.id);
+    me.character = character;
     room.ready[socket.id] = true;
 
     const everyoneReady = room.players.every((p) => room.ready[p.id]);
@@ -811,9 +814,11 @@ io.on("connection", (socket) => {
       return;
     }
 
-    // "bothPlayersReady" — both positions are locked in; both clients
-    // hide the placement UI and transition to the game screen.
-    io.to(roomCode).emit("bothPlayersReady");
+    // "bothPlayersReady" — both hid and picked a character; include the
+    // final public player list so clients can render the player panel.
+    io.to(roomCode).emit("bothPlayersReady", {
+      players: room.players.map((p) => ({ id: p.id, name: p.name, character: p.character }))
+    });
 
     // Deal hands, pick the starting player and begin the card game.
     startGame(room);
@@ -1108,11 +1113,13 @@ io.on("connection", (socket) => {
     }
 
     // Full reset: back to the hidden placement phase, same lobby.
+    // Characters are chosen again with the new hiding spots.
     room.positions = {};
     room.ready = {};
     room.rematch = {};
     room.currentTurn = null;
     room.game = null;
+    room.players.forEach((p) => { p.character = null; });
 
     io.to(roomCode).emit("gameReset");
   });
