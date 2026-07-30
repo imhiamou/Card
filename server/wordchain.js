@@ -23,6 +23,7 @@ function initRoomState(room) {
     turnEndsAt: null
   };
   room.wcRematch = {};
+  room.wcKeepGoing = {};
 }
 
 function getRequiredLetter(room) {
@@ -188,9 +189,15 @@ function registerSocket(socket, io, rooms) {
       socket.emit("errorMessage", "You are not in this lobby.");
       return;
     }
+    if (!room.wc || !room.wc.over) {
+      socket.emit("errorMessage", "The round is still going.");
+      return;
+    }
 
     if (!room.wcRematch) room.wcRematch = {};
     room.wcRematch[socket.id] = true;
+    // Choosing a full reset cancels a pending Keep Going vote.
+    if (room.wcKeepGoing) delete room.wcKeepGoing[socket.id];
 
     if (!room.players.every((p) => room.wcRematch[p.id])) {
       socket.emit("wordChainPlayAgainWait");
@@ -198,8 +205,51 @@ function registerSocket(socket, io, rooms) {
     }
 
     room.wcRematch = {};
+    room.wcKeepGoing = {};
     onBothPlayersJoined(room, io, roomCode);
     io.to(roomCode).emit("wordChainReset");
+  });
+
+  /*
+   * "wordChainKeepGoing" — after a timeout loss, both players can vote
+   * to resume the SAME chain (words stay). The timed-out player gets
+   * another turn with a fresh 20s timer.
+   */
+  socket.on("wordChainKeepGoing", (data) => {
+    const roomCode = data && typeof data.roomCode === "string" ? data.roomCode.trim().toUpperCase() : "";
+    const room = rooms[roomCode];
+
+    if (!room || room.gameMode !== "word-chain" || !room.players.some((p) => p.id === socket.id)) {
+      socket.emit("errorMessage", "You are not in this lobby.");
+      return;
+    }
+    if (!room.wc || !room.wc.over) {
+      socket.emit("errorMessage", "The round is still going.");
+      return;
+    }
+
+    if (!room.wcKeepGoing) room.wcKeepGoing = {};
+    room.wcKeepGoing[socket.id] = true;
+    // Choosing Keep Going cancels a pending Play Again vote.
+    if (room.wcRematch) delete room.wcRematch[socket.id];
+
+    if (!room.players.every((p) => room.wcKeepGoing[p.id])) {
+      socket.emit("wordChainKeepGoingWait");
+      return;
+    }
+
+    room.wcKeepGoing = {};
+    room.wcRematch = {};
+    room.wc.over = false;
+    // Resume the timed-out player's turn; chain / required letter unchanged.
+    startTurnTimer(room, io, roomCode);
+    emitTurnState(room, io);
+    io.to(roomCode).emit("wordChainContinued", {
+      message: "Keep going! Same chain, fresh timer.",
+      chain: room.wc.usedWords.slice(),
+      requiredLetter: getRequiredLetter(room),
+      turnEndsAt: room.wc.turnEndsAt
+    });
   });
 }
 
