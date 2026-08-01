@@ -8,7 +8,7 @@
  * Each turn has a 20-second timer. Timing out ends the game (opponent wins).
  * Words must be at least 3 letters (no 2-letter words).
  */
-const { isValidWord, normalizeWord, MIN_WORD_LENGTH } = require("./dictionary");
+const { isValidWord, normalizeWord, MIN_WORD_LENGTH, wordFamilyKey } = require("./dictionary");
 
 const TURN_SECONDS = 20;
 
@@ -16,6 +16,7 @@ function initRoomState(room) {
   clearTurnTimer(room);
   room.wc = {
     usedWords: [],
+    usedRoots: [], // singular family keys (dog covers dogs, etc.)
     lastWord: null,
     currentTurn: null,
     over: false,
@@ -158,6 +159,13 @@ function registerSocket(socket, io, rooms) {
       socket.emit("errorMessage", "That word was already used.");
       return;
     }
+    // Block singular/plural repeats (dog ↔ dogs, box ↔ boxes, baby ↔ babies).
+    if (!room.wc.usedRoots) room.wc.usedRoots = room.wc.usedWords.map(wordFamilyKey);
+    const root = wordFamilyKey(word);
+    if (room.wc.usedRoots.includes(root)) {
+      socket.emit("errorMessage", "That word (or its singular/plural) was already used.");
+      return;
+    }
 
     const required = getRequiredLetter(room);
     if (required !== null && word[0] !== required) {
@@ -166,7 +174,8 @@ function registerSocket(socket, io, rooms) {
     }
 
     room.wc.usedWords.push(word);
-    room.wc.lastWord = word;
+    room.wc.usedRoots.push(root);
+    room.wc.lastWord = word
 
     const me = room.players.find((p) => p.id === socket.id);
     io.to(roomCode).emit("wordPlayed", {
