@@ -22,11 +22,20 @@ const STARTING_HAND_SIZE = 3;
 // The only selectable characters. Anything else is rejected.
 const CHARACTERS = ["Knight", "Mage", "Hunter", "Rogue"];
 
-// Display names are picked, not typed: Wolf or Mermaid only.
-const PLAYER_NAMES = ["Wolf", "Mermaid"];
+// Display names are typed by the player: 2-16 letters/numbers/spaces/-/_
+const NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9 _-]{1,15}$/;
 
 // Lobby codes are chosen by the creator: 4-8 letters/numbers only.
 const ROOM_CODE_PATTERN = /^[A-Z0-9]{4,8}$/;
+
+function normalizePlayerName(name) {
+  if (typeof name !== "string") return "";
+  return name.trim().replace(/\s+/g, " ");
+}
+
+function isValidPlayerName(name) {
+  return NAME_PATTERN.test(name);
+}
 
 /* ============================================================
    MODULAR CARD SYSTEM
@@ -689,13 +698,13 @@ io.on("connection", (socket) => {
    * Replies with "lobbyCreated" { room } to the creator.
    */
   socket.on("createLobby", (data) => {
-    const name = data && typeof data.name === "string" ? data.name.trim() : "";
+    const name = normalizePlayerName(data && data.name);
     const roomCode = data && typeof data.room === "string" ? data.room.trim().toUpperCase() : "";
     // Lobby game mode: default Hidden Hunt. "word-chain" launches Word Chain only.
     const gameMode = data && data.game === "word-chain" ? "word-chain" : "hidden-hunt";
 
-    if (!PLAYER_NAMES.includes(name)) {
-      socket.emit("errorMessage", "Choose a valid name.");
+    if (!isValidPlayerName(name)) {
+      socket.emit("errorMessage", "Enter a name (2-16 letters, numbers, spaces, - or _).");
       return;
     }
     // Validate: 4-8 characters, letters and numbers only.
@@ -734,11 +743,11 @@ io.on("connection", (socket) => {
    * for Hidden Hunt until placeCharacter.
    */
   socket.on("joinLobby", (data) => {
-    const name = data && typeof data.name === "string" ? data.name.trim() : "";
+    const name = normalizePlayerName(data && data.name);
     const roomCode = data && typeof data.room === "string" ? data.room.trim().toUpperCase() : "";
 
-    if (!PLAYER_NAMES.includes(name)) {
-      socket.emit("errorMessage", "Choose a valid name.");
+    if (!isValidPlayerName(name)) {
+      socket.emit("errorMessage", "Enter a name (2-16 letters, numbers, spaces, - or _).");
       return;
     }
     if (!roomCode) {
