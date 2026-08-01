@@ -62,7 +62,7 @@ opacity:.6;
 display:none;
 }
 
-/* Clickable option groups (name: Wolf/Mermaid, character: classics) */
+/* Clickable option groups (character classics on placement screen) */
 .charSelect{
 display:flex;
 gap:8px;
@@ -72,7 +72,7 @@ gap:8px;
 display:grid;
 grid-template-columns:1fr 1fr;
 }
-.nameOption,.charOption{
+.charOption{
 flex:1;
 background:#3a4256;
 border:2px solid transparent;
@@ -82,10 +82,10 @@ text-align:center;
 cursor:pointer;
 user-select:none;
 }
-.nameOption:hover,.charOption:hover{
+.charOption:hover{
 background:#4a5470;
 }
-.nameOption.selected,.charOption.selected{
+.charOption.selected{
 border-color:#4f9cff;
 background:#31537a;
 }

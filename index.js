@@ -68,9 +68,15 @@ shadowStep:{target:"none",hint:""}
 // owns the real game state (decks, hands, turn, positions).
 let currentRoom=null;    // lobby code of the room this client is in
 let lobbyPlayers=[];     // public player info (id, name, character)
-let selectedName="Wolf";
 let selectedCharacter=null; // chosen on the Hidden Hunt placement screen
 let selectedTile=null;   // placement: currently selected tile
+const NAME_PATTERN=/^[A-Za-z0-9][A-Za-z0-9 _-]{1,15}$/;
+function getPlayerName(){
+return document.getElementById("playerName").value.trim().replace(/\s+/g," ");
+}
+function isValidPlayerName(name){
+return NAME_PATTERN.test(name);
+}
 let myPosition=null;     // my own hidden square (updates when I move)
 let myTurn=null;         // true when it is this client's turn
 let hand=[];             // my cards (as sent by the server)
@@ -110,15 +116,6 @@ function tileKey(row,col){return row+","+col;}
    LOBBY
    ============================================================ */
 
-// Name selection: no typing — your name is Wolf or Mermaid.
-document.querySelectorAll(".nameOption").forEach((option)=>{
-option.onclick=()=>{
-document.querySelectorAll(".nameOption").forEach((o)=>o.classList.remove("selected"));
-option.classList.add("selected");
-selectedName=option.dataset.name;
-};
-});
-
 // Character selection happens on the Hidden Hunt placement screen
 // (after the hiding tile), not in the lobby.
 document.querySelectorAll("#placementCharSelect .charOption").forEach((option)=>{
@@ -138,17 +135,21 @@ input.addEventListener("input",()=>{input.value=input.value.toUpperCase();});
 });
 
 document.getElementById("createBtn").onclick=()=>{
+const name=getPlayerName();
+if(!isValidPlayerName(name)){alert("Enter a name (2-16 letters, numbers, spaces, - or _)");return;}
 const room=document.getElementById("createCode").value.trim().toUpperCase();
 if(!ROOM_CODE_PATTERN.test(room)){alert("Lobby code must be 4-8 letters or numbers");return;}
 const game=document.getElementById("gameSelect").value==="word-chain"?"word-chain":"hidden-hunt";
-socket.emit("createLobby",{name:selectedName,room,game});
+socket.emit("createLobby",{name,room,game});
 status.textContent="Creating lobby...";
 };
 
 document.getElementById("joinBtn").onclick=()=>{
+const name=getPlayerName();
+if(!isValidPlayerName(name)){alert("Enter a name (2-16 letters, numbers, spaces, - or _)");return;}
 const room=document.getElementById("roomCode").value.trim().toUpperCase();
 if(!room){alert("Enter lobby code");return;}
-socket.emit("joinLobby",{name:selectedName,room});
+socket.emit("joinLobby",{name,room});
 // Remember the code we tried to join; confirmed once "gameStart" arrives.
 currentRoom=room;
 status.textContent="Joining...";
