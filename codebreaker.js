@@ -9,12 +9,12 @@
     '</div>' +
     '<h2 id="cbTurnIndicator"></h2>' +
     '<p id="cbHint" class="cbHint">Guess the 6-digit secret code. Green = right spot, yellow = wrong spot, red = not in the code.</p>' +
+    '<div id="cbHistory" class="cbHistory"></div>' +
     '<div class="cbInputRow">' +
       '<input id="cbGuessInput" placeholder="Enter 6 digits" inputmode="numeric" autocomplete="off" maxlength="6">' +
       '<button type="button" id="cbSubmitBtn">Submit Guess</button>' +
     '</div>' +
     '<p id="cbMsg"></p>' +
-    '<div id="cbHistory" class="cbHistory"></div>' +
     '<div id="cbEndButtons" class="cbEndButtons hidden">' +
       '<button type="button" id="cbPlayAgainBtn">Play Again</button>' +
     '</div>';
@@ -107,7 +107,10 @@
   function renderHistory(list) {
     if (!cbHistory) return;
     cbHistory.innerHTML = "";
-    (list || []).forEach((entry) => {
+    // Newest guess on top so the latest attempt stays visible above the input
+    // (especially on phones when the keyboard opens).
+    const entries = (list || []).slice().reverse();
+    entries.forEach((entry) => {
       const block = document.createElement("div");
       block.className = "cbGuessBlock";
 
@@ -130,7 +133,7 @@
 
       cbHistory.appendChild(block);
     });
-    cbHistory.scrollTop = cbHistory.scrollHeight;
+    cbHistory.scrollTop = 0;
   }
 
   function renderState() {
