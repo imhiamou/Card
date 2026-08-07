@@ -6,6 +6,7 @@
 <title>Hidden Duel</title>
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="wordchain.css">
+<link rel="stylesheet" href="codebreaker.css">
 <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
 </head>
 <body>
@@ -21,6 +22,7 @@
 <select id="gameSelect">
 <option value="hidden-hunt" selected>Hidden Hunt</option>
 <option value="word-chain">Word Chain</option>
+<option value="code-breaker">Code Breaker</option>
 </select>
 
 <!-- The lobby creator chooses their own code (4-8 letters/numbers) -->
@@ -119,7 +121,11 @@
 <!-- Word Chain screen (mounted by wordchain.js; unused for Hidden Hunt) -->
 <div class="box hidden" id="wordChainScreen"></div>
 
+<!-- Code Breaker screen (mounted by codebreaker.js; unused for other games) -->
+<div class="box hidden" id="codeBreakerScreen"></div>
+
 <script src="wordchain.js"></script>
+<script src="codebreaker.js"></script>
 <script src="index.js"></script>
 </body>
 </html>

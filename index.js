@@ -139,7 +139,8 @@ const name=getPlayerName();
 if(!isValidPlayerName(name)){alert("Enter a name (2-16 letters, numbers, spaces, - or _)");return;}
 const room=document.getElementById("createCode").value.trim().toUpperCase();
 if(!ROOM_CODE_PATTERN.test(room)){alert("Lobby code must be 4-8 letters or numbers");return;}
-const game=document.getElementById("gameSelect").value==="word-chain"?"word-chain":"hidden-hunt";
+const selectedGame=document.getElementById("gameSelect").value;
+const game=selectedGame==="word-chain"?"word-chain":selectedGame==="code-breaker"?"code-breaker":"hidden-hunt";
 socket.emit("createLobby",{name,room,game});
 status.textContent="Creating lobby...";
 };
@@ -183,6 +184,8 @@ status.textContent="Other player disconnected.";
 socket.on("errorMessage",(msg)=>{
 // Word Chain handles its own rejected-word messages when active.
 if(window.WordChain&&WordChain.isActive()&&WordChain.showError(msg))return;
+// Code Breaker handles its own rejected-guess messages when active.
+if(window.CodeBreaker&&CodeBreaker.isActive()&&CodeBreaker.showError(msg))return;
 // During the game, a rejected play (e.g. an invalid Dash target) must
 // NOT freeze the match: unlock the hand so the player can try again,
 // and show the reason on screen instead of an alert.
@@ -1202,3 +1205,5 @@ oppScanned:[...oppScanned]
 
 // Wire Word Chain to the shared lobby socket (no Hidden Hunt gameplay changes).
 if(window.WordChain)WordChain.init(socket);
+// Wire Code Breaker to the shared lobby socket (isolated from other games).
+if(window.CodeBreaker)CodeBreaker.init(socket);
