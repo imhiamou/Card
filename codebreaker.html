@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Code Breaker</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="codebreaker.css">
+</head>
+<body>
+<!--
+  Code Breaker UI lives in the shared lobby page (index.html).
+  This file documents the isolated Code Breaker screen markup and
+  styles; the live game is mounted by codebreaker.js into #codeBreakerScreen.
+-->
+<div class="box" id="codeBreakerScreen">
+<h2>Code Breaker</h2>
+<div class="cbPlayers">
+<div class="cbPlayer" id="cbMyName">You</div>
+<div class="cbVs">VS</div>
+<div class="cbPlayer" id="cbOppName">Opponent</div>
+</div>
+<h2 id="cbTurnIndicator"></h2>
+<p id="cbHint" class="cbHint">Guess the 6-digit secret code. Green = right spot, yellow = wrong spot, red = not in the code.</p>
+<div class="cbInputRow">
+<input id="cbGuessInput" placeholder="Enter 6 digits" inputmode="numeric" autocomplete="off" maxlength="6">
+<button type="button" id="cbSubmitBtn">Submit Guess</button>
+</div>
+<p id="cbMsg"></p>
+<div id="cbHistory" class="cbHistory"></div>
+<div id="cbEndButtons" class="cbEndButtons hidden">
+<button type="button" id="cbPlayAgainBtn">Play Again</button>
+</div>
+</div>
+<p style="text-align:center;color:#9db2d0">Open <a href="index.html" style="color:#ffd866">index.html</a> to play via the lobby.</p>
+</body>
+</html>

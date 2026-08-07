@@ -2,6 +2,7 @@ const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
 const wordchain = require("./wordchain");
+const codebreaker = require("./codebreaker");
 
 const app = express();
 const server = http.createServer(app);
@@ -689,6 +690,8 @@ io.on("connection", (socket) => {
 
   // Word Chain socket handlers (no-ops unless the lobby gameMode is word-chain).
   wordchain.registerSocket(socket, io, rooms);
+  // Code Breaker socket handlers (no-ops unless the lobby gameMode is code-breaker).
+  codebreaker.registerSocket(socket, io, rooms);
 
   /*
    * "createLobby" — a player creates a new lobby with a code THEY
@@ -700,8 +703,10 @@ io.on("connection", (socket) => {
   socket.on("createLobby", (data) => {
     const name = normalizePlayerName(data && data.name);
     const roomCode = data && typeof data.room === "string" ? data.room.trim().toUpperCase() : "";
-    // Lobby game mode: default Hidden Hunt. "word-chain" launches Word Chain only.
-    const gameMode = data && data.game === "word-chain" ? "word-chain" : "hidden-hunt";
+    // Lobby game mode: default Hidden Hunt. "word-chain" / "code-breaker" launch those games only.
+    const gameMode = data && data.game === "word-chain" ? "word-chain"
+      : data && data.game === "code-breaker" ? "code-breaker"
+      : "hidden-hunt";
 
     if (!isValidPlayerName(name)) {
       socket.emit("errorMessage", "Enter a name (2-16 letters, numbers, spaces, - or _).");
@@ -739,8 +744,8 @@ io.on("connection", (socket) => {
    * "joinLobby" — a second player joins an existing lobby.
    * Payload: { name, room }
    * On success emits "gameStart" { room, players } for Hidden Hunt
-   * (placement next), or starts Word Chain. Character is still null
-   * for Hidden Hunt until placeCharacter.
+   * (placement next), starts Word Chain, or starts Code Breaker.
+   * Character is still null for Hidden Hunt until placeCharacter.
    */
   socket.on("joinLobby", (data) => {
     const name = normalizePlayerName(data && data.name);
@@ -777,6 +782,11 @@ io.on("connection", (socket) => {
       wordchain.onBothPlayersJoined(room, io, roomCode);
       return;
     }
+    // Router: Code Breaker lobbies never enter Hidden Hunt or Word Chain.
+    if (room.gameMode === "code-breaker") {
+      codebreaker.onBothPlayersJoined(room, io, roomCode);
+      return;
+    }
 
     // Both players are in — start the placement phase on both clients.
     io.to(roomCode).emit("gameStart", {
@@ -807,7 +817,7 @@ io.on("connection", (socket) => {
       socket.emit("errorMessage", "You are not in this lobby.");
       return;
     }
-    if (room.gameMode === "word-chain") {
+    if (room.gameMode === "word-chain" || room.gameMode === "code-breaker") {
       socket.emit("errorMessage", "This lobby is not a Hidden Hunt game.");
       return;
     }
@@ -1122,7 +1132,7 @@ io.on("connection", (socket) => {
     const room = rooms[roomCode];
     if (!room || !room.players.some((p) => p.id === socket.id)) return;
     if (!room.game || !room.game.over) return;
-    if (room.gameMode === "word-chain") return;
+    if (room.gameMode === "word-chain" || room.gameMode === "code-breaker") return;
 
     const opponent = getOpponent(room, socket.id);
     if (!opponent) return;
