@@ -4,6 +4,7 @@ const { Server } = require("socket.io");
 const wordchain = require("./wordchain");
 const codebreaker = require("./codebreaker");
 const domino = require("./domino");
+const uno = require("./uno");
 
 const app = express();
 const server = http.createServer(app);
@@ -695,6 +696,8 @@ io.on("connection", (socket) => {
   codebreaker.registerSocket(socket, io, rooms);
   // Dominoes socket handlers (no-ops unless the lobby gameMode is dominoes).
   domino.registerSocket(socket, io, rooms);
+  // UNO socket handlers (no-ops unless the lobby gameMode is uno).
+  uno.registerSocket(socket, io, rooms);
 
   /*
    * "createLobby" — a player creates a new lobby with a code THEY
@@ -710,11 +713,14 @@ io.on("connection", (socket) => {
     const gameMode = data && data.game === "word-chain" ? "word-chain"
       : data && data.game === "code-breaker" ? "code-breaker"
       : data && data.game === "dominoes" ? "dominoes"
+      : data && data.game === "uno" ? "uno"
       : "hidden-hunt";
-    // Dominoes alone supports 2–4 seats; every other game stays at 2.
+    // Dominoes 2–4 / UNO 2–5; every other game stays at 2.
     const maxPlayers = gameMode === "dominoes"
       ? domino.normalizeMaxPlayers(data && data.maxPlayers)
-      : MAX_PLAYERS;
+      : gameMode === "uno"
+        ? uno.normalizeMaxPlayers(data && data.maxPlayers)
+        : MAX_PLAYERS;
 
     if (!isValidPlayerName(name)) {
       socket.emit("errorMessage", "Enter a name (2-16 letters, numbers, spaces, - or _).");
@@ -754,7 +760,7 @@ io.on("connection", (socket) => {
    * Payload: { name, room }
    * On success emits "gameStart" { room, players } for Hidden Hunt
    * (placement next), starts Word Chain / Code Breaker at 2 players,
-   * or Dominoes when the chosen seat count is full.
+   * or Dominoes / UNO when the chosen seat count is full.
    * Character is still null for Hidden Hunt until placeCharacter.
    */
   socket.on("joinLobby", (data) => {
@@ -813,6 +819,21 @@ io.on("connection", (socket) => {
       domino.onLobbyFull(room, io, roomCode);
       return;
     }
+    // Router: UNO waits until every chosen seat is filled.
+    if (room.gameMode === "uno") {
+      const max = room.maxPlayers || 2;
+      if (room.players.length < max) {
+        // "unoLobbyUpdate" — UNO only. Lobby not full yet.
+        io.to(roomCode).emit("unoLobbyUpdate", {
+          room: roomCode,
+          maxPlayers: max,
+          players: room.players.map((p) => ({ id: p.id, name: p.name }))
+        });
+        return;
+      }
+      uno.onLobbyFull(room, io, roomCode);
+      return;
+    }
 
     // Both players are in — start the placement phase on both clients.
     io.to(roomCode).emit("gameStart", {
@@ -843,7 +864,7 @@ io.on("connection", (socket) => {
       socket.emit("errorMessage", "You are not in this lobby.");
       return;
     }
-    if (room.gameMode === "word-chain" || room.gameMode === "code-breaker" || room.gameMode === "dominoes") {
+    if (room.gameMode === "word-chain" || room.gameMode === "code-breaker" || room.gameMode === "dominoes" || room.gameMode === "uno") {
       socket.emit("errorMessage", "This lobby is not a Hidden Hunt game.");
       return;
     }
@@ -1158,7 +1179,7 @@ io.on("connection", (socket) => {
     const room = rooms[roomCode];
     if (!room || !room.players.some((p) => p.id === socket.id)) return;
     if (!room.game || !room.game.over) return;
-    if (room.gameMode === "word-chain" || room.gameMode === "code-breaker" || room.gameMode === "dominoes") return;
+    if (room.gameMode === "word-chain" || room.gameMode === "code-breaker" || room.gameMode === "dominoes" || room.gameMode === "uno") return;
 
     const opponent = getOpponent(room, socket.id);
     if (!opponent) return;

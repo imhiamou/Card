@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>UNO</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="uno.css">
+</head>
+<body>
+<!--
+  UNO UI lives in the shared lobby page (index.html).
+  This file documents the isolated UNO screen markup and styles;
+  the live game is mounted by uno.js into #unoScreen.
+-->
+<div class="box" id="unoScreen">
+<div class="unoTitleRow">
+<h2>UNO</h2>
+<div class="unoMeta" id="unoMeta"></div>
+</div>
+<div class="unoPlayers" id="unoPlayers"></div>
+<h2 id="unoTurnIndicator"></h2>
+<div class="unoTable">
+<div class="unoPileCol">
+<div id="unoDrawPile" class="unoCard"></div>
+<div class="unoPileLabel" id="unoDrawLabel">Draw</div>
+</div>
+<div class="unoPileCol">
+<div id="unoDiscardPile" class="unoCard"></div>
+<div class="unoPileLabel">Discard</div>
+</div>
+</div>
+<div class="unoColorBar">
+<span>Current color</span>
+<span class="unoColorDot" id="unoColorDot"></span>
+<span id="unoColorText">—</span>
+<span id="unoDirText"></span>
+<span id="unoPenaltyText"></span>
+</div>
+<div class="unoHandSection">
+<h3>Your hand</h3>
+<div class="unoHand" id="unoHand"></div>
+</div>
+<div class="unoColorPicker hidden" id="unoColorPicker">
+<button type="button" class="pickRed" data-color="red">Red</button>
+<button type="button" class="pickBlue" data-color="blue">Blue</button>
+<button type="button" class="pickGreen" data-color="green">Green</button>
+<button type="button" class="pickYellow" data-color="yellow">Yellow</button>
+</div>
+<div class="unoActions">
+<button type="button" id="unoDrawBtn" disabled>Draw</button>
+<button type="button" id="unoCallBtn" class="hidden">UNO!</button>
+</div>
+<p id="unoMsg"></p>
+<div id="unoScoreboard" class="unoScoreboard hidden"></div>
+<div id="unoEndButtons" class="unoEndButtons hidden">
+<button type="button" id="unoPlayAgainBtn">Play Again</button>
+</div>
+</div>
+<p style="text-align:center;color:#9db2d0">Open <a href="index.html" style="color:#ffd866">index.html</a> to play via the lobby.</p>
+</body>
+</html>
