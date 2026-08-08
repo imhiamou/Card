@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="wordchain.css">
 <link rel="stylesheet" href="codebreaker.css">
+<link rel="stylesheet" href="domino.css">
 <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
 </head>
 <body>
@@ -23,7 +24,18 @@
 <option value="hidden-hunt" selected>Hidden Hunt</option>
 <option value="word-chain">Word Chain</option>
 <option value="code-breaker">Code Breaker</option>
+<option value="dominoes">Dominoes</option>
 </select>
+
+<!-- Dominoes only: lobby creator picks 2–4 seats -->
+<div id="dominoMaxPlayersWrap" class="hidden">
+<h3>Players</h3>
+<select id="dominoMaxPlayers">
+<option value="2" selected>2 players</option>
+<option value="3">3 players</option>
+<option value="4">4 players</option>
+</select>
+</div>
 
 <!-- The lobby creator chooses their own code (4-8 letters/numbers) -->
 <input id="createCode" placeholder="Choose Lobby Code (4-8 letters/numbers)" maxlength="8">
@@ -124,8 +136,12 @@
 <!-- Code Breaker screen (mounted by codebreaker.js; unused for other games) -->
 <div class="box hidden" id="codeBreakerScreen"></div>
 
+<!-- Dominoes screen (mounted by domino.js; unused for other games) -->
+<div class="box hidden" id="dominoScreen"></div>
+
 <script src="wordchain.js"></script>
 <script src="codebreaker.js"></script>
+<script src="domino.js"></script>
 <script src="index.js"></script>
 </body>
 </html>

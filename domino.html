@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dominoes</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="domino.css">
+</head>
+<body>
+<!--
+  Dominoes UI lives in the shared lobby page (index.html).
+  This file documents the isolated Dominoes screen markup and
+  styles; the live game is mounted by domino.js into #dominoScreen.
+-->
+<div class="box" id="dominoScreen">
+<div class="domTitleRow">
+<h2>Dominoes</h2>
+<div class="domMeta" id="domMeta"></div>
+</div>
+<div class="domPlayers" id="domPlayers"></div>
+<h2 id="domTurnIndicator"></h2>
+<div class="domBoardWrap" id="domBoardWrap">
+<div class="domBoardInner" id="domBoardInner"></div>
+</div>
+<div class="domEnds">
+<span id="domLeftEnd">Left: —</span>
+<span id="domBoneyard">Boneyard: 0</span>
+<span id="domRightEnd">Right: —</span>
+</div>
+<div class="domHandSection">
+<h3>Your hand</h3>
+<div class="domHand" id="domHand"></div>
+</div>
+<div class="domSidePicker" id="domSidePicker">
+<button type="button" id="domPlayLeft">Play Left</button>
+<button type="button" id="domPlayRight">Play Right</button>
+</div>
+<div class="domActions">
+<button type="button" id="domDrawBtn" disabled>Draw</button>
+</div>
+<p id="domMsg"></p>
+<div id="domScoreboard" class="domScoreboard hidden"></div>
+<div id="domEndButtons" class="domEndButtons hidden">
+<button type="button" id="domPlayAgainBtn">Play Again</button>
+</div>
+</div>
+<p style="text-align:center;color:#9db2d0">Open <a href="index.html" style="color:#ffd866">index.html</a> to play via the lobby.</p>
+</body>
+</html>

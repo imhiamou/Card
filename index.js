@@ -134,14 +134,35 @@ const input=document.getElementById(id);
 input.addEventListener("input",()=>{input.value=input.value.toUpperCase();});
 });
 
+// Dominoes-only seat count control (hidden for every other game).
+const gameSelectEl=document.getElementById("gameSelect");
+const dominoMaxPlayersWrap=document.getElementById("dominoMaxPlayersWrap");
+function syncDominoMaxPlayersVisibility(){
+if(!dominoMaxPlayersWrap)return;
+const show=gameSelectEl&&gameSelectEl.value==="dominoes";
+dominoMaxPlayersWrap.classList.toggle("hidden",!show);
+}
+if(gameSelectEl){
+gameSelectEl.addEventListener("change",syncDominoMaxPlayersVisibility);
+syncDominoMaxPlayersVisibility();
+}
+
 document.getElementById("createBtn").onclick=()=>{
 const name=getPlayerName();
 if(!isValidPlayerName(name)){alert("Enter a name (2-16 letters, numbers, spaces, - or _)");return;}
 const room=document.getElementById("createCode").value.trim().toUpperCase();
 if(!ROOM_CODE_PATTERN.test(room)){alert("Lobby code must be 4-8 letters or numbers");return;}
 const selectedGame=document.getElementById("gameSelect").value;
-const game=selectedGame==="word-chain"?"word-chain":selectedGame==="code-breaker"?"code-breaker":"hidden-hunt";
-socket.emit("createLobby",{name,room,game});
+const game=selectedGame==="word-chain"?"word-chain"
+:selectedGame==="code-breaker"?"code-breaker"
+:selectedGame==="dominoes"?"dominoes"
+:"hidden-hunt";
+const payload={name,room,game};
+if(game==="dominoes"){
+const maxEl=document.getElementById("dominoMaxPlayers");
+payload.maxPlayers=maxEl?Number(maxEl.value):2;
+}
+socket.emit("createLobby",payload);
 status.textContent="Creating lobby...";
 };
 
@@ -159,7 +180,12 @@ status.textContent="Joining...";
 socket.on("lobbyCreated",(data)=>{
 currentRoom=data.room;
 code.textContent="Lobby Code: "+data.room;
+if(data.game==="dominoes"){
+const max=data.maxPlayers||2;
+status.textContent="Waiting for players (1/"+max+")...";
+}else{
 status.textContent="Waiting for Player 2...";
+}
 });
 
 // Fired by the server when the second player joins the lobby.
@@ -186,6 +212,8 @@ socket.on("errorMessage",(msg)=>{
 if(window.WordChain&&WordChain.isActive()&&WordChain.showError(msg))return;
 // Code Breaker handles its own rejected-guess messages when active.
 if(window.CodeBreaker&&CodeBreaker.isActive()&&CodeBreaker.showError(msg))return;
+// Dominoes handles its own rule messages when active.
+if(window.Dominoes&&Dominoes.isActive()&&Dominoes.showError(msg))return;
 // During the game, a rejected play (e.g. an invalid Dash target) must
 // NOT freeze the match: unlock the hand so the player can try again,
 // and show the reason on screen instead of an alert.
@@ -1207,3 +1235,5 @@ oppScanned:[...oppScanned]
 if(window.WordChain)WordChain.init(socket);
 // Wire Code Breaker to the shared lobby socket (isolated from other games).
 if(window.CodeBreaker)CodeBreaker.init(socket);
+// Wire Dominoes to the shared lobby socket (isolated from other games).
+if(window.Dominoes)Dominoes.init(socket);
