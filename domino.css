@@ -1,0 +1,302 @@
+/* Dominoes — styles only. Does not alter other game layouts. */
+
+#dominoScreen{
+width:min(960px,96vw);
+max-width:96vw;
+}
+
+.domTitleRow{
+display:flex;
+justify-content:space-between;
+align-items:baseline;
+gap:12px;
+flex-wrap:wrap;
+margin-bottom:8px;
+}
+
+.domTitleRow h2{
+margin:0;
+}
+
+.domMeta{
+color:#9db2d0;
+font-size:13px;
+}
+
+.domPlayers{
+display:flex;
+flex-wrap:wrap;
+gap:8px;
+margin:8px 0 12px;
+}
+
+.domPlayerChip{
+background:#3a4256;
+border-radius:8px;
+padding:8px 10px;
+min-width:110px;
+flex:1;
+border:2px solid transparent;
+}
+
+.domPlayerChip.turn{
+border-color:#4f9cff;
+background:#31537a;
+}
+
+.domPlayerChip .domName{
+font-size:14px;
+font-weight:bold;
+}
+
+.domPlayerChip .domCount{
+font-size:12px;
+color:#c5d2e8;
+margin-top:2px;
+}
+
+#domTurnIndicator{
+text-align:center;
+font-size:18px;
+margin:6px 0 10px;
+}
+
+.domBoardWrap{
+position:relative;
+background:radial-gradient(ellipse at center,#2f6b4a 0%,#1f4532 70%,#173326 100%);
+border:3px solid #0f241a;
+border-radius:14px;
+height:min(42vh,320px);
+overflow:hidden;
+touch-action:none;
+cursor:grab;
+box-shadow:inset 0 0 40px rgba(0,0,0,.35);
+}
+
+.domBoardWrap.dragging{
+cursor:grabbing;
+}
+
+.domBoardInner{
+position:absolute;
+left:50%;
+top:50%;
+transform-origin:0 0;
+display:flex;
+align-items:center;
+gap:4px;
+padding:24px;
+will-change:transform;
+}
+
+.domEnds{
+display:flex;
+justify-content:space-between;
+gap:12px;
+margin:8px 0;
+font-size:13px;
+color:#c5d2e8;
+}
+
+.domEnds span{
+background:#1e2430;
+padding:4px 10px;
+border-radius:6px;
+}
+
+.domHandSection{
+margin-top:10px;
+}
+
+.domHandSection h3{
+margin:0 0 8px;
+font-size:15px;
+color:#c5d2e8;
+}
+
+.domHand{
+display:flex;
+flex-wrap:wrap;
+gap:8px;
+justify-content:center;
+min-height:72px;
+padding:8px;
+background:#1e2430;
+border-radius:10px;
+}
+
+.domTile{
+width:44px;
+height:88px;
+flex:0 0 auto;
+cursor:default;
+user-select:none;
+filter:drop-shadow(0 2px 2px rgba(0,0,0,.45));
+transition:transform .18s ease, filter .18s ease, opacity .18s ease;
+}
+
+.domTile.svgHost{
+display:inline-block;
+}
+
+.domTile svg{
+display:block;
+width:100%;
+height:100%;
+}
+
+.domTile.horizontal{
+width:88px;
+height:44px;
+}
+
+.domTile.boardTile{
+cursor:default;
+}
+
+.domTile.inHand{
+cursor:pointer;
+}
+
+.domTile.inHand:hover{
+transform:translateY(-4px);
+}
+
+.domTile.valid{
+outline:2px solid #ffd866;
+outline-offset:2px;
+border-radius:6px;
+transform:translateY(-6px);
+filter:drop-shadow(0 4px 6px rgba(255,216,102,.35));
+}
+
+.domTile.selected{
+outline:2px solid #4f9cff;
+outline-offset:2px;
+border-radius:6px;
+transform:translateY(-8px) scale(1.04);
+}
+
+.domTile.playAnim{
+animation:domPlace .35s ease;
+}
+
+.domTile.drawAnim{
+animation:domDraw .4s ease;
+}
+
+@keyframes domPlace{
+from{transform:scale(.6) rotate(-12deg);opacity:0;}
+to{transform:scale(1) rotate(0);opacity:1;}
+}
+
+@keyframes domDraw{
+from{transform:translateY(-16px) scale(.8);opacity:0;}
+to{transform:translateY(0) scale(1);opacity:1;}
+}
+
+.domActions{
+display:flex;
+gap:8px;
+margin-top:10px;
+}
+
+.domActions button{
+flex:1;
+margin:0;
+}
+
+#domDrawBtn{
+background:#2e5d43;
+color:#fff;
+border:none;
+border-radius:8px;
+}
+
+#domMsg{
+min-height:1.4em;
+color:#c5d2e8;
+font-size:14px;
+margin:8px 0 0;
+}
+
+.domSidePicker{
+display:none;
+gap:8px;
+margin-top:8px;
+}
+
+.domSidePicker.show{
+display:flex;
+}
+
+.domSidePicker button{
+flex:1;
+margin:0;
+background:#31537a;
+color:#fff;
+border:none;
+border-radius:8px;
+}
+
+.domScoreboard{
+background:#1e2430;
+border-radius:10px;
+padding:12px;
+margin-top:12px;
+}
+
+.domScoreboard h3{
+margin:0 0 8px;
+}
+
+.domScoreRow{
+display:flex;
+justify-content:space-between;
+padding:6px 0;
+border-bottom:1px solid #2f3848;
+font-size:14px;
+}
+
+.domScoreRow:last-child{
+border-bottom:none;
+}
+
+.domScoreRow.winner{
+color:#ffd866;
+font-weight:bold;
+}
+
+.domEndButtons{
+display:flex;
+gap:8px;
+margin-top:10px;
+}
+
+.domEndButtons button{
+flex:1;
+margin:0;
+}
+
+.domEndButtons.hidden,
+.domScoreboard.hidden{
+display:none;
+}
+
+@media(max-width:600px){
+#dominoScreen{
+width:96vw;
+padding:16px;
+}
+.domBoardWrap{
+height:36vh;
+}
+.domTile{
+width:36px;
+height:72px;
+}
+.domTile.horizontal{
+width:72px;
+height:36px;
+}
+}
