@@ -134,17 +134,18 @@ const input=document.getElementById(id);
 input.addEventListener("input",()=>{input.value=input.value.toUpperCase();});
 });
 
-// Dominoes-only seat count control (hidden for every other game).
+// Seat-count controls for multi-seat games (hidden for 2-player-only modes).
 const gameSelectEl=document.getElementById("gameSelect");
 const dominoMaxPlayersWrap=document.getElementById("dominoMaxPlayersWrap");
-function syncDominoMaxPlayersVisibility(){
-if(!dominoMaxPlayersWrap)return;
-const show=gameSelectEl&&gameSelectEl.value==="dominoes";
-dominoMaxPlayersWrap.classList.toggle("hidden",!show);
+const unoMaxPlayersWrap=document.getElementById("unoMaxPlayersWrap");
+function syncMaxPlayersVisibility(){
+const game=gameSelectEl?gameSelectEl.value:"";
+if(dominoMaxPlayersWrap)dominoMaxPlayersWrap.classList.toggle("hidden",game!=="dominoes");
+if(unoMaxPlayersWrap)unoMaxPlayersWrap.classList.toggle("hidden",game!=="uno");
 }
 if(gameSelectEl){
-gameSelectEl.addEventListener("change",syncDominoMaxPlayersVisibility);
-syncDominoMaxPlayersVisibility();
+gameSelectEl.addEventListener("change",syncMaxPlayersVisibility);
+syncMaxPlayersVisibility();
 }
 
 document.getElementById("createBtn").onclick=()=>{
@@ -156,10 +157,15 @@ const selectedGame=document.getElementById("gameSelect").value;
 const game=selectedGame==="word-chain"?"word-chain"
 :selectedGame==="code-breaker"?"code-breaker"
 :selectedGame==="dominoes"?"dominoes"
+:selectedGame==="uno"?"uno"
 :"hidden-hunt";
 const payload={name,room,game};
 if(game==="dominoes"){
 const maxEl=document.getElementById("dominoMaxPlayers");
+payload.maxPlayers=maxEl?Number(maxEl.value):2;
+}
+if(game==="uno"){
+const maxEl=document.getElementById("unoMaxPlayers");
 payload.maxPlayers=maxEl?Number(maxEl.value):2;
 }
 socket.emit("createLobby",payload);
@@ -180,7 +186,7 @@ status.textContent="Joining...";
 socket.on("lobbyCreated",(data)=>{
 currentRoom=data.room;
 code.textContent="Lobby Code: "+data.room;
-if(data.game==="dominoes"){
+if(data.game==="dominoes"||data.game==="uno"){
 const max=data.maxPlayers||2;
 status.textContent="Waiting for players (1/"+max+")...";
 }else{
@@ -214,6 +220,8 @@ if(window.WordChain&&WordChain.isActive()&&WordChain.showError(msg))return;
 if(window.CodeBreaker&&CodeBreaker.isActive()&&CodeBreaker.showError(msg))return;
 // Dominoes handles its own rule messages when active.
 if(window.Dominoes&&Dominoes.isActive()&&Dominoes.showError(msg))return;
+// UNO handles its own rule messages when active.
+if(window.Uno&&Uno.isActive()&&Uno.showError(msg))return;
 // During the game, a rejected play (e.g. an invalid Dash target) must
 // NOT freeze the match: unlock the hand so the player can try again,
 // and show the reason on screen instead of an alert.
@@ -1237,3 +1245,5 @@ if(window.WordChain)WordChain.init(socket);
 if(window.CodeBreaker)CodeBreaker.init(socket);
 // Wire Dominoes to the shared lobby socket (isolated from other games).
 if(window.Dominoes)Dominoes.init(socket);
+// Wire UNO to the shared lobby socket (isolated from other games).
+if(window.Uno)Uno.init(socket);
