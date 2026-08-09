@@ -240,9 +240,38 @@ function handScore(hand) {
    ROOM STATE / PUBLIC SNAPSHOTS
    ============================================================ */
 
+/**
+ * 4-player team mode: seats 0+2 = Team A, seats 1+3 = Team B
+ * (partners sit opposite; turn order stays P1→P2→P3→P4).
+ */
+function buildTeams(room) {
+  if (!room.players || room.players.length !== 4) {
+    return { teamMode: false, teamA: null, teamB: null };
+  }
+  return {
+    teamMode: true,
+    teamA: [room.players[0].id, room.players[2].id],
+    teamB: [room.players[1].id, room.players[3].id]
+  };
+}
+
+function teamOfPlayer(state, playerId) {
+  if (!state || !state.teamMode) return null;
+  if (state.teamA && state.teamA.includes(playerId)) return "A";
+  if (state.teamB && state.teamB.includes(playerId)) return "B";
+  return null;
+}
+
+function teamPlayerIds(state, team) {
+  if (team === "A") return state.teamA || [];
+  if (team === "B") return state.teamB || [];
+  return [];
+}
+
 function initRound(room) {
   const playerIds = room.players.map((p) => p.id);
   const dealt = dealHands(playerIds);
+  const teams = buildTeams(room);
   room.domino = {
     hands: dealt.hands,
     boneyard: dealt.boneyard,
@@ -254,21 +283,70 @@ function initRound(room) {
     consecutivePasses: 0,
     over: false,
     scores: null,
+    teamScores: null,
     winnerId: null,
+    winnerTeam: null,
     winReason: null,
-    turnIndex: playerIds.indexOf(dealt.starterId)
+    turnIndex: playerIds.indexOf(dealt.starterId),
+    teamMode: teams.teamMode,
+    teamA: teams.teamA,
+    teamB: teams.teamB
   };
   room.dominoRematch = {};
 }
 
 function publicPlayerView(room) {
+  const d = room.domino;
   return room.players.map((p) => ({
     id: p.id,
     name: p.name,
-    handCount: room.domino && room.domino.hands[p.id]
-      ? room.domino.hands[p.id].length
-      : 0
+    handCount: d && d.hands[p.id] ? d.hands[p.id].length : 0,
+    team: d ? teamOfPlayer(d, p.id) : null
   }));
+}
+
+/** Public team snapshot for 4-player matches (null otherwise). */
+function publicTeams(room) {
+  const d = room.domino;
+  if (!d || !d.teamMode) return null;
+  const pack = (ids, label) => ({
+    id: label,
+    players: ids.map((id) => {
+      const p = room.players.find((x) => x.id === id);
+      return {
+        id,
+        name: p ? p.name : "Player",
+        handCount: d.hands[id] ? d.hands[id].length : 0
+      };
+    })
+  });
+  return {
+    teamA: pack(d.teamA, "A"),
+    teamB: pack(d.teamB, "B")
+  };
+}
+
+function buildScoreRows(room) {
+  const d = room.domino;
+  return room.players.map((p) => ({
+    id: p.id,
+    name: p.name,
+    points: handScore(d.hands[p.id] || []),
+    team: teamOfPlayer(d, p.id),
+    hand: (d.hands[p.id] || []).map((t) => ({ id: t.id, a: t.a, b: t.b }))
+  }));
+}
+
+function buildTeamScores(room, scores) {
+  const d = room.domino;
+  if (!d.teamMode) return null;
+  const sum = (team) => scores
+    .filter((row) => row.team === team)
+    .reduce((total, row) => total + row.points, 0);
+  return [
+    { team: "A", points: sum("A") },
+    { team: "B", points: sum("B") }
+  ];
 }
 
 function publicBoard(room) {
@@ -304,8 +382,14 @@ function validMovesFor(room, playerId) {
 /** Emit private hand + public table state to every seated player. */
 function emitFullState(room, io, roomCode, extra) {
   const d = room.domino;
+  const teams = publicTeams(room);
   room.players.forEach((player) => {
     const moves = d.over ? [] : (player.id === d.currentTurn ? validMovesFor(room, player.id) : []);
+    const myTeam = teamOfPlayer(d, player.id);
+    const mateId = myTeam
+      ? teamPlayerIds(d, myTeam).find((id) => id !== player.id)
+      : null;
+    const mate = mateId ? room.players.find((p) => p.id === mateId) : null;
     // "dominoState" — Dominoes only. Public table + private hand for this client.
     io.to(player.id).emit("dominoState", {
       room: roomCode,
@@ -313,6 +397,10 @@ function emitFullState(room, io, roomCode, extra) {
       yourTurn: !d.over && player.id === d.currentTurn,
       currentTurnId: d.currentTurn,
       players: publicPlayerView(room),
+      teamMode: !!d.teamMode,
+      teams,
+      myTeam,
+      teammate: mate ? { id: mate.id, name: mate.name } : null,
       board: publicBoard(room),
       hand: (d.hands[player.id] || []).map((t) => ({ id: t.id, a: t.a, b: t.b })),
       validMoves: moves,
@@ -323,7 +411,9 @@ function emitFullState(room, io, roomCode, extra) {
         d.chain.length > 0,
       over: d.over,
       scores: d.scores,
+      teamScores: d.teamScores,
       winnerId: d.winnerId,
+      winnerTeam: d.winnerTeam,
       winReason: d.winReason,
       ...(extra || {})
     });
@@ -375,20 +465,41 @@ function endEmptyHand(room, io, roomCode, winnerId) {
   d.over = true;
   d.winnerId = winnerId;
   d.winReason = "emptied";
-  d.scores = room.players.map((p) => ({
-    id: p.id,
-    name: p.name,
-    points: handScore(d.hands[p.id] || []),
-    hand: (d.hands[p.id] || []).map((t) => ({ id: t.id, a: t.a, b: t.b }))
-  }));
+  d.scores = buildScoreRows(room);
+  d.teamScores = buildTeamScores(room, d.scores);
   const winner = room.players.find((p) => p.id === winnerId);
+
+  let winnerTeam = null;
+  let winnerName = winner ? winner.name : "Player";
+  let message = winnerName + " played their last domino!";
+
+  // 4-player team mode: emptying a hand wins for the whole partnership.
+  if (d.teamMode) {
+    winnerTeam = teamOfPlayer(d, winnerId);
+    d.winnerTeam = winnerTeam;
+    const mateIds = teamPlayerIds(d, winnerTeam);
+    const names = mateIds.map((id) => {
+      const p = room.players.find((x) => x.id === id);
+      return p ? p.name : "Player";
+    }).join(" & ");
+    winnerName = "Team " + winnerTeam + " (" + names + ")";
+    message = winnerName + " wins! " +
+      (winner ? winner.name : "A player") + " played their last domino.";
+  } else {
+    d.winnerTeam = null;
+  }
+
   // "dominoOver" — Dominoes only. Hand emptied; scoreboard included.
   io.to(roomCode).emit("dominoOver", {
     winnerId,
-    winnerName: winner ? winner.name : "Player",
+    winnerName,
+    winnerTeam,
+    teamMode: !!d.teamMode,
+    teams: publicTeams(room),
     winReason: "emptied",
-    message: (winner ? winner.name : "Player") + " played their last domino!",
-    scores: d.scores
+    message,
+    scores: d.scores,
+    teamScores: d.teamScores
   });
   emitFullState(room, io, roomCode);
 }
@@ -397,26 +508,53 @@ function endBlocked(room, io, roomCode) {
   const d = room.domino;
   d.over = true;
   d.winReason = "blocked";
-  d.scores = room.players.map((p) => ({
-    id: p.id,
-    name: p.name,
-    points: handScore(d.hands[p.id] || []),
-    hand: (d.hands[p.id] || []).map((t) => ({ id: t.id, a: t.a, b: t.b }))
-  }));
-  let best = null;
-  d.scores.forEach((row) => {
-    if (!best || row.points < best.points) best = row;
-  });
-  // Ties: first lowest in seat order wins (deterministic).
-  const tied = d.scores.filter((row) => row.points === best.points);
-  d.winnerId = tied[0].id;
-  // "dominoOver" — Dominoes only. Table blocked; lowest pips wins.
+  d.scores = buildScoreRows(room);
+  d.teamScores = buildTeamScores(room, d.scores);
+
+  let winnerTeam = null;
+  let winnerName = "";
+  let message = "";
+
+  if (d.teamMode) {
+    // Lowest combined team pip total wins.
+    const scoreA = d.teamScores.find((t) => t.team === "A").points;
+    const scoreB = d.teamScores.find((t) => t.team === "B").points;
+    winnerTeam = scoreA <= scoreB ? "A" : "B";
+    d.winnerTeam = winnerTeam;
+    const mateIds = teamPlayerIds(d, winnerTeam);
+    d.winnerId = mateIds[0];
+    const names = mateIds.map((id) => {
+      const p = room.players.find((x) => x.id === id);
+      return p ? p.name : "Player";
+    }).join(" & ");
+    winnerName = "Team " + winnerTeam + " (" + names + ")";
+    message = "Game blocked! " + winnerName + " wins with the lowest combined score " +
+      "(" + (winnerTeam === "A" ? scoreA : scoreB) + " vs " +
+      (winnerTeam === "A" ? scoreB : scoreA) + ").";
+  } else {
+    d.winnerTeam = null;
+    let best = null;
+    d.scores.forEach((row) => {
+      if (!best || row.points < best.points) best = row;
+    });
+    // Ties: first lowest in seat order wins (deterministic).
+    const tied = d.scores.filter((row) => row.points === best.points);
+    d.winnerId = tied[0].id;
+    winnerName = tied[0].name;
+    message = "Game blocked! Lowest remaining points wins.";
+  }
+
+  // "dominoOver" — Dominoes only. Table blocked; lowest pips / team total wins.
   io.to(roomCode).emit("dominoOver", {
     winnerId: d.winnerId,
-    winnerName: tied[0].name,
+    winnerName,
+    winnerTeam,
+    teamMode: !!d.teamMode,
+    teams: publicTeams(room),
     winReason: "blocked",
-    message: "Game blocked! Lowest remaining points wins.",
-    scores: d.scores
+    message,
+    scores: d.scores,
+    teamScores: d.teamScores
   });
   emitFullState(room, io, roomCode);
 }
@@ -431,9 +569,15 @@ function endBlocked(room, io, roomCode) {
  */
 function onLobbyFull(room, io, roomCode) {
   initRound(room);
+  const teams = publicTeams(room);
   room.players.forEach((player) => {
     const d = room.domino;
     const moves = player.id === d.currentTurn ? validMovesFor(room, player.id) : [];
+    const myTeam = teamOfPlayer(d, player.id);
+    const mateId = myTeam
+      ? teamPlayerIds(d, myTeam).find((id) => id !== player.id)
+      : null;
+    const mate = mateId ? room.players.find((p) => p.id === mateId) : null;
     // "dominoStarted" — Dominoes only. Launches the Dominoes UI with private hands.
     io.to(player.id).emit("dominoStarted", {
       room: roomCode,
@@ -441,6 +585,10 @@ function onLobbyFull(room, io, roomCode) {
       yourTurn: player.id === d.currentTurn,
       currentTurnId: d.currentTurn,
       players: publicPlayerView(room),
+      teamMode: !!d.teamMode,
+      teams,
+      myTeam,
+      teammate: mate ? { id: mate.id, name: mate.name } : null,
       board: publicBoard(room),
       hand: (d.hands[player.id] || []).map((t) => ({ id: t.id, a: t.a, b: t.b })),
       validMoves: moves,
@@ -649,6 +797,8 @@ module.exports = {
   listValidMoves,
   placeTile,
   handScore,
+  buildTeams,
+  teamOfPlayer,
   normalizeMaxPlayers,
   ALLOWED_MAX_PLAYERS,
   HAND_SIZE,

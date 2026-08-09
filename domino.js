@@ -53,6 +53,12 @@
   let board = null;
   let selectedTileId = null;
   let canDraw = false;
+  let teamMode = false;
+  let teams = null;
+  let myTeam = null;
+  let teammate = null;
+  let winnerTeam = null;
+  let teamScores = null;
   let panX = 0;
   let panY = 0;
   let scale = 1;
@@ -282,34 +288,83 @@
     }
   }
 
-  function showEndUi(scores, winnerId, message) {
+  function showEndUi(scores, winnerId, message, overMeta) {
     if (!domScoreboard) return;
+    const meta = overMeta || {};
     let html = "<h3>Scoreboard</h3>";
-    (scores || []).forEach((row) => {
-      const win = row.id === winnerId;
-      html += '<div class="domScoreRow' + (win ? " winner" : "") + '">' +
-        "<span>" + (row.name || "Player") + (win ? " ★" : "") + "</span>" +
-        "<span>" + row.points + " points</span></div>";
-    });
-    const winner = (scores || []).find((r) => r.id === winnerId);
-    html += '<div class="domScoreRow winner"><span>Winner</span><span>' +
-      (winner ? winner.name : "—") + "</span></div>";
+
+    if (meta.teamMode && meta.teamScores) {
+      meta.teamScores.forEach((ts) => {
+        const win = meta.winnerTeam === ts.team;
+        html += '<div class="domTeamScore' + (win ? " winner" : "") + '">' +
+          "<strong>Team " + ts.team + (win ? " ★" : "") + "</strong>" +
+          "<span>" + ts.points + " points</span></div>";
+        (scores || []).filter((row) => row.team === ts.team).forEach((row) => {
+          html += '<div class="domScoreRow">' +
+            "<span>" + (row.name || "Player") + "</span>" +
+            "<span>" + row.points + " points</span></div>";
+        });
+      });
+      html += '<div class="domScoreRow winner"><span>Winner</span><span>Team ' +
+        (meta.winnerTeam || "—") + "</span></div>";
+    } else {
+      (scores || []).forEach((row) => {
+        const win = row.id === winnerId;
+        html += '<div class="domScoreRow' + (win ? " winner" : "") + '">' +
+          "<span>" + (row.name || "Player") + (win ? " ★" : "") + "</span>" +
+          "<span>" + row.points + " points</span></div>";
+      });
+      const winner = (scores || []).find((r) => r.id === winnerId);
+      html += '<div class="domScoreRow winner"><span>Winner</span><span>' +
+        (winner ? winner.name : "—") + "</span></div>";
+    }
+
     if (message) html += "<p>" + message + "</p>";
     domScoreboard.innerHTML = html;
     domScoreboard.classList.remove("hidden");
     if (domEndButtons) domEndButtons.classList.remove("hidden");
   }
 
+  function playerChipHtml(p, currentTurnId) {
+    const isMe = socket && p.id === socket.id;
+    const turn = p.id === currentTurnId && !gameOver;
+    const mate = teammate && p.id === teammate.id;
+    let label = p.name || "Player";
+    if (isMe) label = "You";
+    else if (mate) label = "Teammate · " + label;
+    return '<div class="domPlayerChip' + (turn ? " turn" : "") +
+      (isMe ? " me" : "") + (mate ? " mate" : "") + '">' +
+      '<div class="domName">' + label + "</div>" +
+      '<div class="domCount">' + p.handCount + " dominoes remaining</div></div>";
+  }
+
   function renderPlayers(currentTurnId) {
     if (!domPlayers) return;
     domPlayers.innerHTML = "";
+
+    if (teamMode && teams && teams.teamA && teams.teamB) {
+      ["A", "B"].forEach((label) => {
+        const pack = label === "A" ? teams.teamA : teams.teamB;
+        const col = document.createElement("div");
+        col.className = "domTeamCol" + (myTeam === label ? " mine" : "");
+        const title = document.createElement("div");
+        title.className = "domTeamTitle";
+        title.textContent = "Team " + label + (myTeam === label ? " (yours)" : "");
+        col.appendChild(title);
+        (pack.players || []).forEach((p) => {
+          const wrap = document.createElement("div");
+          wrap.innerHTML = playerChipHtml(p, currentTurnId);
+          col.appendChild(wrap.firstChild);
+        });
+        domPlayers.appendChild(col);
+      });
+      return;
+    }
+
     players.forEach((p) => {
-      const chip = document.createElement("div");
-      chip.className = "domPlayerChip" + (p.id === currentTurnId && !gameOver ? " turn" : "");
-      const isMe = socket && p.id === socket.id;
-      chip.innerHTML = '<div class="domName">' + (isMe ? "You" : (p.name || "Player")) +
-        '</div><div class="domCount">' + p.handCount + " dominoes remaining</div>";
-      domPlayers.appendChild(chip);
+      const wrap = document.createElement("div");
+      wrap.innerHTML = playerChipHtml(p, currentTurnId);
+      domPlayers.appendChild(wrap.firstChild);
     });
   }
 
@@ -374,7 +429,8 @@
       domTurnIndicator.textContent = (current ? current.name : "Opponent") + "'s Turn";
     }
     if (domMeta) {
-      domMeta.textContent = players.length + " players · Double-Six";
+      domMeta.textContent = players.length + " players · Double-Six" +
+        (teamMode ? " · Teams" : "");
     }
     if (domDrawBtn) {
       domDrawBtn.disabled = !canDraw || !myTurn || gameOver;
@@ -392,13 +448,23 @@
     board = data.board || board;
     canDraw = !!data.canDraw;
     gameOver = !!data.over;
+    if (data.teamMode != null) teamMode = !!data.teamMode;
+    if (data.teams !== undefined) teams = data.teams;
+    if (data.myTeam !== undefined) myTeam = data.myTeam;
+    if (data.teammate !== undefined) teammate = data.teammate;
+    if (data.winnerTeam !== undefined) winnerTeam = data.winnerTeam;
+    if (data.teamScores !== undefined) teamScores = data.teamScores;
     if (gameOver) selectedTileId = null;
     renderPlayers(data.currentTurnId);
     renderBoard(options.animatePlayId);
     renderHand(options.animateDrawId);
     renderChrome(data);
     if (data.over && data.scores) {
-      showEndUi(data.scores, data.winnerId, data.message);
+      showEndUi(data.scores, data.winnerId, data.message, {
+        teamMode,
+        teamScores: data.teamScores || teamScores,
+        winnerTeam: data.winnerTeam || winnerTeam
+      });
     }
   }
 
@@ -489,8 +555,11 @@
     applyState(data);
     showDominoScreen();
     const starter = (data.players || []).find((p) => p.id === data.currentTurnId);
-    domMsg.textContent = (starter ? starter.name : "A player") +
-      " opens with the highest double.";
+    let msg = (starter ? starter.name : "A player") + " opens with the highest double.";
+    if (data.teamMode && data.teammate) {
+      msg += " Team mode — your teammate is " + data.teammate.name + ".";
+    }
+    domMsg.textContent = msg;
   }
 
   function init(sharedSocket) {
@@ -515,7 +584,11 @@
         if (drawn) renderHand(drawn.id);
       }
       if (data.over && data.scores) {
-        showEndUi(data.scores, data.winnerId, null);
+        showEndUi(data.scores, data.winnerId, null, {
+          teamMode: !!data.teamMode,
+          teamScores: data.teamScores,
+          winnerTeam: data.winnerTeam
+        });
       }
     });
 
@@ -536,6 +609,14 @@
       players = players.map((p) => p.id === data.by
         ? Object.assign({}, p, { handCount: data.handCount })
         : p);
+      if (teams) {
+        ["teamA", "teamB"].forEach((key) => {
+          if (!teams[key] || !teams[key].players) return;
+          teams[key].players = teams[key].players.map((p) => p.id === data.by
+            ? Object.assign({}, p, { handCount: data.handCount })
+            : p);
+        });
+      }
       renderPlayers(null);
       if (data.by !== socket.id) {
         domMsg.textContent = (data.name || "Player") + " drew from the boneyard.";
@@ -557,7 +638,15 @@
       myTurn = false;
       selectedTileId = null;
       hideSidePicker();
-      showEndUi(data.scores, data.winnerId, data.message);
+      if (data.teamMode != null) teamMode = !!data.teamMode;
+      if (data.teams) teams = data.teams;
+      if (data.winnerTeam !== undefined) winnerTeam = data.winnerTeam;
+      if (data.teamScores) teamScores = data.teamScores;
+      showEndUi(data.scores, data.winnerId, data.message, {
+        teamMode: !!data.teamMode,
+        teamScores: data.teamScores,
+        winnerTeam: data.winnerTeam
+      });
       domTurnIndicator.textContent = "Round Over";
       if (domDrawBtn) domDrawBtn.disabled = true;
       domMsg.textContent = data.message || "Round over.";
