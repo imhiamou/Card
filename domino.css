@@ -30,6 +30,29 @@ gap:8px;
 margin:8px 0 12px;
 }
 
+.domTeamCol{
+flex:1;
+min-width:140px;
+background:#1e2430;
+border-radius:10px;
+padding:8px;
+border:1px solid #2f3848;
+display:flex;
+flex-direction:column;
+gap:6px;
+}
+
+.domTeamCol.mine{
+border-color:#4f9cff;
+}
+
+.domTeamTitle{
+font-size:13px;
+font-weight:bold;
+color:#ffd866;
+margin-bottom:2px;
+}
+
 .domPlayerChip{
 background:#3a4256;
 border-radius:8px;
@@ -44,6 +67,14 @@ border-color:#4f9cff;
 background:#31537a;
 }
 
+.domPlayerChip.me{
+box-shadow:inset 0 0 0 1px #9db2d0;
+}
+
+.domPlayerChip.mate{
+border-color:#3d8b5a;
+}
+
 .domPlayerChip .domName{
 font-size:14px;
 font-weight:bold;
@@ -53,6 +84,20 @@ font-weight:bold;
 font-size:12px;
 color:#c5d2e8;
 margin-top:2px;
+}
+
+.domTeamScore{
+display:flex;
+justify-content:space-between;
+padding:8px 0 4px;
+margin-top:6px;
+border-top:1px solid #2f3848;
+font-size:15px;
+color:#c5d2e8;
+}
+
+.domTeamScore.winner{
+color:#ffd866;
 }
 
 #domTurnIndicator{
