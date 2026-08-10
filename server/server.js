@@ -5,6 +5,7 @@ const wordchain = require("./wordchain");
 const codebreaker = require("./codebreaker");
 const domino = require("./domino");
 const uno = require("./uno");
+const { createBotSocket } = require("./bots/botSocket");
 
 const app = express();
 const server = http.createServer(app);
@@ -702,7 +703,7 @@ io.on("connection", (socket) => {
   /*
    * "createLobby" — a player creates a new lobby with a code THEY
    * chose (4-8 letters/numbers, auto-uppercased, must be unique).
-   * Payload: { name, room, game, maxPlayers? }
+   * Payload: { name, room, game, maxPlayers?, fillBots? }
    * Character is chosen later during Hidden Hunt placement.
    * Replies with "lobbyCreated" { room } to the creator.
    */
@@ -721,6 +722,9 @@ io.on("connection", (socket) => {
       : gameMode === "uno"
         ? uno.normalizeMaxPlayers(data && data.maxPlayers)
         : MAX_PLAYERS;
+    // "Fill empty slots with bots" — Dominoes & UNO only, default OFF.
+    const fillBots = (gameMode === "dominoes" || gameMode === "uno") &&
+      !!(data && data.fillBots);
 
     if (!isValidPlayerName(name)) {
       socket.emit("errorMessage", "Enter a name (2-16 letters, numbers, spaces, - or _).");
@@ -742,6 +746,7 @@ io.on("connection", (socket) => {
       // (Hidden Hunt's card-match state) so existing HH logic is untouched.
       gameMode,
       maxPlayers,
+      fillBots,
       // character is filled in during Hidden Hunt placement (null until then).
       players: [{ id: socket.id, name, character: null }],
       positions: {},
@@ -752,7 +757,58 @@ io.on("connection", (socket) => {
     };
 
     socket.join(roomCode);
-    socket.emit("lobbyCreated", { room: roomCode, game: gameMode, maxPlayers });
+    socket.emit("lobbyCreated", { room: roomCode, game: gameMode, maxPlayers, fillBots });
+  });
+
+  /*
+   * "startWithBots" — Dominoes & UNO only.
+   * The lobby creator starts the game early; every empty seat is filled
+   * with a server-side bot. Only allowed when the lobby was created with
+   * "Fill empty slots with bots" enabled. With bots OFF, lobbies behave
+   * exactly as before (wait for humans; never auto-fill).
+   */
+  socket.on("startWithBots", (data) => {
+    const roomCode = data && typeof data.room === "string" ? data.room.trim().toUpperCase() : "";
+    const room = rooms[roomCode];
+    if (!room || (room.gameMode !== "dominoes" && room.gameMode !== "uno")) {
+      socket.emit("errorMessage", "This lobby cannot use bots.");
+      return;
+    }
+    if (!room.fillBots) {
+      socket.emit("errorMessage", "This lobby was created without bots.");
+      return;
+    }
+    if (!room.players.length || room.players[0].id !== socket.id) {
+      socket.emit("errorMessage", "Only the lobby creator can start with bots.");
+      return;
+    }
+    if ((room.gameMode === "dominoes" && room.domino) ||
+        (room.gameMode === "uno" && room.uno)) {
+      socket.emit("errorMessage", "The game has already started.");
+      return;
+    }
+
+    const max = room.maxPlayers || MAX_PLAYERS;
+    const needed = max - room.players.length;
+    if (needed <= 0) return; // full lobbies auto-start normally
+
+    const isDomino = room.gameMode === "dominoes";
+    const baseName = isDomino ? "Domino Bot" : "UNO Bot";
+    room.botSockets = room.botSockets || {};
+    for (let i = 0; i < needed; i++) {
+      const botId = "bot-" + roomCode + "-" + (i + 1) + "-" + Math.random().toString(36).slice(2, 8);
+      const botName = needed === 1 ? baseName : baseName + " " + (i + 1);
+      room.players.push({ id: botId, name: botName, character: null, isBot: true });
+      // Bots register the SAME Socket.IO handlers as human players, so
+      // every bot action runs through identical validation.
+      const botSocket = createBotSocket(botId);
+      if (isDomino) domino.registerSocket(botSocket, io, rooms);
+      else uno.registerSocket(botSocket, io, rooms);
+      room.botSockets[botId] = botSocket;
+    }
+
+    if (isDomino) domino.onLobbyFull(room, io, roomCode);
+    else uno.onLobbyFull(room, io, roomCode);
   });
 
   /*
@@ -1247,6 +1303,13 @@ io.on("connection", (socket) => {
   socket.on("disconnect", () => {
     const roomCode = findRoomOfSocket(socket.id);
     if (!roomCode) return;
+
+    // Stop any pending bot actions before the room state disappears.
+    const room = rooms[roomCode];
+    if (room) {
+      if (room.dominoBotTimer) clearTimeout(room.dominoBotTimer);
+      if (room.unoBotTimer) clearTimeout(room.unoBotTimer);
+    }
 
     socket.to(roomCode).emit("playerLeft");
     delete rooms[roomCode];

@@ -138,14 +138,28 @@ input.addEventListener("input",()=>{input.value=input.value.toUpperCase();});
 const gameSelectEl=document.getElementById("gameSelect");
 const dominoMaxPlayersWrap=document.getElementById("dominoMaxPlayersWrap");
 const unoMaxPlayersWrap=document.getElementById("unoMaxPlayersWrap");
+const botFillWrap=document.getElementById("botFillWrap");
+const startBotsBtn=document.getElementById("startBotsBtn");
 function syncMaxPlayersVisibility(){
 const game=gameSelectEl?gameSelectEl.value:"";
 if(dominoMaxPlayersWrap)dominoMaxPlayersWrap.classList.toggle("hidden",game!=="dominoes");
 if(unoMaxPlayersWrap)unoMaxPlayersWrap.classList.toggle("hidden",game!=="uno");
+// Bots exist only for Dominoes and UNO.
+if(botFillWrap)botFillWrap.classList.toggle("hidden",game!=="dominoes"&&game!=="uno");
 }
 if(gameSelectEl){
 gameSelectEl.addEventListener("change",syncMaxPlayersVisibility);
 syncMaxPlayersVisibility();
+}
+
+// Creator-only: fill the remaining seats with server bots and start.
+if(startBotsBtn){
+startBotsBtn.onclick=()=>{
+if(!currentRoom)return;
+socket.emit("startWithBots",{room:currentRoom});
+startBotsBtn.disabled=true;
+startBotsBtn.textContent="Starting...";
+};
 }
 
 document.getElementById("createBtn").onclick=()=>{
@@ -167,6 +181,10 @@ payload.maxPlayers=maxEl?Number(maxEl.value):2;
 if(game==="uno"){
 const maxEl=document.getElementById("unoMaxPlayers");
 payload.maxPlayers=maxEl?Number(maxEl.value):2;
+}
+if(game==="dominoes"||game==="uno"){
+const botEl=document.getElementById("botFillCheck");
+payload.fillBots=!!(botEl&&botEl.checked);
 }
 socket.emit("createLobby",payload);
 status.textContent="Creating lobby...";
@@ -192,6 +210,13 @@ status.textContent="Waiting for players (1/"+max+")...";
 }else{
 status.textContent="Waiting for Player 2...";
 }
+// Bots-enabled Dominoes/UNO lobbies let the creator start early.
+if(startBotsBtn){
+const showBots=(data.game==="dominoes"||data.game==="uno")&&!!data.fillBots;
+startBotsBtn.classList.toggle("hidden",!showBots);
+startBotsBtn.disabled=false;
+startBotsBtn.textContent="Start Now (fill empty seats with bots)";
+}
 });
 
 // Fired by the server when the second player joins the lobby.
@@ -211,6 +236,7 @@ gameScreen.classList.add("hidden");
 lobbyScreen.classList.remove("hidden");
 code.textContent="";
 status.textContent="Other player disconnected.";
+if(startBotsBtn)startBotsBtn.classList.add("hidden");
 });
 
 socket.on("errorMessage",(msg)=>{

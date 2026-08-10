@@ -62,6 +62,29 @@ opacity:.6;
 display:none;
 }
 
+/* Lobby bot options (Dominoes / UNO only) */
+.botFillLabel{
+display:flex;
+align-items:center;
+gap:8px;
+font-size:14px;
+color:#c5d2e8;
+margin:8px 0;
+cursor:pointer;
+}
+
+.botFillLabel input{
+width:auto;
+margin:0;
+}
+
+#startBotsBtn{
+background:#7a4fd0;
+color:#fff;
+border:none;
+border-radius:8px;
+}
+
 /* Clickable option groups (character classics on placement screen) */
 .charSelect{
 display:flex;
