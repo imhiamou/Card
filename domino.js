@@ -332,9 +332,10 @@
     let label = p.name || "Player";
     if (isMe) label = "You";
     else if (mate) label = "Teammate · " + label;
+    const botTag = p.isBot ? ' <span class="botTag">BOT</span>' : "";
     return '<div class="domPlayerChip' + (turn ? " turn" : "") +
       (isMe ? " me" : "") + (mate ? " mate" : "") + '">' +
-      '<div class="domName">' + label + "</div>" +
+      '<div class="domName">' + label + botTag + "</div>" +
       '<div class="domCount">' + p.handCount + " dominoes remaining</div></div>";
   }
 

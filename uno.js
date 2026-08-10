@@ -230,6 +230,7 @@
       chip.className = "unoPlayerChip" + (p.id === currentTurnId && !gameOver ? " turn" : "");
       const me = socket && p.id === socket.id;
       chip.innerHTML = '<div class="unoName">' + (me ? "You" : (p.name || "Player")) +
+        (p.isBot ? ' <span class="botTag">BOT</span>' : "") +
         (p.unoCalled ? " · UNO" : "") +
         '</div><div class="unoCount">' + p.handCount + " cards</div>";
       if (!me && !gameOver && p.handCount === 1 && p.unoLiable && !p.unoCalled) {

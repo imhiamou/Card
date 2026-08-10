@@ -100,6 +100,19 @@ color:#c5d2e8;
 color:#ffd866;
 }
 
+/* Small indicator for server-controlled bot players */
+.botTag{
+display:inline-block;
+background:#7a4fd0;
+color:#fff;
+font-size:10px;
+font-weight:bold;
+padding:1px 5px;
+border-radius:6px;
+vertical-align:middle;
+letter-spacing:.04em;
+}
+
 #domTurnIndicator{
 text-align:center;
 font-size:18px;

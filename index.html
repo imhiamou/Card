@@ -50,6 +50,11 @@
 </select>
 </div>
 
+<!-- Dominoes / UNO only: optionally fill empty seats with server bots -->
+<div id="botFillWrap" class="hidden">
+<label class="botFillLabel"><input type="checkbox" id="botFillCheck"> Fill empty slots with bots</label>
+</div>
+
 <!-- The lobby creator chooses their own code (4-8 letters/numbers) -->
 <input id="createCode" placeholder="Choose Lobby Code (4-8 letters/numbers)" maxlength="8">
 
@@ -63,6 +68,9 @@
 
 <h2 id="status"></h2>
 <h3 id="code"></h3>
+
+<!-- Shown to the creator of a bots-enabled Dominoes/UNO lobby -->
+<button id="startBotsBtn" class="hidden">Start Now (fill empty seats with bots)</button>
 
 </div>
 

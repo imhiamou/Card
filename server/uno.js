@@ -7,7 +7,12 @@
  *
  * Rules highlight: stacking (+2 on +2, +4 on +4, +4 on +2; never +2 on +4),
  * UNO call / challenge, wild color choice, discard reshuffle.
+ *
+ * Optional bots: seats flagged isBot are driven by server/bots/unoBot,
+ * acting through the SAME socket handlers (and validation) as humans.
  */
+
+const unoBot = require("./bots/unoBot");
 
 const COLORS = ["red", "blue", "green", "yellow"];
 const NUMBERS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
@@ -15,6 +20,15 @@ const HAND_SIZE = 7;
 const ALLOWED_MAX_PLAYERS = [2, 3, 4, 5];
 
 let cardSeq = 0;
+
+// Set by registerSocket so bot timers can verify a room still exists.
+let roomsRef = null;
+
+/** Bot "thinking" delay (ms). Fast-forwarded in automated tests. */
+function botDelayMs() {
+  if (process.env.BOT_TEST_FAST) return 5;
+  return 800 + Math.floor(Math.random() * 700);
+}
 
 function normalizeMaxPlayers(value) {
   const n = Number(value);
@@ -179,6 +193,7 @@ function publicPlayers(room) {
   return room.players.map((p) => ({
     id: p.id,
     name: p.name,
+    isBot: !!p.isBot,
     handCount: (u.hands[p.id] || []).length,
     unoCalled: !!u.unoCalled[p.id],
     unoLiable: !!u.unoLiable[p.id]
@@ -241,6 +256,119 @@ function emitFullState(room, io, roomCode, extra) {
       rankings: u.over ? rankings(room) : null
     }, extra || {}));
   });
+  // Bots never forget: auto-call UNO the moment they reach one card.
+  scheduleBotUnoCalls(room, io, roomCode);
+  // If the (new) active player is a bot, queue its move.
+  scheduleBotTurn(room, io, roomCode);
+}
+
+/* ============================================================
+   BOT DRIVER (UNO only — see server/bots/unoBot.js)
+   ============================================================
+   Bots act through room.botSockets[botId].handlers — the exact same
+   functions registered for human sockets — so every bot action passes
+   the same validation. Bot hands are never emitted to real sockets
+   (io.to(botId) targets an empty Socket.IO room).
+*/
+
+/** Queue the current bot player's action with a human-like delay. */
+function scheduleBotTurn(room, io, roomCode) {
+  const u = room.uno;
+  if (!u || u.over) return;
+  const current = room.players.find((p) => p.id === u.currentTurn);
+  if (!current || !current.isBot) return;
+  if (room.unoBotTimer) return; // one pending bot action at a time
+
+  const botId = current.id;
+  room.unoBotTimer = setTimeout(() => {
+    room.unoBotTimer = null;
+    runBotTurn(room, io, roomCode, botId);
+  }, botDelayMs());
+}
+
+/** Execute one bot decision (play a card, or draw / take the penalty). */
+function runBotTurn(room, io, roomCode, botId) {
+  // Room may have been torn down (player left) while the bot "thought".
+  if (roomsRef && roomsRef[roomCode] !== room) return;
+  const u = room.uno;
+  if (!u || u.over || u.currentTurn !== botId) return;
+  const botSocket = room.botSockets && room.botSockets[botId];
+  if (!botSocket) return;
+
+  // Defensive: complete a staged wild (bots normally send color up front).
+  if (u.pendingColorChooser === botId) {
+    botSocket.handlers["unoChooseColor"]({
+      roomCode,
+      color: unoBot.pickColor(u.hands[botId] || [])
+    });
+    return;
+  }
+
+  const hand = u.hands[botId] || [];
+  let playable = listPlayable(u, hand);
+  // After drawing, only the drawn card may be played (mirror of emitFullState).
+  if (u.awaitingDrawnPlay) {
+    playable = playable.filter((id) => id === u.awaitingDrawnPlay.cardId);
+  }
+
+  if (playable.length > 0) {
+    const nextSeat = room.players[advanceIndex(room, u.turnIndex, 1)];
+    const move = unoBot.getUnoMove({
+      hand,
+      playableIds: playable,
+      pendingPenalty: u.pendingPenalty,
+      pendingKind: u.pendingKind,
+      nextPlayerHandCount: nextSeat ? (u.hands[nextSeat.id] || []).length : 7
+    });
+    const cardId = move && playable.includes(move.cardId) ? move.cardId : playable[0];
+    const card = hand.find((c) => c.id === cardId);
+    const payload = { roomCode, cardId };
+    if (card && isWild(card)) {
+      payload.color = (move && move.color) ||
+        unoBot.pickColor(hand.filter((c) => c.id !== cardId));
+    }
+    // Same handler + validation as a human "unoPlayCard" event.
+    botSocket.handlers["unoPlayCard"](payload);
+    return;
+  }
+
+  // No playable card: "unoDraw" draws one card, accepts a pending
+  // penalty stack, or passes after an unplayable drawn card — the same
+  // paths a human takes through the same handler.
+  botSocket.handlers["unoDraw"]({ roomCode });
+}
+
+/** Bots automatically call UNO when they reach exactly one card. */
+function scheduleBotUnoCalls(room, io, roomCode) {
+  const u = room.uno;
+  if (!u || u.over) return;
+  room.players.forEach((p) => {
+    if (!p.isBot) return;
+    if ((u.hands[p.id] || []).length !== 1) return;
+    if (!u.unoLiable[p.id] || u.unoCalled[p.id]) return;
+    const botSocket = room.botSockets && room.botSockets[p.id];
+    if (!botSocket || !botSocket.handlers["unoCall"]) return;
+    setTimeout(() => {
+      if (roomsRef && roomsRef[roomCode] !== room) return;
+      if (!room.uno || room.uno.over) return;
+      if ((room.uno.hands[p.id] || []).length !== 1) return;
+      if (room.uno.unoCalled[p.id]) return;
+      botSocket.handlers["unoCall"]({ roomCode });
+    }, Math.min(botDelayMs(), 600));
+  });
+}
+
+/** After a game ends, bots vote Play Again so humans can rematch. */
+function scheduleBotRematchVotes(room, io, roomCode) {
+  room.players.filter((p) => p.isBot).forEach((bot, i) => {
+    setTimeout(() => {
+      if (roomsRef && roomsRef[roomCode] !== room) return;
+      if (!room.uno || !room.uno.over) return;
+      const botSocket = room.botSockets && room.botSockets[bot.id];
+      if (!botSocket || !botSocket.handlers["unoPlayAgain"]) return;
+      botSocket.handlers["unoPlayAgain"]({ roomCode });
+    }, botDelayMs() + i * 200);
+  });
 }
 
 /**
@@ -289,6 +417,7 @@ function endGame(room, io, roomCode, winnerId) {
     rankings: rankings(room)
   });
   emitFullState(room, io, roomCode);
+  scheduleBotRematchVotes(room, io, roomCode);
 }
 
 /**
@@ -335,6 +464,11 @@ function afterPlayEffects(room, io, roomCode, card, playerId) {
 }
 
 function initRound(room) {
+  // A fresh deal invalidates any scheduled bot action from the old round.
+  if (room.unoBotTimer) {
+    clearTimeout(room.unoBotTimer);
+    room.unoBotTimer = null;
+  }
   const playerIds = room.players.map((p) => p.id);
   let draw = shuffle(buildDeck());
   const hands = {};
@@ -442,6 +576,9 @@ function onLobbyFull(room, io, roomCode) {
 }
 
 function registerSocket(socket, io, rooms) {
+  // Remember the live room registry so bot timers can detect torn-down rooms.
+  roomsRef = rooms;
+
   /*
    * "unoPlayCard" — UNO only.
    * Payload: { roomCode, cardId, color? } — color required for wilds.

@@ -7,11 +7,25 @@
  *
  * Rules: standard international double-six. Server is authoritative for
  * the boneyard, hands, chain ends, turns, draws, passes, and scoring.
+ *
+ * Optional bots: seats flagged isBot are driven by server/bots/dominoBot,
+ * acting through the SAME socket handlers (and validation) as humans.
  */
+
+const dominoBot = require("./bots/dominoBot");
 
 const MAX_PIP = 6;
 const HAND_SIZE = 7;
 const ALLOWED_MAX_PLAYERS = [2, 3, 4];
+
+// Set by registerSocket so bot timers can verify a room still exists.
+let roomsRef = null;
+
+/** Bot "thinking" delay (ms). Fast-forwarded in automated tests. */
+function botDelayMs() {
+  if (process.env.BOT_TEST_FAST) return 5;
+  return 800 + Math.floor(Math.random() * 700);
+}
 
 /* ============================================================
    TILE / SET HELPERS
@@ -269,6 +283,11 @@ function teamPlayerIds(state, team) {
 }
 
 function initRound(room) {
+  // A fresh deal invalidates any scheduled bot action from the old round.
+  if (room.dominoBotTimer) {
+    clearTimeout(room.dominoBotTimer);
+    room.dominoBotTimer = null;
+  }
   const playerIds = room.players.map((p) => p.id);
   const dealt = dealHands(playerIds);
   const teams = buildTeams(room);
@@ -300,6 +319,7 @@ function publicPlayerView(room) {
   return room.players.map((p) => ({
     id: p.id,
     name: p.name,
+    isBot: !!p.isBot,
     handCount: d && d.hands[p.id] ? d.hands[p.id].length : 0,
     team: d ? teamOfPlayer(d, p.id) : null
   }));
@@ -316,6 +336,7 @@ function publicTeams(room) {
       return {
         id,
         name: p ? p.name : "Player",
+        isBot: !!(p && p.isBot),
         handCount: d.hands[id] ? d.hands[id].length : 0
       };
     })
@@ -418,6 +439,82 @@ function emitFullState(room, io, roomCode, extra) {
       ...(extra || {})
     });
   });
+  // If the (new) active player is a bot, queue its move after a short
+  // human-like delay. No-op in bot-free lobbies.
+  scheduleBotTurn(room, io, roomCode);
+}
+
+/* ============================================================
+   BOT DRIVER (Dominoes only — see server/bots/dominoBot.js)
+   ============================================================
+   Bots act through room.botSockets[botId].handlers — the exact same
+   functions registered for human sockets — so every bot action passes
+   the same validation. Bot hands are never emitted to real sockets
+   (io.to(botId) targets an empty Socket.IO room).
+*/
+
+/** Queue the current bot player's action with a human-like delay. */
+function scheduleBotTurn(room, io, roomCode) {
+  const d = room.domino;
+  if (!d || d.over) return;
+  const current = room.players.find((p) => p.id === d.currentTurn);
+  if (!current || !current.isBot) return;
+  if (room.dominoBotTimer) return; // one pending bot action at a time
+
+  const botId = current.id;
+  room.dominoBotTimer = setTimeout(() => {
+    room.dominoBotTimer = null;
+    runBotTurn(room, io, roomCode, botId);
+  }, botDelayMs());
+}
+
+/** Execute one bot decision (play one tile, or draw one tile). */
+function runBotTurn(room, io, roomCode, botId) {
+  // Room may have been torn down (player left) while the bot "thought".
+  if (roomsRef && roomsRef[roomCode] !== room) return;
+  const d = room.domino;
+  if (!d || d.over || d.currentTurn !== botId) return;
+  const botSocket = room.botSockets && room.botSockets[botId];
+  if (!botSocket) return;
+
+  const moves = validMovesFor(room, botId);
+  if (moves.length > 0) {
+    const choice = dominoBot.getDominoMove({
+      hand: d.hands[botId] || [],
+      validMoves: moves,
+      leftEnd: d.leftEnd,
+      rightEnd: d.rightEnd,
+      chainLength: d.chain.length,
+      teamMode: !!d.teamMode
+    });
+    const move = choice && moves.some((m) => m.tileId === choice.tileId && m.side === choice.side)
+      ? choice
+      : moves[0];
+    // Same handler + validation as a human "dominoPlayTile" event.
+    botSocket.handlers["dominoPlayTile"]({ roomCode, tileId: move.tileId, side: move.side });
+    return;
+  }
+
+  if (d.boneyard.length > 0 && d.chain.length > 0) {
+    // Same handler + validation as a human "dominoDraw" event. If the
+    // drawn tile is still unplayable the handler keeps the bot's turn,
+    // emits state, and this scheduler queues the next draw.
+    botSocket.handlers["dominoDraw"]({ roomCode });
+  }
+  // No moves + empty boneyard: resolveAutoPasses already advanced the turn.
+}
+
+/** After a round ends, bots vote Play Again so humans can rematch. */
+function scheduleBotRematchVotes(room, io, roomCode) {
+  room.players.filter((p) => p.isBot).forEach((bot, i) => {
+    setTimeout(() => {
+      if (roomsRef && roomsRef[roomCode] !== room) return;
+      if (!room.domino || !room.domino.over) return;
+      const botSocket = room.botSockets && room.botSockets[bot.id];
+      if (!botSocket || !botSocket.handlers["dominoPlayAgain"]) return;
+      botSocket.handlers["dominoPlayAgain"]({ roomCode });
+    }, botDelayMs() + i * 200);
+  });
 }
 
 function advanceTurn(room) {
@@ -502,6 +599,7 @@ function endEmptyHand(room, io, roomCode, winnerId) {
     teamScores: d.teamScores
   });
   emitFullState(room, io, roomCode);
+  scheduleBotRematchVotes(room, io, roomCode);
 }
 
 function endBlocked(room, io, roomCode) {
@@ -557,6 +655,7 @@ function endBlocked(room, io, roomCode) {
     teamScores: d.teamScores
   });
   emitFullState(room, io, roomCode);
+  scheduleBotRematchVotes(room, io, roomCode);
 }
 
 /* ============================================================
@@ -602,6 +701,9 @@ function onLobbyFull(room, io, roomCode) {
 }
 
 function registerSocket(socket, io, rooms) {
+  // Remember the live room registry so bot timers can detect torn-down rooms.
+  roomsRef = rooms;
+
   /*
    * "dominoPlayTile" — Dominoes only.
    * Payload: { roomCode, tileId, side: "left"|"right"|"center" }
