@@ -8,10 +8,12 @@
  * Secret: exactly 6 digits, generated once per match, never sent to clients.
  * Turns: Player 1 (lobby creator) then Player 2, alternating.
  * Feedback: Wordle-style green / yellow / red per digit.
+ * Each turn has a 20-second timer; timeout auto-passes to the partner.
  */
 
 const CODE_LENGTH = 6;
 const GUESS_PATTERN = /^\d{6}$/;
+const TURN_SECONDS = 20;
 
 function generateSecretCode() {
   let code = "";
@@ -67,12 +69,23 @@ function getOpponent(room, playerId) {
   return room.players.find((p) => p.id !== playerId) || null;
 }
 
+function clearTurnTimer(room) {
+  if (room.cb && room.cb.timer) {
+    clearTimeout(room.cb.timer);
+    room.cb.timer = null;
+  }
+  if (room.cb) room.cb.turnEndsAt = null;
+}
+
 function initRoomState(room) {
+  clearTurnTimer(room);
   room.cb = {
     secret: generateSecretCode(),
     history: [],
     currentTurn: null,
-    over: false
+    over: false,
+    timer: null,
+    turnEndsAt: null
   };
   room.cbRematch = {};
 }
@@ -93,9 +106,43 @@ function emitTurnState(room, io) {
     io.to(player.id).emit("cbTurnChanged", {
       yourTurn: player.id === room.cb.currentTurn,
       history: publicHistory(room),
-      over: room.cb.over
+      over: room.cb.over,
+      turnEndsAt: room.cb.turnEndsAt,
+      turnSeconds: TURN_SECONDS
     });
   });
+}
+
+/** Auto-pass when the active player runs out of time (cooperative — game continues). */
+function endTurnOnTimeout(room, io, roomCode, timedPlayerId) {
+  if (!room.cb || room.cb.over) return;
+  if (room.cb.currentTurn !== timedPlayerId) return;
+
+  clearTurnTimer(room);
+  const timed = room.players.find((p) => p.id === timedPlayerId);
+  const next = getOpponent(room, timedPlayerId);
+  if (!next) return;
+
+  room.cb.currentTurn = next.id;
+  // "codeBreakerTimedOut" — Code Breaker only. Announces the skipped turn.
+  io.to(roomCode).emit("codeBreakerTimedOut", {
+    by: timedPlayerId,
+    name: timed ? timed.name : "Player",
+    message: (timed ? timed.name : "Player") + " ran out of time. Turn passes."
+  });
+  startTurnTimer(room, io, roomCode);
+  emitTurnState(room, io);
+}
+
+function startTurnTimer(room, io, roomCode) {
+  clearTurnTimer(room);
+  if (!room.cb || room.cb.over) return;
+
+  const timedPlayerId = room.cb.currentTurn;
+  room.cb.turnEndsAt = Date.now() + TURN_SECONDS * 1000;
+  room.cb.timer = setTimeout(() => {
+    endTurnOnTimeout(room, io, roomCode, timedPlayerId);
+  }, TURN_SECONDS * 1000);
 }
 
 /*
@@ -106,6 +153,7 @@ function onBothPlayersJoined(room, io, roomCode) {
   initRoomState(room);
   // Player 1 (lobby creator) always guesses first.
   room.cb.currentTurn = room.players[0].id;
+  startTurnTimer(room, io, roomCode);
 
   room.players.forEach((player) => {
     // "codeBreakerStarted" — Code Breaker only. Launches the CB UI on both clients.
@@ -115,7 +163,9 @@ function onBothPlayersJoined(room, io, roomCode) {
       yourTurn: player.id === room.cb.currentTurn,
       history: [],
       players: room.players.map((p) => ({ id: p.id, name: p.name })),
-      codeLength: CODE_LENGTH
+      codeLength: CODE_LENGTH,
+      turnEndsAt: room.cb.turnEndsAt,
+      turnSeconds: TURN_SECONDS
     });
   });
 }
@@ -153,6 +203,8 @@ function registerSocket(socket, io, rooms) {
       return;
     }
 
+    clearTurnTimer(room);
+
     const colors = evaluateGuess(room.cb.secret, raw);
     const me = room.players.find((p) => p.id === socket.id);
     const entry = {
@@ -188,6 +240,7 @@ function registerSocket(socket, io, rooms) {
     const next = getOpponent(room, socket.id);
     if (!next) return;
     room.cb.currentTurn = next.id;
+    startTurnTimer(room, io, roomCode);
     emitTurnState(room, io);
   });
 
@@ -229,5 +282,6 @@ module.exports = {
   registerSocket,
   evaluateGuess,
   generateSecretCode,
-  CODE_LENGTH
+  CODE_LENGTH,
+  TURN_SECONDS
 };

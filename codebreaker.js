@@ -8,7 +8,8 @@
       '<div class="cbPlayer" id="cbOppName">Opponent</div>' +
     '</div>' +
     '<h2 id="cbTurnIndicator"></h2>' +
-    '<p id="cbHint" class="cbHint">Guess the 6-digit secret code. Green = right spot, yellow = wrong spot, red = not in the code.</p>' +
+    '<p id="cbTimer" class="cbTimer">20</p>' +
+    '<p id="cbHint" class="cbHint">Guess the 6-digit secret code. Green = right spot, yellow = wrong spot, red = not in the code. 20 seconds per turn.</p>' +
     '<div id="cbHistory" class="cbHistory"></div>' +
     '<div class="cbInputRow">' +
       '<input id="cbGuessInput" placeholder="Enter 6 digits" inputmode="numeric" autocomplete="off" maxlength="6">' +
@@ -26,6 +27,8 @@
   let active = false;
   let gameOver = false;
   let history = [];
+  let turnEndsAt = null;
+  let timerInterval = null;
 
   let lobbyScreen;
   let placementScreen;
@@ -33,6 +36,7 @@
   let wordChainScreen;
   let codeBreakerScreen;
   let cbTurnIndicator;
+  let cbTimer;
   let cbGuessInput;
   let cbSubmitBtn;
   let cbHistory;
@@ -58,6 +62,7 @@
       codeBreakerScreen.dataset.ready = "1";
     }
     cbTurnIndicator = $("cbTurnIndicator");
+    cbTimer = $("cbTimer");
     cbGuessInput = $("cbGuessInput");
     cbSubmitBtn = $("cbSubmitBtn");
     cbHistory = $("cbHistory");
@@ -95,7 +100,35 @@
 
   function hideCodeBreakerScreen() {
     active = false;
+    stopTimerTick();
     if (codeBreakerScreen) codeBreakerScreen.classList.add("hidden");
+  }
+
+  function stopTimerTick() {
+    if (timerInterval) {
+      clearInterval(timerInterval);
+      timerInterval = null;
+    }
+  }
+
+  function renderTimer() {
+    if (!cbTimer) return;
+    if (!turnEndsAt || gameOver) {
+      cbTimer.textContent = gameOver ? "0" : "—";
+      cbTimer.classList.toggle("urgent", false);
+      return;
+    }
+    const left = Math.max(0, Math.ceil((turnEndsAt - Date.now()) / 1000));
+    cbTimer.textContent = String(left);
+    cbTimer.classList.toggle("urgent", left <= 5);
+  }
+
+  function startTimerTick(endsAt) {
+    turnEndsAt = endsAt || null;
+    stopTimerTick();
+    renderTimer();
+    if (!turnEndsAt || gameOver) return;
+    timerInterval = setInterval(renderTimer, 200);
   }
 
   function colorClass(color) {
@@ -152,6 +185,7 @@
     if (cbGuessInput) cbGuessInput.disabled = !canPlay;
     if (cbSubmitBtn) cbSubmitBtn.disabled = !canPlay;
     renderHistory(history);
+    renderTimer();
   }
 
   function submitGuess() {
@@ -197,9 +231,10 @@
     history = data.history || [];
     gameOver = false;
     hideEndButtons();
+    startTimerTick(data.turnEndsAt);
     renderState();
     showCodeBreakerScreen();
-    cbMsg.textContent = "Crack the 6-digit code together — take turns guessing!";
+    cbMsg.textContent = "Crack the 6-digit code together — 20 seconds per turn!";
     if (cbGuessInput) cbGuessInput.value = "";
   }
 
@@ -207,6 +242,8 @@
     if (!active) return;
     gameOver = true;
     myTurn = false;
+    stopTimerTick();
+    turnEndsAt = null;
     if (data.history) history = data.history;
     renderState();
     const youWin = data.winnerId === socket.id;
@@ -236,7 +273,15 @@
       gameOver = false;
       myTurn = data.yourTurn;
       if (data.history) history = data.history;
+      startTimerTick(data.turnEndsAt);
       renderState();
+    });
+
+    // "codeBreakerTimedOut" — Code Breaker only.
+    socket.on("codeBreakerTimedOut", (data) => {
+      if (!active) return;
+      cbMsg.textContent = data.message ||
+        ((data.name || "Player") + " ran out of time. Turn passes.");
     });
 
     // "codeBreakerOver" — Code Breaker only.
