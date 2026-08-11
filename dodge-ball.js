@@ -657,7 +657,7 @@
         const t = e.changedTouches[0];
         touchId = t.identifier;
         const v = readStick(baseEl, t.clientX, t.clientY);
-        setKnob(knobEl, v.x, v.y);
+        setKnob(knobEl, v.x, v.y, baseEl);
         onMove(v, true);
         e.preventDefault();
       },
@@ -671,7 +671,7 @@
           const t = e.changedTouches[i];
           if (t.identifier === touchId) {
             const v = readStick(baseEl, t.clientX, t.clientY);
-            setKnob(knobEl, v.x, v.y);
+            setKnob(knobEl, v.x, v.y, baseEl);
             onMove(v, false);
             e.preventDefault();
             break;
@@ -684,7 +684,7 @@
       for (let i = 0; i < e.changedTouches.length; i++) {
         if (e.changedTouches[i].identifier === touchId) {
           touchId = null;
-          setKnob(knobEl, 0, 0);
+          setKnob(knobEl, 0, 0, baseEl);
           onEnd();
           e.preventDefault();
           break;
@@ -837,7 +837,7 @@
         const shouldThrow = aimActive && aimHadDirection;
         aimActive = false;
         aimHadDirection = false;
-        setKnob(dbJoyAimKnob, 0, 0);
+        setKnob(dbJoyAimKnob, 0, 0, dbJoyAim);
         if (shouldThrow) throwBall();
       }
     );
