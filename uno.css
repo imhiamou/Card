@@ -1,8 +1,10 @@
 /* UNO — styles only. Does not alter other game layouts. */
 
 #unoScreen{
-width:min(920px,96vw);
-max-width:96vw;
+width:min(1280px,98vw);
+max-width:98vw;
+box-sizing:border-box;
+padding:16px 18px 20px;
 }
 
 .unoTitleRow{
@@ -26,12 +28,12 @@ font-size:13px;
 /* Physical table seating around the UNO piles */
 .unoTableArena{
 display:grid;
-grid-template-columns:minmax(84px,128px) minmax(0,1fr) minmax(84px,128px);
-grid-template-rows:auto minmax(160px,1fr) auto;
-gap:8px 10px;
+grid-template-columns:minmax(110px,160px) minmax(0,1fr) minmax(110px,160px);
+grid-template-rows:auto minmax(200px,1fr) auto;
+gap:10px 14px;
 align-items:center;
 justify-items:center;
-margin:4px 0 10px;
+margin:4px 0 12px;
 }
 
 .unoTableArena .unoTableCenter{
@@ -43,7 +45,7 @@ min-width:0;
 
 .unoSeat{
 width:100%;
-max-width:148px;
+max-width:170px;
 position:relative;
 }
 
@@ -63,8 +65,8 @@ pointer-events:none;
 
 /* 5 players: corners + bottom */
 .unoTableArena[data-count="5"]{
-grid-template-columns:minmax(78px,120px) minmax(0,1fr) minmax(78px,120px);
-grid-template-rows:auto auto minmax(150px,1fr) auto;
+grid-template-columns:minmax(100px,150px) minmax(0,1fr) minmax(100px,150px);
+grid-template-rows:auto auto minmax(180px,1fr) auto;
 }
 .unoTableArena[data-count="5"] .seat-tl{
 display:block;
@@ -226,12 +228,12 @@ position:relative;
 display:flex;
 justify-content:center;
 align-items:center;
-gap:28px;
+gap:36px;
 background:radial-gradient(ellipse at center,#2a6b4a 0%,#1a3d2c 70%,#12281c 100%);
 border:3px solid #0f241a;
 border-radius:16px;
-padding:22px 16px;
-min-height:160px;
+padding:28px 20px;
+min-height:min(42vh,360px);
 box-shadow:inset 0 0 40px rgba(0,0,0,.35);
 }
 
