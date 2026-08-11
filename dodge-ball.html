@@ -1,0 +1,30 @@
+<!--
+  Dodge Ball — isolated 1v1 realtime dodgeball.
+  Styles live in dodge-ball.css; the live game is mounted by dodge-ball.js
+  into #dodgeBallScreen. This file documents the markup structure.
+-->
+<div class="box" id="dodgeBallScreen">
+  <h2>Dodge Ball</h2>
+  <div class="dbHud">
+    <div class="dbPlayerHud" id="dbHudP1"></div>
+    <div class="dbCooldown" id="dbCooldown">READY</div>
+    <div class="dbPlayerHud" id="dbHudP2"></div>
+  </div>
+  <div class="dbArenaWrap">
+    <div class="dbArena" id="dbArena">
+      <div class="dbCenterLine"></div>
+      <div class="dbCountdown" id="dbCountdown"></div>
+      <div class="dbWinner" id="dbWinner"></div>
+    </div>
+  </div>
+  <div class="dbMobileControls" id="dbMobileControls">
+    <div class="dbJoystick" id="dbJoystick">
+      <div class="dbJoystickKnob" id="dbJoystickKnob"></div>
+    </div>
+    <p class="dbMobileHint">Drag arena to aim · release to throw</p>
+  </div>
+  <p id="dbMsg"></p>
+  <div id="dbEndButtons" class="dbEndButtons hidden">
+    <button type="button" id="dbPlayAgainBtn">Play Again</button>
+  </div>
+</div>

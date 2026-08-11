@@ -9,6 +9,7 @@
 <link rel="stylesheet" href="codebreaker.css">
 <link rel="stylesheet" href="domino.css">
 <link rel="stylesheet" href="uno.css">
+<link rel="stylesheet" href="dodge-ball.css">
 <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
 </head>
 <body>
@@ -27,6 +28,7 @@
 <option value="code-breaker">Code Breaker</option>
 <option value="dominoes">Dominoes</option>
 <option value="uno">UNO</option>
+<option value="dodge-ball">Dodge Ball</option>
 </select>
 
 <!-- Dominoes only: lobby creator picks 2–4 seats -->
@@ -163,10 +165,14 @@
 <!-- UNO screen (mounted by uno.js; unused for other games) -->
 <div class="box hidden" id="unoScreen"></div>
 
+<!-- Dodge Ball screen (mounted by dodge-ball.js; unused for other games) -->
+<div class="box hidden" id="dodgeBallScreen"></div>
+
 <script src="wordchain.js"></script>
 <script src="codebreaker.js"></script>
 <script src="domino.js"></script>
 <script src="uno.js"></script>
+<script src="dodge-ball.js"></script>
 <script src="index.js"></script>
 </body>
 </html>

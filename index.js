@@ -172,6 +172,7 @@ const game=selectedGame==="word-chain"?"word-chain"
 :selectedGame==="code-breaker"?"code-breaker"
 :selectedGame==="dominoes"?"dominoes"
 :selectedGame==="uno"?"uno"
+:selectedGame==="dodge-ball"?"dodge-ball"
 :"hidden-hunt";
 const payload={name,room,game};
 if(game==="dominoes"){
@@ -248,6 +249,8 @@ if(window.CodeBreaker&&CodeBreaker.isActive()&&CodeBreaker.showError(msg))return
 if(window.Dominoes&&Dominoes.isActive()&&Dominoes.showError(msg))return;
 // UNO handles its own rule messages when active.
 if(window.Uno&&Uno.isActive()&&Uno.showError(msg))return;
+// Dodge Ball handles its own messages when active.
+if(window.DodgeBall&&DodgeBall.isActive()&&DodgeBall.showError(msg))return;
 // During the game, a rejected play (e.g. an invalid Dash target) must
 // NOT freeze the match: unlock the hand so the player can try again,
 // and show the reason on screen instead of an alert.
@@ -1273,3 +1276,5 @@ if(window.CodeBreaker)CodeBreaker.init(socket);
 if(window.Dominoes)Dominoes.init(socket);
 // Wire UNO to the shared lobby socket (isolated from other games).
 if(window.Uno)Uno.init(socket);
+// Wire Dodge Ball to the shared lobby socket (isolated from other games).
+if(window.DodgeBall)DodgeBall.init(socket);
