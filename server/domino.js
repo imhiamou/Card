@@ -24,7 +24,8 @@ let roomsRef = null;
 /** Bot "thinking" delay (ms). Fast-forwarded in automated tests. */
 function botDelayMs() {
   if (process.env.BOT_TEST_FAST) return 5;
-  return 800 + Math.floor(Math.random() * 700);
+  // Deliberate pause so bots feel like they are thinking (~2.4–4.2s).
+  return 2400 + Math.floor(Math.random() * 1800);
 }
 
 /* ============================================================

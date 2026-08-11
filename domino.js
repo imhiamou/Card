@@ -196,6 +196,8 @@
 
   function hideDominoScreen() {
     active = false;
+    clearScoreboard();
+    hideEndButtons();
     if (dominoScreen) dominoScreen.classList.add("hidden");
   }
 
@@ -274,17 +276,32 @@
 
   /* ---- Render ---- */
 
-  function hideEndUi() {
-    if (domScoreboard) {
-      domScoreboard.classList.add("hidden");
-      domScoreboard.innerHTML = "";
-    }
+  function hideEndButtons() {
     if (domEndButtons) {
       domEndButtons.classList.add("hidden");
       if (domPlayAgainBtn) {
         domPlayAgainBtn.disabled = false;
         domPlayAgainBtn.textContent = "Play Again";
       }
+    }
+  }
+
+  function clearScoreboard() {
+    if (domScoreboard) {
+      domScoreboard.classList.add("hidden");
+      domScoreboard.innerHTML = "";
+    }
+  }
+
+  /** Clears Play Again controls. Scoreboard stays until the player leaves the lobby. */
+  function hideEndUi(clearBoard) {
+    hideEndButtons();
+    if (clearBoard) clearScoreboard();
+  }
+
+  function sfx(name) {
+    if (window.GameSfx && typeof window.GameSfx[name] === "function") {
+      window.GameSfx[name]();
     }
   }
 
@@ -550,7 +567,7 @@
     wireControls();
     gameOver = false;
     selectedTileId = null;
-    hideEndUi();
+    hideEndUi(false);
     hideSidePicker();
     resetPan();
     applyState(data);
@@ -596,6 +613,7 @@
     // "dominoPlayed" — Dominoes only.
     socket.on("dominoPlayed", (data) => {
       if (!active) return;
+      sfx("playCard");
       if (data.board) board = data.board;
       renderBoard(data.tile && data.tile.id);
       domMsg.textContent = (data.name || "Player") + " played " +
@@ -605,6 +623,7 @@
     // "dominoDrawn" — Dominoes only.
     socket.on("dominoDrawn", (data) => {
       if (!active) return;
+      sfx("draw");
       if (board) board.boneyardCount = data.boneyardCount;
       if (domBoneyard) domBoneyard.textContent = "Boneyard: " + data.boneyardCount;
       players = players.map((p) => p.id === data.by
@@ -629,12 +648,14 @@
     // "dominoPassed" — Dominoes only.
     socket.on("dominoPassed", (data) => {
       if (!active) return;
+      sfx("skipTurn");
       domMsg.textContent = (data.name || "Player") + " passes.";
     });
 
     // "dominoOver" — Dominoes only.
     socket.on("dominoOver", (data) => {
       if (!active) return;
+      sfx("gameOver");
       gameOver = true;
       myTurn = false;
       selectedTileId = null;
@@ -663,8 +684,13 @@
     socket.on("dominoReset", () => {
       if (!active) return;
       gameOver = false;
-      hideEndUi();
+      // Keep scoreboard visible until the player leaves the lobby.
+      hideEndButtons();
       hideSidePicker();
+      if (domScoreboard && !domScoreboard.classList.contains("hidden")) {
+        const heading = domScoreboard.querySelector("h3");
+        if (heading) heading.textContent = "Last round";
+      }
       domMsg.textContent = "New round!";
     });
 
