@@ -100,6 +100,12 @@ color:#c5d2e8;
 color:#ffd866;
 }
 
+.domRoundAward{
+margin:8px 0 0;
+font-size:13px;
+color:#9eb0cc;
+}
+
 /* Small indicator for server-controlled bot players */
 .botTag{
 display:inline-block;

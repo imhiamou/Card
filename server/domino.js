@@ -307,6 +307,7 @@ function initRound(room) {
     winnerId: null,
     winnerTeam: null,
     winReason: null,
+    roundPoints: null,
     turnIndex: playerIds.indexOf(dealt.starterId),
     teamMode: teams.teamMode,
     teamA: teams.teamA,
@@ -369,6 +370,92 @@ function buildTeamScores(room, scores) {
     { team: "A", points: sum("A") },
     { team: "B", points: sum("B") }
   ];
+}
+
+/**
+ * Match totals persist across Play Again in the same lobby.
+ * Team mode: winner of a round scores the opposing team's remaining pips.
+ */
+function ensureMatch(room) {
+  if (!room.dominoMatch) {
+    room.dominoMatch = {
+      teams: {
+        A: { roundsWon: 0, score: 0 },
+        B: { roundsWon: 0, score: 0 }
+      },
+      players: {}
+    };
+  }
+  room.players.forEach((p) => {
+    if (!room.dominoMatch.players[p.id]) {
+      room.dominoMatch.players[p.id] = { roundsWon: 0, score: 0, name: p.name };
+    } else {
+      room.dominoMatch.players[p.id].name = p.name;
+    }
+  });
+}
+
+function remainingPointsForTeam(scores, team) {
+  return (scores || [])
+    .filter((row) => row.team === team)
+    .reduce((total, row) => total + row.points, 0);
+}
+
+function remainingPointsExcept(scores, winnerId) {
+  return (scores || [])
+    .filter((row) => row.id !== winnerId)
+    .reduce((total, row) => total + row.points, 0);
+}
+
+/** Award round points to the winning team (opponent leftovers only). */
+function awardTeamRound(room, winnerTeam, scores) {
+  ensureMatch(room);
+  const loserTeam = winnerTeam === "A" ? "B" : "A";
+  const roundPoints = remainingPointsForTeam(scores, loserTeam);
+  const slot = room.dominoMatch.teams[winnerTeam];
+  slot.roundsWon += 1;
+  slot.score += roundPoints;
+  return { roundPoints: roundPoints, loserTeam: loserTeam };
+}
+
+/** Free-for-all: winner scores everyone else's remaining pips. */
+function awardSoloRound(room, winnerId, scores) {
+  ensureMatch(room);
+  const roundPoints = remainingPointsExcept(scores, winnerId);
+  const slot = room.dominoMatch.players[winnerId];
+  if (slot) {
+    slot.roundsWon += 1;
+    slot.score += roundPoints;
+  }
+  return { roundPoints: roundPoints };
+}
+
+function publicMatchScoreboard(room) {
+  ensureMatch(room);
+  const d = room.domino;
+  if (d && d.teamMode) {
+    return [
+      {
+        team: "A",
+        roundsWon: room.dominoMatch.teams.A.roundsWon,
+        score: room.dominoMatch.teams.A.score
+      },
+      {
+        team: "B",
+        roundsWon: room.dominoMatch.teams.B.roundsWon,
+        score: room.dominoMatch.teams.B.score
+      }
+    ];
+  }
+  return room.players.map((p) => {
+    const slot = room.dominoMatch.players[p.id] || { roundsWon: 0, score: 0 };
+    return {
+      id: p.id,
+      name: p.name,
+      roundsWon: slot.roundsWon,
+      score: slot.score
+    };
+  });
 }
 
 function publicBoard(room) {
@@ -434,6 +521,8 @@ function emitFullState(room, io, roomCode, extra) {
       over: d.over,
       scores: d.scores,
       teamScores: d.teamScores,
+      matchScoreboard: publicMatchScoreboard(room),
+      roundPoints: d.roundPoints != null ? d.roundPoints : null,
       winnerId: d.winnerId,
       winnerTeam: d.winnerTeam,
       winReason: d.winReason,
@@ -560,6 +649,7 @@ function resolveAutoPasses(room, io, roomCode) {
 
 function endEmptyHand(room, io, roomCode, winnerId) {
   const d = room.domino;
+  ensureMatch(room);
   d.over = true;
   d.winnerId = winnerId;
   d.winReason = "emptied";
@@ -570,21 +660,31 @@ function endEmptyHand(room, io, roomCode, winnerId) {
   let winnerTeam = null;
   let winnerName = winner ? winner.name : "Player";
   let message = winnerName + " played their last domino!";
+  let roundPoints = 0;
 
-  // 4-player team mode: emptying a hand wins for the whole partnership.
+  // 4-player team mode: emptying a hand wins for the partnership.
+  // Winner scores ONLY the opposing team's remaining pips.
   if (d.teamMode) {
     winnerTeam = teamOfPlayer(d, winnerId);
     d.winnerTeam = winnerTeam;
+    const award = awardTeamRound(room, winnerTeam, d.scores);
+    roundPoints = award.roundPoints;
+    d.roundPoints = roundPoints;
     const mateIds = teamPlayerIds(d, winnerTeam);
     const names = mateIds.map((id) => {
       const p = room.players.find((x) => x.id === id);
       return p ? p.name : "Player";
     }).join(" & ");
     winnerName = "Team " + winnerTeam + " (" + names + ")";
-    message = winnerName + " wins! " +
-      (winner ? winner.name : "A player") + " played their last domino.";
+    message = winnerName + " wins the round! +" + roundPoints +
+      " (Team " + award.loserTeam + "'s remaining points).";
   } else {
     d.winnerTeam = null;
+    const award = awardSoloRound(room, winnerId, d.scores);
+    roundPoints = award.roundPoints;
+    d.roundPoints = roundPoints;
+    message = winnerName + " wins the round! +" + roundPoints +
+      " from opponents' remaining points.";
   }
 
   // "dominoOver" — Dominoes only. Hand emptied; scoreboard included.
@@ -597,7 +697,9 @@ function endEmptyHand(room, io, roomCode, winnerId) {
     winReason: "emptied",
     message,
     scores: d.scores,
-    teamScores: d.teamScores
+    teamScores: d.teamScores,
+    matchScoreboard: publicMatchScoreboard(room),
+    roundPoints
   });
   emitFullState(room, io, roomCode);
   scheduleBotRematchVotes(room, io, roomCode);
@@ -605,6 +707,7 @@ function endEmptyHand(room, io, roomCode, winnerId) {
 
 function endBlocked(room, io, roomCode) {
   const d = room.domino;
+  ensureMatch(room);
   d.over = true;
   d.winReason = "blocked";
   d.scores = buildScoreRows(room);
@@ -613,23 +716,26 @@ function endBlocked(room, io, roomCode) {
   let winnerTeam = null;
   let winnerName = "";
   let message = "";
+  let roundPoints = 0;
 
   if (d.teamMode) {
-    // Lowest combined team pip total wins.
+    // Lowest combined team pip total wins the round.
     const scoreA = d.teamScores.find((t) => t.team === "A").points;
     const scoreB = d.teamScores.find((t) => t.team === "B").points;
     winnerTeam = scoreA <= scoreB ? "A" : "B";
     d.winnerTeam = winnerTeam;
     const mateIds = teamPlayerIds(d, winnerTeam);
     d.winnerId = mateIds[0];
+    const award = awardTeamRound(room, winnerTeam, d.scores);
+    roundPoints = award.roundPoints;
+    d.roundPoints = roundPoints;
     const names = mateIds.map((id) => {
       const p = room.players.find((x) => x.id === id);
       return p ? p.name : "Player";
     }).join(" & ");
     winnerName = "Team " + winnerTeam + " (" + names + ")";
-    message = "Game blocked! " + winnerName + " wins with the lowest combined score " +
-      "(" + (winnerTeam === "A" ? scoreA : scoreB) + " vs " +
-      (winnerTeam === "A" ? scoreB : scoreA) + ").";
+    message = "Game blocked! " + winnerName + " wins the round! +" +
+      roundPoints + " (Team " + award.loserTeam + "'s remaining points).";
   } else {
     d.winnerTeam = null;
     let best = null;
@@ -640,10 +746,14 @@ function endBlocked(room, io, roomCode) {
     const tied = d.scores.filter((row) => row.points === best.points);
     d.winnerId = tied[0].id;
     winnerName = tied[0].name;
-    message = "Game blocked! Lowest remaining points wins.";
+    const award = awardSoloRound(room, d.winnerId, d.scores);
+    roundPoints = award.roundPoints;
+    d.roundPoints = roundPoints;
+    message = "Game blocked! " + winnerName + " wins the round! +" +
+      roundPoints + " from opponents' remaining points.";
   }
 
-  // "dominoOver" — Dominoes only. Table blocked; lowest pips / team total wins.
+  // "dominoOver" — Dominoes only. Table blocked; match scoreboard included.
   io.to(roomCode).emit("dominoOver", {
     winnerId: d.winnerId,
     winnerName,
@@ -653,7 +763,9 @@ function endBlocked(room, io, roomCode) {
     winReason: "blocked",
     message,
     scores: d.scores,
-    teamScores: d.teamScores
+    teamScores: d.teamScores,
+    matchScoreboard: publicMatchScoreboard(room),
+    roundPoints
   });
   emitFullState(room, io, roomCode);
   scheduleBotRematchVotes(room, io, roomCode);
@@ -668,6 +780,7 @@ function endBlocked(room, io, roomCode) {
  * Never called for Hidden Hunt / Word Chain / Code Breaker.
  */
 function onLobbyFull(room, io, roomCode) {
+  ensureMatch(room);
   initRound(room);
   const teams = publicTeams(room);
   room.players.forEach((player) => {
@@ -693,7 +806,8 @@ function onLobbyFull(room, io, roomCode) {
       hand: (d.hands[player.id] || []).map((t) => ({ id: t.id, a: t.a, b: t.b })),
       validMoves: moves,
       canDraw: false,
-      maxPlayers: room.maxPlayers || room.players.length
+      maxPlayers: room.maxPlayers || room.players.length,
+      matchScoreboard: publicMatchScoreboard(room)
     });
   });
   // Opening turn may need auto-pass only if somehow no moves and empty yard (shouldn't).

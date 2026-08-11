@@ -59,6 +59,8 @@
   let teammate = null;
   let winnerTeam = null;
   let teamScores = null;
+  let matchScoreboard = null;
+  let roundPoints = null;
   let panX = 0;
   let panY = 0;
   let scale = 1;
@@ -310,20 +312,41 @@
     const meta = overMeta || {};
     let html = "<h3>Scoreboard</h3>";
 
-    if (meta.teamMode && meta.teamScores) {
+    if (meta.teamMode && meta.matchScoreboard) {
+      // Match totals only: rounds won + score (winner gets opponent leftovers).
+      // Do not list each player's leftover hand points.
+      meta.matchScoreboard.forEach((ts) => {
+        const win = meta.winnerTeam === ts.team;
+        const rounds = ts.roundsWon === 1 ? "1 round won" : ts.roundsWon + " rounds won";
+        html += '<div class="domTeamScore' + (win ? " winner" : "") + '">' +
+          "<strong>Team " + ts.team + (win ? " ★" : "") + "</strong>" +
+          "<span>" + rounds + " · score " + ts.score + "</span></div>";
+      });
+      if (meta.winnerTeam && meta.roundPoints != null) {
+        html += '<p class="domRoundAward">This round: Team ' + meta.winnerTeam +
+          " scored +" + meta.roundPoints + "</p>";
+      }
+    } else if (meta.matchScoreboard && !meta.teamMode) {
+      meta.matchScoreboard.forEach((row) => {
+        const win = row.id === winnerId;
+        const rounds = row.roundsWon === 1 ? "1 round won" : row.roundsWon + " rounds won";
+        html += '<div class="domScoreRow' + (win ? " winner" : "") + '">' +
+          "<span>" + (row.name || "Player") + (win ? " ★" : "") + "</span>" +
+          "<span>" + rounds + " · score " + row.score + "</span></div>";
+      });
+      if (winnerId && meta.roundPoints != null) {
+        const w = meta.matchScoreboard.find((r) => r.id === winnerId);
+        html += '<p class="domRoundAward">This round: ' +
+          (w ? w.name : "Winner") + " scored +" + meta.roundPoints + "</p>";
+      }
+    } else if (meta.teamMode && meta.teamScores) {
+      // Legacy fallback if matchScoreboard missing.
       meta.teamScores.forEach((ts) => {
         const win = meta.winnerTeam === ts.team;
         html += '<div class="domTeamScore' + (win ? " winner" : "") + '">' +
           "<strong>Team " + ts.team + (win ? " ★" : "") + "</strong>" +
-          "<span>" + ts.points + " points</span></div>";
-        (scores || []).filter((row) => row.team === ts.team).forEach((row) => {
-          html += '<div class="domScoreRow">' +
-            "<span>" + (row.name || "Player") + "</span>" +
-            "<span>" + row.points + " points</span></div>";
-        });
+          "<span>score " + ts.points + "</span></div>";
       });
-      html += '<div class="domScoreRow winner"><span>Winner</span><span>Team ' +
-        (meta.winnerTeam || "—") + "</span></div>";
     } else {
       (scores || []).forEach((row) => {
         const win = row.id === winnerId;
@@ -472,16 +495,20 @@
     if (data.teammate !== undefined) teammate = data.teammate;
     if (data.winnerTeam !== undefined) winnerTeam = data.winnerTeam;
     if (data.teamScores !== undefined) teamScores = data.teamScores;
+    if (data.matchScoreboard !== undefined) matchScoreboard = data.matchScoreboard;
+    if (data.roundPoints !== undefined) roundPoints = data.roundPoints;
     if (gameOver) selectedTileId = null;
     renderPlayers(data.currentTurnId);
     renderBoard(options.animatePlayId);
     renderHand(options.animateDrawId);
     renderChrome(data);
-    if (data.over && data.scores) {
+    if (data.over && (data.matchScoreboard || data.scores)) {
       showEndUi(data.scores, data.winnerId, data.message, {
         teamMode,
         teamScores: data.teamScores || teamScores,
-        winnerTeam: data.winnerTeam || winnerTeam
+        winnerTeam: data.winnerTeam || winnerTeam,
+        matchScoreboard: data.matchScoreboard || matchScoreboard,
+        roundPoints: data.roundPoints != null ? data.roundPoints : roundPoints
       });
     }
   }
@@ -601,11 +628,13 @@
         const drawn = data.hand.find((t) => !prevHandIds.has(t.id));
         if (drawn) renderHand(drawn.id);
       }
-      if (data.over && data.scores) {
+      if (data.over && (data.matchScoreboard || data.scores)) {
         showEndUi(data.scores, data.winnerId, null, {
           teamMode: !!data.teamMode,
           teamScores: data.teamScores,
-          winnerTeam: data.winnerTeam
+          winnerTeam: data.winnerTeam,
+          matchScoreboard: data.matchScoreboard,
+          roundPoints: data.roundPoints
         });
       }
     });
@@ -664,10 +693,14 @@
       if (data.teams) teams = data.teams;
       if (data.winnerTeam !== undefined) winnerTeam = data.winnerTeam;
       if (data.teamScores) teamScores = data.teamScores;
+      if (data.matchScoreboard) matchScoreboard = data.matchScoreboard;
+      if (data.roundPoints != null) roundPoints = data.roundPoints;
       showEndUi(data.scores, data.winnerId, data.message, {
         teamMode: !!data.teamMode,
         teamScores: data.teamScores,
-        winnerTeam: data.winnerTeam
+        winnerTeam: data.winnerTeam,
+        matchScoreboard: data.matchScoreboard || matchScoreboard,
+        roundPoints: data.roundPoints != null ? data.roundPoints : roundPoints
       });
       domTurnIndicator.textContent = "Round Over";
       if (domDrawBtn) domDrawBtn.disabled = true;
