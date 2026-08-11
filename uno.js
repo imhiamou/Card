@@ -604,12 +604,9 @@
       hideEndButtons();
       pendingWildId = null;
       if (unoScoreboard && !unoScoreboard.classList.contains("hidden")) {
-        const heading = unoScoreboard.querySelector("h3.unoWinBurst") ||
-          unoScoreboard.querySelector("h3");
-        if (heading && heading.classList.contains("unoWinBurst")) {
-          heading.textContent = "Last round — " + heading.textContent.replace(/^Winner:\s*/, "Winner: ");
-        } else if (heading) {
-          heading.textContent = "Last round";
+        const heading = unoScoreboard.querySelector("h3");
+        if (heading && heading.textContent.indexOf("Last round") !== 0) {
+          heading.textContent = "Last round — " + heading.textContent;
         }
       }
       unoMsg.textContent = "New round!";
