@@ -1,7 +1,10 @@
 /* Dodge Ball — client module (isolated from other games). */
 (function () {
   const SCREEN_HTML =
-    "<h2>Dodge Ball</h2>" +
+    '<div class="dbTitleRow">' +
+      "<h2>Dodge Ball</h2>" +
+      '<button type="button" id="dbFullscreenBtn" class="dbFullscreenBtn">FULLSCREEN</button>' +
+    "</div>" +
     '<div class="dbHud">' +
       '<div class="dbPlayerHud p1" id="dbHudP1"></div>' +
       '<div class="dbCooldown ready" id="dbCooldown">READY</div>' +
@@ -10,19 +13,28 @@
     '<div class="dbArenaWrap">' +
       '<div class="dbArena" id="dbArena">' +
         '<div class="dbCenterLine"></div>' +
+        '<div class="dbMoveTarget" id="dbMoveTarget"></div>' +
         '<div class="dbCountdown" id="dbCountdown"></div>' +
         '<div class="dbWinner" id="dbWinner"></div>' +
       "</div>" +
     "</div>" +
     '<div class="dbMobileControls" id="dbMobileControls">' +
-      '<div class="dbJoystick" id="dbJoystick">' +
-        '<div class="dbJoystickKnob" id="dbJoystickKnob"></div>' +
+      '<div class="dbJoystick dbJoyMove" id="dbJoyMove" aria-label="Move">' +
+        '<div class="dbJoystickKnob" id="dbJoyMoveKnob"></div>' +
+        '<span class="dbJoyLabel">MOVE</span>' +
       "</div>" +
-      '<p class="dbMobileHint">Drag arena to aim · release to throw</p>' +
+      '<div class="dbJoystick dbJoyAim" id="dbJoyAim" aria-label="Aim and throw">' +
+        '<div class="dbJoystickKnob" id="dbJoyAimKnob"></div>' +
+        '<span class="dbJoyLabel">AIM</span>' +
+      "</div>" +
     "</div>" +
+    '<p class="dbDesktopHint" id="dbDesktopHint">Click/hold to move · mouse aims · Space throws</p>' +
     '<p id="dbMsg"></p>' +
     '<div id="dbEndButtons" class="dbEndButtons hidden">' +
       '<button type="button" id="dbPlayAgainBtn">Play Again</button>' +
+    "</div>" +
+    '<div class="dbRotateGate" id="dbRotateGate" aria-live="polite">' +
+      "<p>Please rotate your phone to landscape.</p>" +
     "</div>";
 
   const ASSET = {
@@ -37,30 +49,35 @@
     hit: [1, 2, 3, 4, 5, 6, 7].map((i) => "assets/dodge-ball/fx/hit_" + i + ".png")
   };
 
+  const AIM_DEADZONE = 0.22;
+  const ARRIVE_DIST = 10;
+  const PLAYER_R = 28;
+
   let socket = null;
   let currentRoom = null;
   let myId = null;
   let myIndex = 1;
+  let mySide = "left";
   let active = false;
   let gameOver = false;
   let arena = { w: 800, h: 450, centerX: 400 };
   let players = [];
   let projectiles = [];
-  let cooldownMs = 2000;
+  let cooldownMs = 3000;
   let maxHp = 100;
   let serverNowOffset = 0;
   let phase = "countdown";
+  let touchMode = false;
 
-  let keys = Object.create(null);
-  let moveVec = { x: 0, y: 0 };
   let aimVec = { x: 1, y: 0 };
-  let mouseAim = { x: 1, y: 0 };
-  let joyVec = { x: 0, y: 0 };
-  let aimingTouch = false;
+  let moveJoy = { x: 0, y: 0 };
+  let moveTarget = null; // PC click-to-move destination in arena coords
+  let mouseHeld = false;
+  let spaceHeld = false;
   let inputTimer = null;
   let animTimer = null;
   let animFrame = 0;
-  let lastStateAt = 0;
+  let controlsWired = false;
 
   let lobbyScreen;
   let placementScreen;
@@ -79,8 +96,13 @@
   let dbMsg;
   let dbEndButtons;
   let dbPlayAgainBtn;
-  let dbJoystick;
-  let dbJoystickKnob;
+  let dbJoyMove;
+  let dbJoyMoveKnob;
+  let dbJoyAim;
+  let dbJoyAimKnob;
+  let dbFullscreenBtn;
+  let dbMoveTarget;
+  let dbRotateGate;
 
   const charEls = Object.create(null);
   const ballEls = Object.create(null);
@@ -112,13 +134,59 @@
     dbMsg = $("dbMsg");
     dbEndButtons = $("dbEndButtons");
     dbPlayAgainBtn = $("dbPlayAgainBtn");
-    dbJoystick = $("dbJoystick");
-    dbJoystickKnob = $("dbJoystickKnob");
+    dbJoyMove = $("dbJoyMove");
+    dbJoyMoveKnob = $("dbJoyMoveKnob");
+    dbJoyAim = $("dbJoyAim");
+    dbJoyAimKnob = $("dbJoyAimKnob");
+    dbFullscreenBtn = $("dbFullscreenBtn");
+    dbMoveTarget = $("dbMoveTarget");
+    dbRotateGate = $("dbRotateGate");
     return true;
   }
 
   function now() {
     return Date.now() + serverNowOffset;
+  }
+
+  /**
+   * Touch-first phones/tablets → mobile dual-stick UI.
+   * Fine pointer (mouse) available → desktop click-to-move (even on touchscreen laptops).
+   */
+  function preferTouchControls() {
+    const fine = window.matchMedia("(pointer: fine)").matches;
+    const coarse = window.matchMedia("(pointer: coarse)").matches;
+    const canHover = window.matchMedia("(hover: hover)").matches;
+    const touchPoints = navigator.maxTouchPoints || 0;
+
+    if (fine && canHover) return false;
+    if (coarse && !fine) return true;
+    if (touchPoints > 0 && !canHover) return true;
+    if (touchPoints > 0 && !fine && window.matchMedia("(max-width: 1024px)").matches) {
+      return true;
+    }
+    return false;
+  }
+
+  function isPortrait() {
+    return window.matchMedia("(orientation: portrait)").matches;
+  }
+
+  function updateModeClasses() {
+    if (!dodgeBallScreen) return;
+    touchMode = preferTouchControls();
+    dodgeBallScreen.classList.toggle("db-touch", touchMode);
+    dodgeBallScreen.classList.toggle("db-desktop", !touchMode);
+    dodgeBallScreen.classList.toggle("db-portrait", touchMode && isPortrait());
+    dodgeBallScreen.classList.toggle("db-landscape", touchMode && !isPortrait());
+    const fs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+    dodgeBallScreen.classList.toggle("db-fs", fs && document.fullscreenElement === dodgeBallScreen);
+    if (dbFullscreenBtn) {
+      dbFullscreenBtn.textContent = fs ? "EXIT FULLSCREEN" : "FULLSCREEN";
+    }
+  }
+
+  function setPlayingScrollLock(on) {
+    document.body.classList.toggle("db-playing", !!on);
   }
 
   function hideEndButtons() {
@@ -150,12 +218,22 @@
       if (el) el.classList.add("hidden");
     });
     dodgeBallScreen.classList.remove("hidden");
+    setPlayingScrollLock(true);
+    updateModeClasses();
   }
 
   function hideDodgeBallScreen() {
     active = false;
     stopLoops();
-    if (dodgeBallScreen) dodgeBallScreen.classList.add("hidden");
+    setPlayingScrollLock(false);
+    moveTarget = null;
+    mouseHeld = false;
+    moveJoy = { x: 0, y: 0 };
+    if (dodgeBallScreen) {
+      dodgeBallScreen.classList.add("hidden");
+      dodgeBallScreen.classList.remove("db-touch", "db-desktop", "db-portrait", "db-landscape", "db-fs");
+    }
+    exitFullscreenQuiet();
   }
 
   function stopLoops() {
@@ -169,18 +247,27 @@
     }
   }
 
-  function isMobileUi() {
-    return window.matchMedia("(max-width: 820px), (pointer: coarse)").matches;
-  }
-
   function arenaRect() {
     return dbArena.getBoundingClientRect();
   }
 
   function clientToArena(clientX, clientY) {
     const r = arenaRect();
-    const x = ((clientX - r.left) / r.width) * arena.w;
-    const y = ((clientY - r.top) / r.height) * arena.h;
+    const x = ((clientX - r.left) / Math.max(1, r.width)) * arena.w;
+    const y = ((clientY - r.top) / Math.max(1, r.height)) * arena.h;
+    return { x: x, y: y };
+  }
+
+  function clampToMyHalf(pt) {
+    const centerX = arena.centerX || arena.w / 2;
+    let x = pt.x;
+    let y = pt.y;
+    y = Math.max(PLAYER_R, Math.min(arena.h - PLAYER_R, y));
+    if (mySide === "left") {
+      x = Math.max(PLAYER_R, Math.min(centerX - PLAYER_R, x));
+    } else {
+      x = Math.max(centerX + PLAYER_R, Math.min(arena.w - PLAYER_R, x));
+    }
     return { x: x, y: y };
   }
 
@@ -191,31 +278,45 @@
     let dx = pt.x - me.x;
     let dy = pt.y - me.y;
     const d = Math.sqrt(dx * dx + dy * dy) || 1;
-    mouseAim = { x: dx / d, y: dy / d };
-    aimVec = mouseAim;
+    aimVec = { x: dx / d, y: dy / d };
   }
 
-  function keyboardMove() {
-    let x = 0;
-    let y = 0;
-    if (keys.KeyW || keys.ArrowUp) y -= 1;
-    if (keys.KeyS || keys.ArrowDown) y += 1;
-    if (keys.KeyA || keys.ArrowLeft) x -= 1;
-    if (keys.KeyD || keys.ArrowRight) x += 1;
-    const d = Math.sqrt(x * x + y * y) || 1;
-    if (x || y) return { x: x / d, y: y / d };
-    return { x: 0, y: 0 };
+  function setMoveTargetFromClient(clientX, clientY) {
+    moveTarget = clampToMyHalf(clientToArena(clientX, clientY));
+  }
+
+  function desktopMoveVec() {
+    if (!moveTarget) return { x: 0, y: 0 };
+    const me = players.find((p) => p.id === myId);
+    if (!me) return { x: 0, y: 0 };
+    const dx = moveTarget.x - me.x;
+    const dy = moveTarget.y - me.y;
+    const d = Math.sqrt(dx * dx + dy * dy);
+    if (d <= ARRIVE_DIST) {
+      moveTarget = null;
+      return { x: 0, y: 0 };
+    }
+    return { x: dx / d, y: dy / d };
   }
 
   function currentMove() {
-    if (isMobileUi()) return joyVec;
-    const k = keyboardMove();
-    if (k.x || k.y) return k;
-    return moveVec;
+    if (touchMode) return moveJoy;
+    return desktopMoveVec();
   }
 
   function sendInput() {
     if (!active || !socket || !currentRoom || gameOver) return;
+    if (touchMode && isPortrait()) {
+      // Still send zero movement while blocked in portrait.
+      socket.emit("dodgeBallInput", {
+        roomCode: currentRoom,
+        mx: 0,
+        my: 0,
+        aimX: aimVec.x,
+        aimY: aimVec.y
+      });
+      return;
+    }
     const m = currentMove();
     socket.emit("dodgeBallInput", {
       roomCode: currentRoom,
@@ -228,6 +329,7 @@
 
   function throwBall() {
     if (!active || !socket || !currentRoom || gameOver || phase !== "playing") return;
+    if (touchMode && isPortrait()) return;
     socket.emit("dodgeBallThrow", {
       roomCode: currentRoom,
       aimX: aimVec.x,
@@ -311,6 +413,14 @@
     dbArena.appendChild(fx);
   }
 
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
   function renderHud() {
     const p1 = players.find((p) => p.index === 1);
     const p2 = players.find((p) => p.index === 2);
@@ -340,14 +450,6 @@
     }
   }
 
-  function escapeHtml(s) {
-    return String(s)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
-  }
-
   function renderCooldown() {
     if (!dbCooldown) return;
     const me = players.find((p) => p.id === myId);
@@ -371,6 +473,17 @@
     return frames[idx];
   }
 
+  function renderMoveTarget() {
+    if (!dbMoveTarget) return;
+    if (!touchMode && moveTarget) {
+      dbMoveTarget.style.left = pct(moveTarget.x, "x") + "%";
+      dbMoveTarget.style.top = pct(moveTarget.y, "y") + "%";
+      dbMoveTarget.classList.add("show");
+    } else {
+      dbMoveTarget.classList.remove("show");
+    }
+  }
+
   function renderEntities() {
     if (!dbArena) return;
     players.forEach((p) => {
@@ -387,20 +500,23 @@
       }
       if (hpFill) hpFill.style.transform = "scaleX(" + p.hp / maxHp + ")";
       if (aim) {
-        const ang = (Math.atan2(p.aimY, p.aimX) * 180) / Math.PI + 90;
-        // Place aim marker just outside the sprite toward aim direction.
+        // Local player: show live client aim; others: server aim.
+        const ax = p.id === myId ? aimVec.x : p.aimX;
+        const ay = p.id === myId ? aimVec.y : p.aimY;
+        const ang = (Math.atan2(ay, ax) * 180) / Math.PI + 90;
         const dist = 42;
         aim.style.left = "50%";
         aim.style.top = "50%";
         aim.style.transform =
           "translate(-50%, -100%) translate(" +
-          Math.cos((ang - 90) * Math.PI / 180) * dist +
+          Math.cos(((ang - 90) * Math.PI) / 180) * dist +
           "px," +
-          Math.sin((ang - 90) * Math.PI / 180) * dist +
+          Math.sin(((ang - 90) * Math.PI) / 180) * dist +
           "px) rotate(" +
           ang +
           "deg)";
-        aim.style.borderBottomColor = p.index === 1 ? "rgba(80,170,255,0.9)" : "rgba(255,120,90,0.9)";
+        aim.style.borderBottomColor =
+          p.index === 1 ? "rgba(80,170,255,0.9)" : "rgba(255,120,90,0.9)";
       }
     });
 
@@ -415,6 +531,7 @@
     pruneBalls(live);
     renderHud();
     renderCooldown();
+    renderMoveTarget();
   }
 
   function applyState(data) {
@@ -426,7 +543,6 @@
     if (typeof data.phase === "string") phase = data.phase;
     if (typeof data.maxHp === "number") maxHp = data.maxHp;
     if (typeof data.cooldownMs === "number") cooldownMs = data.cooldownMs;
-    lastStateAt = Date.now();
     renderEntities();
   }
 
@@ -436,7 +552,6 @@
     dbWinner.textContent = "";
     dbCountdown.textContent = label;
     dbCountdown.classList.remove("show");
-    // reflow for animation restart
     void dbCountdown.offsetWidth;
     dbCountdown.classList.add("show");
     if (label === "GO!") {
@@ -451,8 +566,12 @@
     currentRoom = data.room;
     myId = data.you && data.you.id;
     myIndex = (data.you && data.you.index) || 1;
+    mySide = (data.you && data.you.side) || (myIndex === 1 ? "left" : "right");
     aimVec = myIndex === 1 ? { x: 1, y: 0 } : { x: -1, y: 0 };
-    mouseAim = aimVec;
+    moveTarget = null;
+    mouseHeld = false;
+    moveJoy = { x: 0, y: 0 };
+    spaceHeld = false;
     gameOver = false;
     phase = "countdown";
     players = data.players || [];
@@ -482,12 +601,17 @@
       animFrame += 1;
       renderEntities();
     }, 100);
-    if (dbMsg) dbMsg.textContent = "Get ready!";
+    if (dbMsg) {
+      dbMsg.textContent = touchMode
+        ? "Left stick move · right stick aim · release to throw"
+        : "Click/hold to move · mouse aims · Space throws";
+    }
   }
 
   function onGameOver(data) {
     gameOver = true;
     phase = "over";
+    moveTarget = null;
     if (data && data.players) players = data.players;
     renderEntities();
     if (dbCountdown) dbCountdown.classList.remove("show");
@@ -506,53 +630,49 @@
     showEndButtons();
   }
 
-  function wireControls() {
-    window.addEventListener("keydown", (e) => {
-      if (!active) return;
-      keys[e.code] = true;
-      if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].indexOf(e.code) >= 0) {
-        e.preventDefault();
-      }
-    });
-    window.addEventListener("keyup", (e) => {
-      if (!active) return;
-      keys[e.code] = false;
-    });
+  function setKnob(el, nx, ny) {
+    if (!el) return;
+    const max = 34;
+    el.style.transform = "translate(" + nx * max + "px," + ny * max + "px)";
+  }
 
-    document.addEventListener("mousemove", (e) => {
-      if (!active || !dbArena || isMobileUi()) return;
-      setAimFromClient(e.clientX, e.clientY);
-    });
-    document.addEventListener("mousedown", (e) => {
-      if (!active || gameOver || isMobileUi()) return;
-      if (!dbArena || !dbArena.contains(e.target)) return;
-      if (e.button !== 0) return;
-      setAimFromClient(e.clientX, e.clientY);
-      throwBall();
-    });
+  function readStick(baseEl, clientX, clientY) {
+    const r = baseEl.getBoundingClientRect();
+    let dx = clientX - (r.left + r.width / 2);
+    let dy = clientY - (r.top + r.height / 2);
+    const max = r.width * 0.42;
+    const d = Math.sqrt(dx * dx + dy * dy) || 1;
+    const scale = Math.min(1, d / max);
+    return { x: (dx / d) * scale, y: (dy / d) * scale, mag: scale };
+  }
 
-    // Touch aim on arena: drag to aim, release to throw.
+  function bindStick(baseEl, knobEl, onMove, onEnd) {
+    if (!baseEl) return;
     let touchId = null;
-    dbArena.addEventListener(
+
+    baseEl.addEventListener(
       "touchstart",
       (e) => {
-        if (!active || gameOver) return;
+        if (!active || !touchMode) return;
         const t = e.changedTouches[0];
         touchId = t.identifier;
-        aimingTouch = true;
-        setAimFromClient(t.clientX, t.clientY);
+        const v = readStick(baseEl, t.clientX, t.clientY);
+        setKnob(knobEl, v.x, v.y);
+        onMove(v, true);
         e.preventDefault();
       },
       { passive: false }
     );
-    dbArena.addEventListener(
+    baseEl.addEventListener(
       "touchmove",
       (e) => {
-        if (!active || touchId == null) return;
+        if (touchId == null) return;
         for (let i = 0; i < e.changedTouches.length; i++) {
           const t = e.changedTouches[i];
           if (t.identifier === touchId) {
-            setAimFromClient(t.clientX, t.clientY);
+            const v = readStick(baseEl, t.clientX, t.clientY);
+            setKnob(knobEl, v.x, v.y);
+            onMove(v, false);
             e.preventDefault();
             break;
           }
@@ -560,86 +680,172 @@
       },
       { passive: false }
     );
-    const endAimTouch = (e) => {
-      if (!active || touchId == null) return;
+    const end = (e) => {
       for (let i = 0; i < e.changedTouches.length; i++) {
-        const t = e.changedTouches[i];
-        if (t.identifier === touchId) {
-          setAimFromClient(t.clientX, t.clientY);
-          if (aimingTouch) throwBall();
-          aimingTouch = false;
+        if (e.changedTouches[i].identifier === touchId) {
           touchId = null;
+          setKnob(knobEl, 0, 0);
+          onEnd();
           e.preventDefault();
           break;
         }
       }
     };
-    dbArena.addEventListener("touchend", endAimTouch, { passive: false });
-    dbArena.addEventListener("touchcancel", endAimTouch, { passive: false });
+    baseEl.addEventListener("touchend", end, { passive: false });
+    baseEl.addEventListener("touchcancel", end, { passive: false });
+  }
 
-    // Virtual joystick
-    let joyTouch = null;
-    const setKnob = (nx, ny) => {
-      if (!dbJoystickKnob) return;
-      const max = 32;
-      dbJoystickKnob.style.transform =
-        "translate(" + nx * max + "px," + ny * max + "px)";
-    };
-    const joyFromEvent = (clientX, clientY) => {
-      const r = dbJoystick.getBoundingClientRect();
-      let dx = clientX - (r.left + r.width / 2);
-      let dy = clientY - (r.top + r.height / 2);
-      const max = r.width * 0.42;
-      const d = Math.sqrt(dx * dx + dy * dy) || 1;
-      const scale = Math.min(1, d / max);
-      const nx = (dx / d) * scale;
-      const ny = (dy / d) * scale;
-      joyVec = { x: nx, y: ny };
-      setKnob(nx, ny);
-    };
-    const resetJoy = () => {
-      joyVec = { x: 0, y: 0 };
-      joyTouch = null;
-      setKnob(0, 0);
-    };
-    if (dbJoystick) {
-      dbJoystick.addEventListener(
-        "touchstart",
-        (e) => {
-          if (!active) return;
-          const t = e.changedTouches[0];
-          joyTouch = t.identifier;
-          joyFromEvent(t.clientX, t.clientY);
-          e.preventDefault();
-        },
-        { passive: false }
-      );
-      dbJoystick.addEventListener(
-        "touchmove",
-        (e) => {
-          if (joyTouch == null) return;
-          for (let i = 0; i < e.changedTouches.length; i++) {
-            const t = e.changedTouches[i];
-            if (t.identifier === joyTouch) {
-              joyFromEvent(t.clientX, t.clientY);
-              e.preventDefault();
-              break;
-            }
-          }
-        },
-        { passive: false }
-      );
-      const joyEnd = (e) => {
-        for (let i = 0; i < e.changedTouches.length; i++) {
-          if (e.changedTouches[i].identifier === joyTouch) {
-            resetJoy();
-            e.preventDefault();
-            break;
-          }
+  async function requestLandscapeLock() {
+    try {
+      if (screen.orientation && typeof screen.orientation.lock === "function") {
+        await screen.orientation.lock("landscape");
+      }
+    } catch (_) {
+      // Not supported / denied — ignore.
+    }
+  }
+
+  function exitFullscreenQuiet() {
+    const fs = document.fullscreenElement || document.webkitFullscreenElement;
+    if (!fs) return;
+    const exit = document.exitFullscreen || document.webkitExitFullscreen;
+    if (exit) {
+      try {
+        exit.call(document);
+      } catch (_) {}
+    }
+  }
+
+  async function toggleFullscreen() {
+    if (!dodgeBallScreen) return;
+    const fs = document.fullscreenElement || document.webkitFullscreenElement;
+    try {
+      if (!fs) {
+        const req =
+          dodgeBallScreen.requestFullscreen ||
+          dodgeBallScreen.webkitRequestFullscreen;
+        if (req) {
+          await req.call(dodgeBallScreen);
+          await requestLandscapeLock();
         }
+      } else {
+        const exit = document.exitFullscreen || document.webkitExitFullscreen;
+        if (exit) await exit.call(document);
+      }
+    } catch (_) {
+      if (dbMsg) dbMsg.textContent = "Fullscreen is not available on this browser.";
+    }
+    updateModeClasses();
+  }
+
+  function wireControls() {
+    if (controlsWired) return;
+    controlsWired = true;
+
+    window.addEventListener("resize", () => {
+      if (active) updateModeClasses();
+    });
+    window.addEventListener("orientationchange", () => {
+      if (active) setTimeout(updateModeClasses, 50);
+    });
+    document.addEventListener("fullscreenchange", () => {
+      if (active) updateModeClasses();
+    });
+    document.addEventListener("webkitfullscreenchange", () => {
+      if (active) updateModeClasses();
+    });
+
+    // Block page scroll while playing (touch).
+    document.addEventListener(
+      "touchmove",
+      (e) => {
+        if (!active) return;
+        // Allow joysticks / buttons to handle their own touches; block page scroll.
+        const t = e.target;
+        if (t && t.closest && t.closest(".dbJoystick, .dbFullscreenBtn, .dbEndButtons, button")) {
+          return;
+        }
+        e.preventDefault();
+      },
+      { passive: false }
+    );
+
+    // ——— Desktop: Space = throw; left mouse = move; mouse pos = aim ———
+    window.addEventListener("keydown", (e) => {
+      if (!active || touchMode) return;
+      if (e.code === "Space") {
+        e.preventDefault();
+        if (!spaceHeld) {
+          spaceHeld = true;
+          throwBall();
+        }
+      }
+    });
+    window.addEventListener("keyup", (e) => {
+      if (e.code === "Space") spaceHeld = false;
+    });
+
+    document.addEventListener("mousemove", (e) => {
+      if (!active || touchMode || !dbArena) return;
+      setAimFromClient(e.clientX, e.clientY);
+      if (mouseHeld) setMoveTargetFromClient(e.clientX, e.clientY);
+    });
+
+    document.addEventListener("mousedown", (e) => {
+      if (!active || touchMode || gameOver) return;
+      if (e.button !== 0) return;
+      if (!dbArena || !dbArena.contains(e.target)) return;
+      // Ignore clicks on overlay UI inside arena (winner / countdown are pointer-events managed).
+      mouseHeld = true;
+      setAimFromClient(e.clientX, e.clientY);
+      setMoveTargetFromClient(e.clientX, e.clientY);
+      e.preventDefault();
+    });
+
+    window.addEventListener("mouseup", (e) => {
+      if (e.button !== 0) return;
+      mouseHeld = false;
+    });
+
+    // ——— Mobile: independent left (move) + right (aim / release=throw) ———
+    let aimActive = false;
+    let aimHadDirection = false;
+
+    bindStick(
+      dbJoyMove,
+      dbJoyMoveKnob,
+      (v) => {
+        moveJoy = { x: v.x, y: v.y };
+      },
+      () => {
+        moveJoy = { x: 0, y: 0 };
+      }
+    );
+
+    bindStick(
+      dbJoyAim,
+      dbJoyAimKnob,
+      (v) => {
+        aimActive = true;
+        if (v.mag >= AIM_DEADZONE) {
+          const d = Math.sqrt(v.x * v.x + v.y * v.y) || 1;
+          aimVec = { x: v.x / d, y: v.y / d };
+          aimHadDirection = true;
+        }
+      },
+      () => {
+        const shouldThrow = aimActive && aimHadDirection;
+        aimActive = false;
+        aimHadDirection = false;
+        setKnob(dbJoyAimKnob, 0, 0);
+        if (shouldThrow) throwBall();
+      }
+    );
+
+    if (dbFullscreenBtn) {
+      dbFullscreenBtn.onclick = () => {
+        toggleFullscreen();
       };
-      dbJoystick.addEventListener("touchend", joyEnd, { passive: false });
-      dbJoystick.addEventListener("touchcancel", joyEnd, { passive: false });
     }
 
     if (dbPlayAgainBtn) {
@@ -661,7 +867,6 @@
 
     socket.on("dodgeBallState", (data) => {
       if (!active && data && data.game === "dodge-ball") {
-        // Late bind if started event somehow missed after remount.
         if (!dodgeBallScreen || dodgeBallScreen.classList.contains("hidden")) return;
       }
       if (!active) return;
@@ -716,6 +921,7 @@
 
     socket.on("dodgeBallReset", () => {
       gameOver = false;
+      moveTarget = null;
       hideEndButtons();
       if (dbWinner) {
         dbWinner.classList.remove("show");
