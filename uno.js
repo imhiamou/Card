@@ -188,20 +188,37 @@
 
   function hideUnoScreen() {
     active = false;
+    clearScoreboard();
+    hideEndButtons();
     if (unoScreen) unoScreen.classList.add("hidden");
   }
 
-  function hideEndUi() {
-    if (unoScoreboard) {
-      unoScoreboard.classList.add("hidden");
-      unoScoreboard.innerHTML = "";
-    }
+  function hideEndButtons() {
     if (unoEndButtons) {
       unoEndButtons.classList.add("hidden");
       if (unoPlayAgainBtn) {
         unoPlayAgainBtn.disabled = false;
         unoPlayAgainBtn.textContent = "Play Again";
       }
+    }
+  }
+
+  function clearScoreboard() {
+    if (unoScoreboard) {
+      unoScoreboard.classList.add("hidden");
+      unoScoreboard.innerHTML = "";
+    }
+  }
+
+  /** Clears Play Again controls. Scoreboard stays until the player leaves the lobby. */
+  function hideEndUi(clearBoard) {
+    hideEndButtons();
+    if (clearBoard) clearScoreboard();
+  }
+
+  function sfx(name) {
+    if (window.GameSfx && typeof window.GameSfx[name] === "function") {
+      window.GameSfx[name]();
     }
   }
 
@@ -448,7 +465,7 @@
     wireControls();
     gameOver = false;
     pendingWildId = null;
-    hideEndUi();
+    hideEndUi(false);
     if (unoColorPicker) unoColorPicker.classList.add("hidden");
     applyState(data);
     showUnoScreen();
@@ -484,6 +501,11 @@
     // "unoPlayed" — UNO only.
     socket.on("unoPlayed", (data) => {
       if (!active) return;
+      if (data.card && (data.card.kind === "skip" || data.card.kind === "draw2")) {
+        sfx("skipTurn");
+      } else {
+        sfx("playCard");
+      }
       if (data.card) topCard = data.card;
       if (data.currentColor) currentColor = data.currentColor;
       renderTable(true);
@@ -494,6 +516,7 @@
     // "unoDrawn" — UNO only.
     socket.on("unoDrawn", (data) => {
       if (!active) return;
+      sfx("draw");
       if (unoDrawLabel) unoDrawLabel.textContent = "Draw (" + data.drawCount + ")";
       players = players.map((p) => p.id === data.by
         ? Object.assign({}, p, { handCount: data.handCount })
@@ -507,6 +530,7 @@
     // "unoPenaltyDrawn" — UNO only.
     socket.on("unoPenaltyDrawn", (data) => {
       if (!active) return;
+      sfx("skipTurn");
       unoMsg.textContent = (data.name || "Player") + " draws +" + data.amount + "!";
       players = players.map((p) => p.id === data.by
         ? Object.assign({}, p, { handCount: data.handCount })
@@ -517,6 +541,7 @@
     // "unoReversed" — UNO only.
     socket.on("unoReversed", (data) => {
       if (!active) return;
+      sfx("reverse");
       direction = data.direction;
       renderColor();
       unoMsg.textContent = "Direction reversed!";
@@ -534,6 +559,7 @@
     // "unoCalled" — UNO only.
     socket.on("unoCalled", (data) => {
       if (!active) return;
+      sfx("playCard");
       unoMsg.textContent = (data.name || "Player") + " shouts UNO!";
       players = players.map((p) => p.id === data.by
         ? Object.assign({}, p, { unoCalled: true, unoLiable: false })
@@ -545,6 +571,7 @@
     socket.on("unoChallenged", (data) => {
       if (!active) return;
       if (data.success) {
+        sfx("skipTurn");
         unoMsg.textContent = (data.byName || "Player") + " challenged " +
           (data.targetName || "Player") + " — draw " + data.amount + "!";
       }
@@ -553,6 +580,7 @@
     // "unoOver" — UNO only.
     socket.on("unoOver", (data) => {
       if (!active) return;
+      sfx("gameOver");
       gameOver = true;
       myTurn = false;
       showEndUi(data);
@@ -572,8 +600,18 @@
     socket.on("unoReset", () => {
       if (!active) return;
       gameOver = false;
-      hideEndUi();
+      // Keep scoreboard visible until the player leaves the lobby.
+      hideEndButtons();
       pendingWildId = null;
+      if (unoScoreboard && !unoScoreboard.classList.contains("hidden")) {
+        const heading = unoScoreboard.querySelector("h3.unoWinBurst") ||
+          unoScoreboard.querySelector("h3");
+        if (heading && heading.classList.contains("unoWinBurst")) {
+          heading.textContent = "Last round — " + heading.textContent.replace(/^Winner:\s*/, "Winner: ");
+        } else if (heading) {
+          heading.textContent = "Last round";
+        }
+      }
       unoMsg.textContent = "New round!";
     });
 
