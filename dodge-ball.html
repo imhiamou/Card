@@ -4,7 +4,10 @@
   into #dodgeBallScreen. This file documents the markup structure.
 -->
 <div class="box" id="dodgeBallScreen">
-  <h2>Dodge Ball</h2>
+  <div class="dbTitleRow">
+    <h2>Dodge Ball</h2>
+    <button type="button" id="dbFullscreenBtn" class="dbFullscreenBtn">FULLSCREEN</button>
+  </div>
   <div class="dbHud">
     <div class="dbPlayerHud" id="dbHudP1"></div>
     <div class="dbCooldown" id="dbCooldown">READY</div>
@@ -18,13 +21,21 @@
     </div>
   </div>
   <div class="dbMobileControls" id="dbMobileControls">
-    <div class="dbJoystick" id="dbJoystick">
-      <div class="dbJoystickKnob" id="dbJoystickKnob"></div>
+    <div class="dbJoystick dbJoyMove" id="dbJoyMove" aria-label="Move">
+      <div class="dbJoystickKnob" id="dbJoyMoveKnob"></div>
+      <span class="dbJoyLabel">MOVE</span>
     </div>
-    <p class="dbMobileHint">Drag arena to aim · release to throw</p>
+    <div class="dbJoystick dbJoyAim" id="dbJoyAim" aria-label="Aim and throw">
+      <div class="dbJoystickKnob" id="dbJoyAimKnob"></div>
+      <span class="dbJoyLabel">AIM</span>
+    </div>
   </div>
+  <p class="dbDesktopHint" id="dbDesktopHint">Click/hold to move · mouse aims · Space throws</p>
   <p id="dbMsg"></p>
   <div id="dbEndButtons" class="dbEndButtons hidden">
     <button type="button" id="dbPlayAgainBtn">Play Again</button>
+  </div>
+  <div class="dbRotateGate" id="dbRotateGate" aria-live="polite">
+    <p>Please rotate your phone to landscape.</p>
   </div>
 </div>
