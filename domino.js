@@ -15,15 +15,26 @@
       '<h2>Dominoes</h2>' +
       '<div class="domMeta" id="domMeta"></div>' +
     '</div>' +
-    '<div class="domPlayers" id="domPlayers"></div>' +
-    '<h2 id="domTurnIndicator"></h2>' +
-    '<div class="domBoardWrap" id="domBoardWrap">' +
-      '<div class="domBoardInner" id="domBoardInner"></div>' +
-    '</div>' +
-    '<div class="domEnds">' +
-      '<span id="domLeftEnd">Left: —</span>' +
-      '<span id="domBoneyard">Boneyard: 0</span>' +
-      '<span id="domRightEnd">Right: —</span>' +
+    '<div class="domTableArena" id="domTableArena" data-count="2">' +
+      '<div class="domSeat seat-top" data-seat="top"></div>' +
+      '<div class="domSeat seat-tl" data-seat="tl"></div>' +
+      '<div class="domSeat seat-tr" data-seat="tr"></div>' +
+      '<div class="domSeat seat-left" data-seat="left"></div>' +
+      '<div class="domSeat seat-right" data-seat="right"></div>' +
+      '<div class="domSeat seat-bl" data-seat="bl"></div>' +
+      '<div class="domSeat seat-br" data-seat="br"></div>' +
+      '<div class="domTableCenter">' +
+        '<h2 id="domTurnIndicator"></h2>' +
+        '<div class="domBoardWrap" id="domBoardWrap">' +
+          '<div class="domBoardInner" id="domBoardInner"></div>' +
+        '</div>' +
+        '<div class="domEnds">' +
+          '<span id="domLeftEnd">Left: —</span>' +
+          '<span id="domBoneyard">Boneyard: 0</span>' +
+          '<span id="domRightEnd">Right: —</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="domSeat seat-bottom" data-seat="bottom"></div>' +
     '</div>' +
     '<div class="domHandSection">' +
       '<h3>Your hand</h3>' +
@@ -61,6 +72,7 @@
   let teamScores = null;
   let matchScoreboard = null;
   let roundPoints = null;
+  let lastTurnId = null;
   let panX = 0;
   let panY = 0;
   let scale = 1;
@@ -73,7 +85,7 @@
   let wordChainScreen;
   let codeBreakerScreen;
   let dominoScreen;
-  let domPlayers;
+  let domTableArena;
   let domTurnIndicator;
   let domBoardWrap;
   let domBoardInner;
@@ -107,7 +119,7 @@
       dominoScreen.innerHTML = SCREEN_HTML;
       dominoScreen.dataset.ready = "1";
     }
-    domPlayers = $("domPlayers");
+    domTableArena = $("domTableArena");
     domTurnIndicator = $("domTurnIndicator");
     domBoardWrap = $("domBoardWrap");
     domBoardInner = $("domBoardInner");
@@ -365,47 +377,96 @@
     if (domEndButtons) domEndButtons.classList.remove("hidden");
   }
 
-  function playerChipHtml(p, currentTurnId) {
+  function seatNamesForCount(n) {
+    if (n <= 2) return ["bottom", "top"];
+    if (n === 3) return ["bottom", "left", "right"];
+    if (n === 4) return ["bottom", "left", "top", "right"];
+    return ["bottom", "bl", "tl", "tr", "br"].slice(0, n);
+  }
+
+  function playersFromMe() {
+    if (!socket || !players.length) return players.slice();
+    const idx = players.findIndex((p) => p.id === socket.id);
+    if (idx < 0) return players.slice();
+    return players.slice(idx).concat(players.slice(0, idx));
+  }
+
+  function clearSeats() {
+    if (!domTableArena) return;
+    domTableArena.querySelectorAll(".domSeat").forEach((seat) => {
+      seat.innerHTML = "";
+      seat.classList.add("empty");
+    });
+  }
+
+  function flashSeatToast(playerId, text) {
+    if (!domTableArena || !playerId) return;
+    const chip = domTableArena.querySelector('.domPlayerChip[data-pid="' + playerId + '"]');
+    if (!chip) return;
+    const old = chip.querySelector(".seatToast");
+    if (old) old.remove();
+    const toast = document.createElement("div");
+    toast.className = "seatToast";
+    toast.textContent = text;
+    chip.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add("show"));
+    setTimeout(() => {
+      toast.classList.add("hide");
+      setTimeout(() => toast.remove(), 350);
+    }, 1600);
+  }
+
+  function playerChipEl(p, currentTurnId) {
     const isMe = socket && p.id === socket.id;
     const turn = p.id === currentTurnId && !gameOver;
     const mate = teammate && p.id === teammate.id;
+    const chip = document.createElement("div");
+    chip.className = "domPlayerChip" +
+      (turn ? " turn" : "") +
+      (isMe ? " me" : "") +
+      (mate ? " mate" : "");
+    chip.dataset.pid = p.id;
+
     let label = p.name || "Player";
-    if (isMe) label = "You";
-    else if (mate) label = "Teammate · " + label;
-    const botTag = p.isBot ? ' <span class="botTag">BOT</span>' : "";
-    return '<div class="domPlayerChip' + (turn ? " turn" : "") +
-      (isMe ? " me" : "") + (mate ? " mate" : "") + '">' +
-      '<div class="domName">' + label + botTag + "</div>" +
-      '<div class="domCount">' + p.handCount + " dominoes remaining</div></div>";
+    if (isMe) label = "YOU";
+
+    let teamLine = "";
+    if (teamMode && p.team) {
+      teamLine = '<div class="domTeamLine">TEAM ' + p.team +
+        (isMe || mate ? (isMe ? " · you" : " · teammate") : "") +
+        "</div>";
+    }
+
+    const turnBadge = turn
+      ? '<div class="domTurnBadge">' + (isMe ? "YOUR TURN" : "TURN") + "</div>"
+      : "";
+
+    chip.innerHTML =
+      turnBadge +
+      '<div class="domName">' + label +
+      (p.isBot ? ' <span class="botTag">BOT</span>' : "") +
+      "</div>" +
+      teamLine +
+      '<div class="domCount">' + p.handCount + " dominoes</div>";
+    return chip;
   }
 
   function renderPlayers(currentTurnId) {
-    if (!domPlayers) return;
-    domPlayers.innerHTML = "";
+    if (!domTableArena) return;
+    if (currentTurnId) lastTurnId = currentTurnId;
+    const turnId = currentTurnId || lastTurnId;
+    const ordered = playersFromMe();
+    const seats = seatNamesForCount(ordered.length);
+    clearSeats();
+    domTableArena.setAttribute("data-count", String(ordered.length));
 
-    if (teamMode && teams && teams.teamA && teams.teamB) {
-      ["A", "B"].forEach((label) => {
-        const pack = label === "A" ? teams.teamA : teams.teamB;
-        const col = document.createElement("div");
-        col.className = "domTeamCol" + (myTeam === label ? " mine" : "");
-        const title = document.createElement("div");
-        title.className = "domTeamTitle";
-        title.textContent = "Team " + label + (myTeam === label ? " (yours)" : "");
-        col.appendChild(title);
-        (pack.players || []).forEach((p) => {
-          const wrap = document.createElement("div");
-          wrap.innerHTML = playerChipHtml(p, currentTurnId);
-          col.appendChild(wrap.firstChild);
-        });
-        domPlayers.appendChild(col);
-      });
-      return;
-    }
-
-    players.forEach((p) => {
-      const wrap = document.createElement("div");
-      wrap.innerHTML = playerChipHtml(p, currentTurnId);
-      domPlayers.appendChild(wrap.firstChild);
+    ordered.forEach((p, i) => {
+      const seatName = seats[i];
+      if (!seatName) return;
+      const seat = domTableArena.querySelector('.domSeat[data-seat="' + seatName + '"]');
+      if (!seat) return;
+      seat.classList.remove("empty");
+      seat.appendChild(playerChipEl(p, turnId));
     });
   }
 
@@ -666,7 +727,8 @@
             : p);
         });
       }
-      renderPlayers(null);
+      renderPlayers(lastTurnId);
+      flashSeatToast(data.by, "DREW A DOMINO");
       if (data.by !== socket.id) {
         domMsg.textContent = (data.name || "Player") + " drew from the boneyard.";
       } else {
@@ -678,6 +740,7 @@
     socket.on("dominoPassed", (data) => {
       if (!active) return;
       sfx("skipTurn");
+      flashSeatToast(data.by, "SKIPPED");
       domMsg.textContent = (data.name || "Player") + " passes.";
     });
 

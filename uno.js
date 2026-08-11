@@ -12,24 +12,36 @@
       '<h2>UNO</h2>' +
       '<div class="unoMeta" id="unoMeta"></div>' +
     '</div>' +
-    '<div class="unoPlayers" id="unoPlayers"></div>' +
-    '<h2 id="unoTurnIndicator"></h2>' +
-    '<div class="unoTable">' +
-      '<div class="unoPileCol">' +
-        '<div id="unoDrawPile" class="unoCard"></div>' +
-        '<div class="unoPileLabel" id="unoDrawLabel">Draw</div>' +
+    '<div class="unoTableArena" id="unoTableArena" data-count="2">' +
+      '<div class="unoSeat seat-top" data-seat="top"></div>' +
+      '<div class="unoSeat seat-tl" data-seat="tl"></div>' +
+      '<div class="unoSeat seat-tr" data-seat="tr"></div>' +
+      '<div class="unoSeat seat-left" data-seat="left"></div>' +
+      '<div class="unoSeat seat-right" data-seat="right"></div>' +
+      '<div class="unoSeat seat-bl" data-seat="bl"></div>' +
+      '<div class="unoSeat seat-br" data-seat="br"></div>' +
+      '<div class="unoTableCenter">' +
+        '<h2 id="unoTurnIndicator"></h2>' +
+        '<div class="unoTable">' +
+          '<div class="unoDirFx" id="unoDirFx" aria-hidden="true"></div>' +
+          '<div class="unoPileCol">' +
+            '<div id="unoDrawPile" class="unoCard"></div>' +
+            '<div class="unoPileLabel" id="unoDrawLabel">Draw</div>' +
+          '</div>' +
+          '<div class="unoPileCol">' +
+            '<div id="unoDiscardPile" class="unoCard"></div>' +
+            '<div class="unoPileLabel">Discard</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="unoColorBar">' +
+          '<span>Current color</span>' +
+          '<span class="unoColorDot" id="unoColorDot"></span>' +
+          '<span id="unoColorText">—</span>' +
+          '<span id="unoDirText"></span>' +
+          '<span id="unoPenaltyText"></span>' +
+        '</div>' +
       '</div>' +
-      '<div class="unoPileCol">' +
-        '<div id="unoDiscardPile" class="unoCard"></div>' +
-        '<div class="unoPileLabel">Discard</div>' +
-      '</div>' +
-    '</div>' +
-    '<div class="unoColorBar">' +
-      '<span>Current color</span>' +
-      '<span class="unoColorDot" id="unoColorDot"></span>' +
-      '<span id="unoColorText">—</span>' +
-      '<span id="unoDirText"></span>' +
-      '<span id="unoPenaltyText"></span>' +
+      '<div class="unoSeat seat-bottom" data-seat="bottom"></div>' +
     '</div>' +
     '<div class="unoHandSection">' +
       '<h3>Your hand</h3>' +
@@ -69,11 +81,13 @@
   let drawnPlayableId = null;
   let pendingWildId = null;
   let svgUid = 0;
+  let lastTurnId = null;
 
   let lobbyScreen, placementScreen, gameScreen, wordChainScreen, codeBreakerScreen, dominoScreen;
-  let unoScreen, unoPlayers, unoTurnIndicator, unoDrawPile, unoDiscardPile, unoDrawLabel;
+  let unoScreen, unoTableArena, unoTurnIndicator, unoDrawPile, unoDiscardPile, unoDrawLabel;
   let unoColorDot, unoColorText, unoDirText, unoPenaltyText, unoHand, unoMsg;
   let unoDrawBtn, unoCallBtn, unoColorPicker, unoScoreboard, unoEndButtons, unoPlayAgainBtn, unoMeta;
+  let unoDirFx;
 
   function $(id) { return document.getElementById(id); }
 
@@ -90,7 +104,7 @@
       unoScreen.innerHTML = SCREEN_HTML;
       unoScreen.dataset.ready = "1";
     }
-    unoPlayers = $("unoPlayers");
+    unoTableArena = $("unoTableArena");
     unoTurnIndicator = $("unoTurnIndicator");
     unoDrawPile = $("unoDrawPile");
     unoDiscardPile = $("unoDiscardPile");
@@ -108,6 +122,7 @@
     unoEndButtons = $("unoEndButtons");
     unoPlayAgainBtn = $("unoPlayAgainBtn");
     unoMeta = $("unoMeta");
+    unoDirFx = $("unoDirFx");
     return true;
   }
 
@@ -239,29 +254,105 @@
     if (unoEndButtons) unoEndButtons.classList.remove("hidden");
   }
 
+  function seatNamesForCount(n) {
+    if (n <= 2) return ["bottom", "top"];
+    if (n === 3) return ["bottom", "left", "right"];
+    if (n === 4) return ["bottom", "left", "top", "right"];
+    return ["bottom", "bl", "tl", "tr", "br"].slice(0, Math.max(n, 5));
+  }
+
+  function playersFromMe() {
+    if (!socket || !players.length) return players.slice();
+    const idx = players.findIndex((p) => p.id === socket.id);
+    if (idx < 0) return players.slice();
+    return players.slice(idx).concat(players.slice(0, idx));
+  }
+
+  function nextPlayerId(fromId, dir, steps) {
+    if (!players.length) return null;
+    let i = players.findIndex((p) => p.id === fromId);
+    if (i < 0) return null;
+    const n = players.length;
+    const step = dir >= 0 ? 1 : -1;
+    for (let s = 0; s < (steps || 1); s++) {
+      i = (i + step + n) % n;
+    }
+    return players[i].id;
+  }
+
+  function clearSeats() {
+    if (!unoTableArena) return;
+    unoTableArena.querySelectorAll(".unoSeat").forEach((seat) => {
+      seat.innerHTML = "";
+      seat.classList.add("empty");
+    });
+  }
+
+  function flashSeatToast(playerId, text) {
+    if (!unoTableArena || !playerId) return;
+    const chip = unoTableArena.querySelector('.unoPlayerChip[data-pid="' + playerId + '"]');
+    if (!chip) return;
+    const old = chip.querySelector(".seatToast");
+    if (old) old.remove();
+    const toast = document.createElement("div");
+    toast.className = "seatToast";
+    toast.textContent = text;
+    chip.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add("show"));
+    setTimeout(() => {
+      toast.classList.add("hide");
+      setTimeout(() => toast.remove(), 350);
+    }, 1600);
+  }
+
+  function showReverseFx() {
+    if (!unoDirFx) return;
+    unoDirFx.textContent = direction === 1 ? "↻" : "↺";
+    unoDirFx.classList.remove("show");
+    void unoDirFx.offsetWidth;
+    unoDirFx.classList.add("show");
+    setTimeout(() => unoDirFx.classList.remove("show"), 1200);
+  }
+
   function renderPlayers(currentTurnId) {
-    if (!unoPlayers) return;
-    unoPlayers.innerHTML = "";
-    players.forEach((p) => {
-      const chip = document.createElement("div");
-      chip.className = "unoPlayerChip" + (p.id === currentTurnId && !gameOver ? " turn" : "");
+    if (!unoTableArena) return;
+    if (currentTurnId) lastTurnId = currentTurnId;
+    const turnId = currentTurnId || lastTurnId;
+    const ordered = playersFromMe();
+    const seats = seatNamesForCount(ordered.length);
+    clearSeats();
+    unoTableArena.setAttribute("data-count", String(ordered.length));
+
+    ordered.forEach((p, i) => {
+      const seatName = seats[i];
+      if (!seatName) return;
+      const seat = unoTableArena.querySelector('.unoSeat[data-seat="' + seatName + '"]');
+      if (!seat) return;
+      seat.classList.remove("empty");
+
       const me = socket && p.id === socket.id;
-      chip.innerHTML = '<div class="unoName">' + (me ? "You" : (p.name || "Player")) +
+      const turn = p.id === turnId && !gameOver;
+      const chip = document.createElement("div");
+      chip.className = "unoPlayerChip" + (turn ? " turn" : "") + (me ? " me" : "");
+      chip.dataset.pid = p.id;
+      chip.innerHTML =
+        (turn ? '<div class="unoTurnBadge">' + (me ? "YOUR TURN" : "TURN") + "</div>" : "") +
+        '<div class="unoName">' + (me ? "YOU" : (p.name || "Player")) +
         (p.isBot ? ' <span class="botTag">BOT</span>' : "") +
         (p.unoCalled ? " · UNO" : "") +
         '</div><div class="unoCount">' + p.handCount + " cards</div>";
+
       if (!me && !gameOver && p.handCount === 1 && p.unoLiable && !p.unoCalled) {
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "unoChallengeBtn";
         btn.textContent = "Challenge UNO";
         btn.onclick = () => {
-          // "unoChallenge" — UNO only.
           socket.emit("unoChallenge", { roomCode: currentRoom, targetId: p.id });
         };
         chip.appendChild(btn);
       }
-      unoPlayers.appendChild(chip);
+      seat.appendChild(chip);
     });
   }
 
@@ -511,6 +602,15 @@
       renderTable(true);
       if (unoDiscardPile) unoDiscardPile.classList.add("playAnim");
       unoMsg.textContent = (data.name || "Player") + " played a card.";
+
+      // Skip / 2-player reverse: toast on the seat that loses the turn.
+      if (data.card && data.by) {
+        const kind = data.card.kind;
+        if (kind === "skip" || (kind === "reverse" && players.length === 2)) {
+          const skipped = nextPlayerId(data.by, direction, 1);
+          if (skipped) flashSeatToast(skipped, "SKIPPED");
+        }
+      }
     });
 
     // "unoDrawn" — UNO only.
@@ -521,7 +621,8 @@
       players = players.map((p) => p.id === data.by
         ? Object.assign({}, p, { handCount: data.handCount })
         : p);
-      renderPlayers(null);
+      renderPlayers(lastTurnId);
+      flashSeatToast(data.by, "DREW 1 CARD");
       if (data.by !== socket.id) {
         unoMsg.textContent = (data.name || "Player") + " drew a card.";
       }
@@ -535,7 +636,9 @@
       players = players.map((p) => p.id === data.by
         ? Object.assign({}, p, { handCount: data.handCount })
         : p);
-      renderPlayers(null);
+      renderPlayers(lastTurnId);
+      const amt = data.amount || 0;
+      flashSeatToast(data.by, amt === 2 ? "+2 CARDS" : amt === 4 ? "+4 CARDS" : ("+" + amt + " CARDS"));
     });
 
     // "unoReversed" — UNO only.
@@ -544,6 +647,7 @@
       sfx("reverse");
       direction = data.direction;
       renderColor();
+      showReverseFx();
       unoMsg.textContent = "Direction reversed!";
       if (unoDiscardPile) unoDiscardPile.classList.add("skipAnim");
     });
@@ -564,7 +668,7 @@
       players = players.map((p) => p.id === data.by
         ? Object.assign({}, p, { unoCalled: true, unoLiable: false })
         : p);
-      renderPlayers(null);
+      renderPlayers(lastTurnId);
     });
 
     // "unoChallenged" — UNO only.
@@ -574,6 +678,7 @@
         sfx("skipTurn");
         unoMsg.textContent = (data.byName || "Player") + " challenged " +
           (data.targetName || "Player") + " — draw " + data.amount + "!";
+        if (data.targetId) flashSeatToast(data.targetId, "+" + (data.amount || 2) + " CARDS");
       }
     });
 
