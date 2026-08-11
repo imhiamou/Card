@@ -467,10 +467,9 @@
   }
 
   function spriteFor(p) {
+    // Static portrait — no walk/jump cycle (smoother on mobile + desktop).
     const pack = p.index === 1 ? ASSET.p1 : ASSET.p2;
-    const frames = p.moving ? pack.move : pack.idle;
-    const idx = animFrame % frames.length;
-    return frames[idx];
+    return pack.idle[0];
   }
 
   function renderMoveTarget() {
@@ -630,9 +629,10 @@
     showEndButtons();
   }
 
-  function setKnob(el, nx, ny) {
+  function setKnob(el, nx, ny, baseEl) {
     if (!el) return;
-    const max = 34;
+    const size = baseEl ? baseEl.getBoundingClientRect().width : 72;
+    const max = Math.max(16, size * 0.28);
     el.style.transform = "translate(" + nx * max + "px," + ny * max + "px)";
   }
 
