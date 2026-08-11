@@ -1,0 +1,12 @@
+Dodge Ball assets
+=================
+
+Character sprites (Hero, Monster) and Death FX:
+  Source: "Hand-Drawn Square Characters Animated 8 Directions Top Down free cc0"
+  Author: Raphael Gonçalves (RGS Dev) — https://opengameart.org/users/rgsdev
+  License: CC0 1.0 Universal (public domain dedication)
+  Credits are not required; retained here for clarity.
+  Pack page: https://opengameart.org/content/hand-drawn-square-characters-animated-8-directions-top-down-free-cc0
+
+Projectile (ball.svg):
+  Original SVG created for this project (no third-party artwork).

@@ -1,0 +1,347 @@
+/* Dodge Ball — isolated styles (does not alter other games). */
+
+#dodgeBallScreen {
+  --db-court: #1a5c3a;
+  --db-court-deep: #0f3d26;
+  --db-line: rgba(255, 255, 255, 0.85);
+  --db-p1: #2f8fdb;
+  --db-p2: #d4553a;
+  --db-ink: #0e1a14;
+  max-width: 960px;
+  width: min(96vw, 960px);
+  margin: 0 auto;
+  overflow-x: hidden;
+  box-sizing: border-box;
+}
+
+#dodgeBallScreen * {
+  box-sizing: border-box;
+}
+
+#dodgeBallScreen h2 {
+  margin: 0 0 0.4rem;
+  letter-spacing: 0.04em;
+}
+
+.dbHud {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.dbPlayerHud {
+  font-size: 0.9rem;
+  line-height: 1.25;
+}
+
+.dbPlayerHud.p1 { color: var(--db-p1); text-align: left; }
+.dbPlayerHud.p2 { color: var(--db-p2); text-align: right; }
+
+.dbHpBar {
+  height: 10px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+  margin-top: 0.25rem;
+}
+
+.dbHpFill {
+  height: 100%;
+  width: 100%;
+  transform-origin: left center;
+  transition: transform 0.15s ease-out;
+}
+
+.dbPlayerHud.p1 .dbHpFill { background: linear-gradient(90deg, #3aa0f0, #1d6fb8); }
+.dbPlayerHud.p2 .dbHpFill { background: linear-gradient(90deg, #e87a5c, #b53a22); transform-origin: right center; }
+
+.dbCooldown {
+  min-width: 4.5rem;
+  text-align: center;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  padding: 0.35rem 0.6rem;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.dbCooldown.ready {
+  background: rgba(70, 180, 90, 0.25);
+  border-color: rgba(90, 210, 110, 0.55);
+}
+
+.dbCooldown.wait {
+  background: rgba(0, 0, 0, 0.2);
+  opacity: 0.9;
+}
+
+.dbArenaWrap {
+  width: 100%;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.dbArena {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 800 / 450;
+  max-height: min(62vh, 520px);
+  margin: 0 auto;
+  border-radius: 10px;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent 40%),
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 24px,
+      rgba(0, 0, 0, 0.04) 24px,
+      rgba(0, 0, 0, 0.04) 25px
+    ),
+    radial-gradient(ellipse at 50% 40%, #247a4a 0%, var(--db-court) 55%, var(--db-court-deep) 100%);
+  border: 3px solid rgba(255, 255, 255, 0.35);
+  box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.15);
+  cursor: crosshair;
+}
+
+.dbCenterLine {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 3px;
+  margin-left: -1.5px;
+  background: repeating-linear-gradient(
+    180deg,
+    var(--db-line) 0 12px,
+    transparent 12px 22px
+  );
+  z-index: 1;
+  pointer-events: none;
+}
+
+.dbEntity {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 3;
+}
+
+.dbChar {
+  width: 11%;
+  max-width: 72px;
+  min-width: 44px;
+  aspect-ratio: 1;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  filter: drop-shadow(0 3px 2px rgba(0, 0, 0, 0.35));
+  transition: filter 0.08s linear;
+}
+
+.dbChar.p1 {
+  /* Hero faces right toward center */
+}
+.dbChar.p2 {
+  /* Monster mirrored to face left toward center */
+  transform: scaleX(-1);
+}
+
+.dbChar.flash {
+  filter: brightness(2.2) saturate(0.2) drop-shadow(0 0 8px #fff);
+  animation: dbDamageFlash 0.28s ease-out;
+}
+
+@keyframes dbDamageFlash {
+  0% { filter: brightness(2.4) saturate(0.1); }
+  100% { filter: brightness(1) saturate(1) drop-shadow(0 3px 2px rgba(0, 0, 0, 0.35)); }
+}
+
+.dbCharHp {
+  position: absolute;
+  left: 50%;
+  top: -14%;
+  transform: translateX(-50%);
+  width: 120%;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  z-index: 4;
+}
+
+.dbCharHp > span {
+  display: block;
+  height: 100%;
+  width: 100%;
+  transform-origin: left center;
+  background: #6fdb6a;
+}
+
+.dbAim {
+  position: absolute;
+  width: 0;
+  height: 0;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-bottom: 14px solid rgba(255, 255, 255, 0.75);
+  transform-origin: 50% 100%;
+  z-index: 2;
+  pointer-events: none;
+  opacity: 0.85;
+}
+
+.dbBall {
+  width: 3.6%;
+  min-width: 16px;
+  max-width: 28px;
+  aspect-ratio: 1;
+  background: url("assets/dodge-ball/ball.svg") center / contain no-repeat;
+  z-index: 5;
+  filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.35));
+}
+
+.dbTrail {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: 50%;
+  background: rgba(255, 200, 80, 0.45);
+  pointer-events: none;
+  z-index: 4;
+  animation: dbTrailFade 0.35s ease-out forwards;
+}
+
+@keyframes dbTrailFade {
+  to { opacity: 0; transform: scale(0.2); }
+}
+
+.dbHitFx {
+  position: absolute;
+  width: 14%;
+  min-width: 48px;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  background-size: contain;
+  background-repeat: no-repeat;
+  pointer-events: none;
+  z-index: 6;
+  animation: dbHitFx 0.45s steps(7) forwards;
+}
+
+@keyframes dbHitFx {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+.dbCountdown,
+.dbWinner {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(2.5rem, 12vw, 5rem);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #fff;
+  text-shadow: 0 4px 18px rgba(0, 0, 0, 0.55);
+  z-index: 10;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.dbCountdown.show,
+.dbWinner.show {
+  opacity: 1;
+  animation: dbPop 0.35s ease-out;
+}
+
+@keyframes dbPop {
+  0% { transform: scale(0.6); opacity: 0; }
+  60% { transform: scale(1.08); opacity: 1; }
+  100% { transform: scale(1); }
+}
+
+.dbWinner {
+  flex-direction: column;
+  gap: 0.4rem;
+  background: rgba(8, 20, 12, 0.55);
+  font-size: clamp(1.6rem, 7vw, 3rem);
+  pointer-events: auto;
+}
+
+.dbMobileControls {
+  display: none;
+  margin-top: 0.75rem;
+  align-items: center;
+  gap: 1rem;
+}
+
+.dbJoystick {
+  position: relative;
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.28);
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  touch-action: none;
+  flex-shrink: 0;
+}
+
+.dbJoystickKnob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 44px;
+  height: 44px;
+  margin: -22px 0 0 -22px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.55);
+  border: 2px solid rgba(255, 255, 255, 0.8);
+  pointer-events: none;
+}
+
+.dbMobileHint {
+  margin: 0;
+  font-size: 0.85rem;
+  opacity: 0.85;
+}
+
+.dbEndButtons {
+  margin-top: 0.75rem;
+  text-align: center;
+}
+
+#dbMsg {
+  min-height: 1.2em;
+  margin: 0.5rem 0 0;
+}
+
+@media (max-width: 820px), (pointer: coarse) {
+  .dbMobileControls {
+    display: flex;
+  }
+  .dbArena {
+    max-height: min(48vh, 420px);
+    cursor: default;
+  }
+}
+
+@media (max-width: 480px) {
+  #dodgeBallScreen {
+    width: 100%;
+    padding-left: 0.25rem;
+    padding-right: 0.25rem;
+  }
+  .dbJoystick {
+    width: 96px;
+    height: 96px;
+  }
+}
