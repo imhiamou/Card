@@ -18,6 +18,8 @@ const COLORS = ["red", "blue", "green", "yellow"];
 const NUMBERS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 const HAND_SIZE = 7;
 const ALLOWED_MAX_PLAYERS = [2, 3, 4, 5];
+/** Grace window after reaching 1 card before others can challenge a missed UNO call. */
+const UNO_CALL_GRACE_MS = process.env.BOT_TEST_FAST === "1" ? 5 : 2000;
 
 let cardSeq = 0;
 
@@ -177,16 +179,36 @@ function advanceTurn(room, steps) {
   setTurnByIndex(room, advanceIndex(room, room.uno.turnIndex, steps || 1));
 }
 
-/** After a play that went to 1 card, mark UNO liability until called. */
+/** After a play that went to 1 card, mark UNO liability until called.
+ * Challenge is only allowed after UNO_CALL_GRACE_MS so the player can yell UNO.
+ */
 function markUnoLiability(state, playerId, handSize) {
   if (handSize === 1) {
     if (!state.unoCalled[playerId]) {
-      state.unoLiable[playerId] = true;
+      if (!state.unoLiable[playerId]) {
+        state.unoLiable[playerId] = true;
+        if (!state.unoLiableAt) state.unoLiableAt = {};
+        state.unoLiableAt[playerId] = Date.now();
+      }
     }
   } else {
     state.unoLiable[playerId] = false;
     state.unoCalled[playerId] = false;
+    if (state.unoLiableAt) state.unoLiableAt[playerId] = null;
   }
+}
+
+function challengeReadyAt(state, playerId) {
+  if (!state.unoLiable[playerId] || state.unoCalled[playerId]) return null;
+  if ((state.hands[playerId] || []).length !== 1) return null;
+  const at = state.unoLiableAt && state.unoLiableAt[playerId];
+  if (!at) return Date.now(); // legacy / missing timestamp → allow
+  return at + UNO_CALL_GRACE_MS;
+}
+
+function canChallengeUno(state, targetId) {
+  const readyAt = challengeReadyAt(state, targetId);
+  return readyAt != null && Date.now() >= readyAt;
 }
 
 function publicPlayers(room) {
@@ -197,7 +219,9 @@ function publicPlayers(room) {
     isBot: !!p.isBot,
     handCount: (u.hands[p.id] || []).length,
     unoCalled: !!u.unoCalled[p.id],
-    unoLiable: !!u.unoLiable[p.id]
+    unoLiable: !!u.unoLiable[p.id],
+    // When challenge becomes legal (null = not challengeable yet / N/A).
+    unoChallengeAt: challengeReadyAt(u, p.id)
   }));
 }
 
@@ -514,6 +538,7 @@ function initRound(room) {
     awaitingDrawnPlay: null,
     unoCalled: {},
     unoLiable: {},
+    unoLiableAt: {},
     over: false,
     winnerId: null,
     turnsPlayed: 0,
@@ -836,6 +861,7 @@ function registerSocket(socket, io, rooms) {
     }
     u.unoCalled[socket.id] = true;
     u.unoLiable[socket.id] = false;
+    if (u.unoLiableAt) u.unoLiableAt[socket.id] = null;
     const me = room.players.find((p) => p.id === socket.id);
     // "unoCalled" — UNO only.
     io.to(roomCode).emit("unoCalled", {
@@ -872,10 +898,15 @@ function registerSocket(socket, io, rooms) {
       socket.emit("errorMessage", "Challenge failed — they called UNO (or do not have one card).");
       return;
     }
+    if (!canChallengeUno(u, targetId)) {
+      socket.emit("errorMessage", "Wait — they still have time to call UNO.");
+      return;
+    }
 
     const drawn = drawFromPile(u, 2);
     u.hands[targetId].push(...drawn);
     u.unoLiable[targetId] = false;
+    if (u.unoLiableAt) u.unoLiableAt[targetId] = null;
     const me = room.players.find((p) => p.id === socket.id);
     // "unoChallenged" — UNO only.
     io.to(roomCode).emit("unoChallenged", {
