@@ -82,6 +82,7 @@
   let pendingWildId = null;
   let svgUid = 0;
   let lastTurnId = null;
+  let challengeRefreshTimer = null;
 
   let lobbyScreen, placementScreen, gameScreen, wordChainScreen, codeBreakerScreen, dominoScreen;
   let unoScreen, unoTableArena, unoTurnIndicator, unoDrawPile, unoDiscardPile, unoDrawLabel;
@@ -203,6 +204,10 @@
 
   function hideUnoScreen() {
     active = false;
+    if (challengeRefreshTimer) {
+      clearTimeout(challengeRefreshTimer);
+      challengeRefreshTimer = null;
+    }
     clearScoreboard();
     hideEndButtons();
     if (unoScreen) unoScreen.classList.add("hidden");
@@ -323,6 +328,13 @@
     clearSeats();
     unoTableArena.setAttribute("data-count", String(ordered.length));
 
+    if (challengeRefreshTimer) {
+      clearTimeout(challengeRefreshTimer);
+      challengeRefreshTimer = null;
+    }
+    let soonestChallengeMs = null;
+    const now = Date.now();
+
     ordered.forEach((p, i) => {
       const seatName = seats[i];
       if (!seatName) return;
@@ -342,7 +354,17 @@
         (p.unoCalled ? " · UNO" : "") +
         '</div><div class="unoCount">' + p.handCount + " cards</div>";
 
-      if (!me && !gameOver && p.handCount === 1 && p.unoLiable && !p.unoCalled) {
+      // Challenge only after the 2s grace window to yell UNO.
+      const challengeAt = typeof p.unoChallengeAt === "number" ? p.unoChallengeAt : null;
+      const canChallenge =
+        !me &&
+        !gameOver &&
+        p.handCount === 1 &&
+        p.unoLiable &&
+        !p.unoCalled &&
+        challengeAt != null &&
+        now >= challengeAt;
+      if (canChallenge) {
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "unoChallengeBtn";
@@ -351,9 +373,29 @@
           socket.emit("unoChallenge", { roomCode: currentRoom, targetId: p.id });
         };
         chip.appendChild(btn);
+      } else if (
+        !me &&
+        !gameOver &&
+        p.handCount === 1 &&
+        p.unoLiable &&
+        !p.unoCalled &&
+        challengeAt != null &&
+        challengeAt > now
+      ) {
+        const wait = challengeAt - now;
+        if (soonestChallengeMs == null || wait < soonestChallengeMs) {
+          soonestChallengeMs = wait;
+        }
       }
       seat.appendChild(chip);
     });
+
+    if (soonestChallengeMs != null) {
+      challengeRefreshTimer = setTimeout(() => {
+        challengeRefreshTimer = null;
+        renderPlayers(lastTurnId);
+      }, soonestChallengeMs + 30);
+    }
   }
 
   function renderTable(animatePlay) {
@@ -666,7 +708,7 @@
       sfx("playCard");
       unoMsg.textContent = (data.name || "Player") + " shouts UNO!";
       players = players.map((p) => p.id === data.by
-        ? Object.assign({}, p, { unoCalled: true, unoLiable: false })
+        ? Object.assign({}, p, { unoCalled: true, unoLiable: false, unoChallengeAt: null })
         : p);
       renderPlayers(lastTurnId);
     });
