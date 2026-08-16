@@ -1,19 +1,17 @@
 /*
- * Code Breaker — isolated cooperative race against a server-generated code.
+ * Code Breaker — isolated competitive race.
  *
  * Loaded by server.js only as a lobby router target. Does not alter
  * Hidden Hunt or Word Chain handlers. Uses its own Socket.IO events
  * so it cannot collide with existing game traffic.
  *
- * Secret: exactly 6 digits, generated once per match, never sent to clients.
- * Turns: Player 1 (lobby creator) then Player 2, alternating.
+ * Each player gets a private 6-digit secret and guesses simultaneously.
  * Feedback: Wordle-style green / yellow / red per digit.
- * Each turn has a 20-second timer; timeout auto-passes to the partner.
+ * Winner: fewest guesses; if tied, fastest crack time. Equal both → draw.
  */
 
 const CODE_LENGTH = 6;
 const GUESS_PATTERN = /^\d{6}$/;
-const TURN_SECONDS = 20;
 
 function generateSecretCode() {
   let code = "";
@@ -65,33 +63,12 @@ function isWinningColors(colors) {
   return colors.length === CODE_LENGTH && colors.every((c) => c === "green");
 }
 
-function getOpponent(room, playerId) {
-  return room.players.find((p) => p.id !== playerId) || null;
+function playerSlot(room, playerId) {
+  return room.cb && room.cb.slots ? room.cb.slots[playerId] : null;
 }
 
-function clearTurnTimer(room) {
-  if (room.cb && room.cb.timer) {
-    clearTimeout(room.cb.timer);
-    room.cb.timer = null;
-  }
-  if (room.cb) room.cb.turnEndsAt = null;
-}
-
-function initRoomState(room) {
-  clearTurnTimer(room);
-  room.cb = {
-    secret: generateSecretCode(),
-    history: [],
-    currentTurn: null,
-    over: false,
-    timer: null,
-    turnEndsAt: null
-  };
-  room.cbRematch = {};
-}
-
-function publicHistory(room) {
-  return room.cb.history.map((entry) => ({
+function publicHistoryFor(slot) {
+  return (slot.history || []).map((entry) => ({
     by: entry.by,
     name: entry.name,
     guess: entry.guess,
@@ -99,50 +76,137 @@ function publicHistory(room) {
   }));
 }
 
-function emitTurnState(room, io) {
-  room.players.forEach((player) => {
-    // "cbTurnChanged" — Code Breaker only. Tells each client if it is their turn
-    // and includes the shared guess history (never the secret).
-    io.to(player.id).emit("cbTurnChanged", {
-      yourTurn: player.id === room.cb.currentTurn,
-      history: publicHistory(room),
-      over: room.cb.over,
-      turnEndsAt: room.cb.turnEndsAt,
-      turnSeconds: TURN_SECONDS
-    });
+/** Public race progress (never includes secrets or opponent digit colors). */
+function publicScores(room) {
+  return room.players.map((p) => {
+    const slot = playerSlot(room, p.id);
+    return {
+      id: p.id,
+      name: p.name,
+      guessCount: slot ? slot.guessCount : 0,
+      finished: !!(slot && slot.finished),
+      elapsedMs: slot && slot.finished ? slot.elapsedMs : null
+    };
   });
 }
 
-/** Auto-pass when the active player runs out of time (cooperative — game continues). */
-function endTurnOnTimeout(room, io, roomCode, timedPlayerId) {
-  if (!room.cb || room.cb.over) return;
-  if (room.cb.currentTurn !== timedPlayerId) return;
-
-  clearTurnTimer(room);
-  const timed = room.players.find((p) => p.id === timedPlayerId);
-  const next = getOpponent(room, timedPlayerId);
-  if (!next) return;
-
-  room.cb.currentTurn = next.id;
-  // "codeBreakerTimedOut" — Code Breaker only. Announces the skipped turn.
-  io.to(roomCode).emit("codeBreakerTimedOut", {
-    by: timedPlayerId,
-    name: timed ? timed.name : "Player",
-    message: (timed ? timed.name : "Player") + " ran out of time. Turn passes."
+function initRoomState(room) {
+  const startedAt = Date.now();
+  const slots = {};
+  room.players.forEach((p) => {
+    slots[p.id] = {
+      secret: generateSecretCode(),
+      history: [],
+      guessCount: 0,
+      finished: false,
+      finishedAt: null,
+      elapsedMs: null
+    };
   });
-  startTurnTimer(room, io, roomCode);
-  emitTurnState(room, io);
+  room.cb = {
+    startedAt,
+    over: false,
+    slots,
+    winnerId: null,
+    draw: false
+  };
+  room.cbRematch = {};
 }
 
-function startTurnTimer(room, io, roomCode) {
-  clearTurnTimer(room);
-  if (!room.cb || room.cb.over) return;
+function emitPrivateState(room, io, playerId, extra) {
+  const slot = playerSlot(room, playerId);
+  if (!slot) return;
+  io.to(playerId).emit("cbRaceState", Object.assign({
+    history: publicHistoryFor(slot),
+    scores: publicScores(room),
+    finished: !!slot.finished,
+    over: room.cb.over,
+    startedAt: room.cb.startedAt,
+    canGuess: !room.cb.over && !slot.finished
+  }, extra || {}));
+}
 
-  const timedPlayerId = room.cb.currentTurn;
-  room.cb.turnEndsAt = Date.now() + TURN_SECONDS * 1000;
-  room.cb.timer = setTimeout(() => {
-    endTurnOnTimeout(room, io, roomCode, timedPlayerId);
-  }, TURN_SECONDS * 1000);
+function emitScores(room, io, roomCode) {
+  io.to(roomCode).emit("codeBreakerScores", {
+    scores: publicScores(room),
+    over: room.cb.over,
+    startedAt: room.cb.startedAt
+  });
+}
+
+/**
+ * Compare finished slots: fewer guesses wins; same guesses → lower elapsedMs.
+ * Returns { winnerId, draw }.
+ */
+function decideWinner(room) {
+  const rows = room.players.map((p) => {
+    const slot = playerSlot(room, p.id);
+    return {
+      id: p.id,
+      name: p.name,
+      guessCount: slot.guessCount,
+      elapsedMs: slot.elapsedMs
+    };
+  });
+  if (rows.length < 2) {
+    return { winnerId: rows[0] ? rows[0].id : null, draw: false };
+  }
+  const a = rows[0];
+  const b = rows[1];
+  if (a.guessCount !== b.guessCount) {
+    return {
+      winnerId: a.guessCount < b.guessCount ? a.id : b.id,
+      draw: false
+    };
+  }
+  if (a.elapsedMs !== b.elapsedMs) {
+    return {
+      winnerId: a.elapsedMs < b.elapsedMs ? a.id : b.id,
+      draw: false
+    };
+  }
+  return { winnerId: null, draw: true };
+}
+
+function tryFinishMatch(room, io, roomCode) {
+  if (!room.cb || room.cb.over) return;
+  const allDone = room.players.every((p) => {
+    const slot = playerSlot(room, p.id);
+    return slot && slot.finished;
+  });
+  if (!allDone) return;
+
+  room.cb.over = true;
+  const result = decideWinner(room);
+  room.cb.winnerId = result.winnerId;
+  room.cb.draw = !!result.draw;
+
+  const winner = result.winnerId
+    ? room.players.find((p) => p.id === result.winnerId)
+    : null;
+  let message;
+  if (result.draw) {
+    message = "Draw — same guesses and time!";
+  } else if (winner) {
+    const slot = playerSlot(room, winner.id);
+    message = winner.name + " wins with " + slot.guessCount +
+      " guess" + (slot.guessCount === 1 ? "" : "es") +
+      " in " + (slot.elapsedMs / 1000).toFixed(1) + "s!";
+  } else {
+    message = "Match over.";
+  }
+
+  // "codeBreakerOver" — Code Breaker only.
+  io.to(roomCode).emit("codeBreakerOver", {
+    winnerId: result.winnerId,
+    winnerName: winner ? winner.name : null,
+    draw: !!result.draw,
+    message,
+    scores: publicScores(room),
+    startedAt: room.cb.startedAt
+  });
+
+  room.players.forEach((p) => emitPrivateState(room, io, p.id, { canGuess: false }));
 }
 
 /*
@@ -151,22 +215,25 @@ function startTurnTimer(room, io, roomCode) {
  */
 function onBothPlayersJoined(room, io, roomCode) {
   initRoomState(room);
-  // Player 1 (lobby creator) always guesses first.
-  room.cb.currentTurn = room.players[0].id;
-  startTurnTimer(room, io, roomCode);
 
   room.players.forEach((player) => {
+    const slot = playerSlot(room, player.id);
     // "codeBreakerStarted" — Code Breaker only. Launches the CB UI on both clients.
     io.to(player.id).emit("codeBreakerStarted", {
       room: roomCode,
       game: "code-breaker",
-      yourTurn: player.id === room.cb.currentTurn,
+      raceMode: true,
+      yourTurn: true,
+      canGuess: true,
+      finished: false,
       history: [],
+      scores: publicScores(room),
       players: room.players.map((p) => ({ id: p.id, name: p.name })),
       codeLength: CODE_LENGTH,
-      turnEndsAt: room.cb.turnEndsAt,
-      turnSeconds: TURN_SECONDS
+      startedAt: room.cb.startedAt
     });
+    // Keep slot reference so secrets are never mixed up.
+    void slot;
   });
 }
 
@@ -174,7 +241,7 @@ function registerSocket(socket, io, rooms) {
   /*
    * "submitCodeGuess" — Code Breaker only.
    * Payload: { roomCode, guess } where guess is exactly six digits.
-   * Server validates turn, evaluates colors, broadcasts history, ends on all-green.
+   * Each player guesses against their own secret, simultaneously.
    */
   socket.on("submitCodeGuess", (data) => {
     const roomCode = data && typeof data.roomCode === "string" ? data.roomCode.trim().toUpperCase() : "";
@@ -192,8 +259,14 @@ function registerSocket(socket, io, rooms) {
       socket.emit("errorMessage", "The game is not running.");
       return;
     }
-    if (room.cb.currentTurn !== socket.id) {
-      socket.emit("errorMessage", "It is not your turn.");
+
+    const slot = playerSlot(room, socket.id);
+    if (!slot) {
+      socket.emit("errorMessage", "The game is not running.");
+      return;
+    }
+    if (slot.finished) {
+      socket.emit("errorMessage", "You already cracked your code — wait for your opponent.");
       return;
     }
 
@@ -203,50 +276,52 @@ function registerSocket(socket, io, rooms) {
       return;
     }
 
-    clearTurnTimer(room);
-
-    const colors = evaluateGuess(room.cb.secret, raw);
     const me = room.players.find((p) => p.id === socket.id);
+    const colors = evaluateGuess(slot.secret, raw);
     const entry = {
       by: socket.id,
       name: me.name,
       guess: raw,
       colors
     };
-    room.cb.history.push(entry);
+    slot.history.push(entry);
+    slot.guessCount += 1;
 
-    // "codeBreakerGuess" — Code Breaker only. Shared board update for both players.
-    io.to(roomCode).emit("codeBreakerGuess", {
+    // Private board update for the guesser only (opponent has a different secret).
+    io.to(socket.id).emit("codeBreakerGuess", {
       by: socket.id,
       name: me.name,
       guess: raw,
       colors: colors.slice(),
-      history: publicHistory(room)
+      history: publicHistoryFor(slot),
+      private: true
     });
 
     if (isWinningColors(colors)) {
-      room.cb.over = true;
-      // "codeBreakerOver" — Code Breaker only. Winner cracked the full code.
-      io.to(roomCode).emit("codeBreakerOver", {
-        winnerId: socket.id,
-        winnerName: me.name,
-        message: me.name + " cracked the code!",
-        history: publicHistory(room)
-        // secret intentionally omitted — clients never receive it
+      slot.finished = true;
+      slot.finishedAt = Date.now();
+      slot.elapsedMs = Math.max(0, slot.finishedAt - room.cb.startedAt);
+      // "codeBreakerCracked" — Code Breaker only. One player finished their code.
+      io.to(roomCode).emit("codeBreakerCracked", {
+        by: socket.id,
+        name: me.name,
+        guessCount: slot.guessCount,
+        elapsedMs: slot.elapsedMs,
+        scores: publicScores(room)
       });
+      emitScores(room, io, roomCode);
+      emitPrivateState(room, io, socket.id, { finished: true, canGuess: false });
+      tryFinishMatch(room, io, roomCode);
       return;
     }
 
-    const next = getOpponent(room, socket.id);
-    if (!next) return;
-    room.cb.currentTurn = next.id;
-    startTurnTimer(room, io, roomCode);
-    emitTurnState(room, io);
+    emitScores(room, io, roomCode);
+    emitPrivateState(room, io, socket.id);
   });
 
   /*
    * "codeBreakerPlayAgain" — Code Breaker only.
-   * Both players must vote; then a fresh secret and history start.
+   * Both players must vote; then fresh secrets and a new race start.
    */
   socket.on("codeBreakerPlayAgain", (data) => {
     const roomCode = data && typeof data.roomCode === "string" ? data.roomCode.trim().toUpperCase() : "";
@@ -282,6 +357,6 @@ module.exports = {
   registerSocket,
   evaluateGuess,
   generateSecretCode,
-  CODE_LENGTH,
-  TURN_SECONDS
+  decideWinner,
+  CODE_LENGTH
 };
