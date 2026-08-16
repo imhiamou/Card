@@ -7,9 +7,10 @@
       '<div class="cbVs">VS</div>' +
       '<div class="cbPlayer" id="cbOppName">Opponent</div>' +
     '</div>' +
+    '<div id="cbScoreboard" class="cbScoreboard"></div>' +
     '<h2 id="cbTurnIndicator"></h2>' +
-    '<p id="cbTimer" class="cbTimer">20</p>' +
-    '<p id="cbHint" class="cbHint">Guess the 6-digit secret code. Green = right spot, yellow = wrong spot, red = not in the code. 20 seconds per turn.</p>' +
+    '<p id="cbTimer" class="cbTimer">0.0s</p>' +
+    '<p id="cbHint" class="cbHint">Each of you has a private 6-digit code. Guess at the same time — fewest guesses wins; if tied, fastest time wins. Green = right spot, yellow = wrong spot, red = not in the code.</p>' +
     '<div id="cbHistory" class="cbHistory"></div>' +
     '<div class="cbInputRow">' +
       '<input id="cbGuessInput" placeholder="Enter 6 digits" inputmode="numeric" autocomplete="off" maxlength="6">' +
@@ -22,12 +23,14 @@
 
   let socket = null;
   let currentRoom = null;
-  let myTurn = null;
+  let canGuess = false;
+  let finished = false;
   let players = [];
+  let scores = [];
   let active = false;
   let gameOver = false;
   let history = [];
-  let turnEndsAt = null;
+  let startedAt = null;
   let timerInterval = null;
 
   let lobbyScreen;
@@ -45,6 +48,7 @@
   let cbPlayAgainBtn;
   let cbMyName;
   let cbOppName;
+  let cbScoreboard;
 
   function $(id) {
     return document.getElementById(id);
@@ -71,6 +75,7 @@
     cbPlayAgainBtn = $("cbPlayAgainBtn");
     cbMyName = $("cbMyName");
     cbOppName = $("cbOppName");
+    cbScoreboard = $("cbScoreboard");
     return true;
   }
 
@@ -111,24 +116,38 @@
     }
   }
 
+  function formatElapsed(ms) {
+    if (ms == null || !isFinite(ms)) return "—";
+    return (ms / 1000).toFixed(1) + "s";
+  }
+
   function renderTimer() {
     if (!cbTimer) return;
-    if (!turnEndsAt || gameOver) {
-      cbTimer.textContent = gameOver ? "0" : "—";
+    if (gameOver) {
       cbTimer.classList.toggle("urgent", false);
       return;
     }
-    const left = Math.max(0, Math.ceil((turnEndsAt - Date.now()) / 1000));
-    cbTimer.textContent = String(left);
-    cbTimer.classList.toggle("urgent", left <= 5);
+    if (finished && socket) {
+      const mine = scores.find((s) => s.id === socket.id);
+      cbTimer.textContent = mine && mine.elapsedMs != null
+        ? formatElapsed(mine.elapsedMs)
+        : formatElapsed(startedAt ? Date.now() - startedAt : 0);
+      cbTimer.classList.toggle("urgent", false);
+      return;
+    }
+    if (!startedAt) {
+      cbTimer.textContent = "0.0s";
+      return;
+    }
+    cbTimer.textContent = formatElapsed(Date.now() - startedAt);
   }
 
-  function startTimerTick(endsAt) {
-    turnEndsAt = endsAt || null;
+  function startTimerTick(at) {
+    startedAt = at || null;
     stopTimerTick();
     renderTimer();
-    if (!turnEndsAt || gameOver) return;
-    timerInterval = setInterval(renderTimer, 200);
+    if (!startedAt || gameOver) return;
+    timerInterval = setInterval(renderTimer, 100);
   }
 
   function colorClass(color) {
@@ -142,14 +161,15 @@
     cbHistory.innerHTML = "";
     // Newest guess on top so the latest attempt stays visible above the input
     // (especially on phones when the keyboard opens).
-    const entries = (list || []).slice().reverse();
+    const source = list || [];
+    const entries = source.slice().reverse();
     entries.forEach((entry) => {
       const block = document.createElement("div");
       block.className = "cbGuessBlock";
 
       const who = document.createElement("div");
       who.className = "cbGuessWho";
-      who.textContent = entry.name || "Player";
+      who.textContent = "Guess " + (source.indexOf(entry) + 1);
       block.appendChild(who);
 
       const digits = document.createElement("div");
@@ -169,6 +189,26 @@
     cbHistory.scrollTop = 0;
   }
 
+  function renderScoreboard() {
+    if (!cbScoreboard) return;
+    const me = socket && scores.find((s) => s.id === socket.id);
+    const opp = socket && scores.find((s) => s.id !== socket.id);
+    function line(label, row, mine) {
+      if (!row) return "<div class=\"cbScoreRow\">" + label + ": —</div>";
+      let detail = row.guessCount + " guess" + (row.guessCount === 1 ? "" : "es");
+      if (row.finished) {
+        detail += " · cracked in " + formatElapsed(row.elapsedMs);
+      } else if (!gameOver) {
+        detail += " · racing…";
+      }
+      return "<div class=\"cbScoreRow" + (mine ? " mine" : "") + "\">" +
+        "<strong>" + label + "</strong> " + detail + "</div>";
+    }
+    cbScoreboard.innerHTML =
+      line("You", me, true) +
+      line((players.find((p) => socket && p.id !== socket.id) || {}).name || "Opponent", opp, false);
+  }
+
   function renderState() {
     const me = players.find((p) => p.id === socket.id);
     const opp = players.find((p) => p.id !== socket.id);
@@ -176,20 +216,23 @@
     if (cbOppName) cbOppName.textContent = opp ? opp.name : "Opponent";
 
     if (gameOver) {
-      cbTurnIndicator.textContent = "Code Cracked!";
+      cbTurnIndicator.textContent = "Race Over";
+    } else if (finished) {
+      cbTurnIndicator.textContent = "Code cracked — waiting…";
     } else {
-      cbTurnIndicator.textContent = myTurn ? "Your Turn" : "Opponent's Turn";
+      cbTurnIndicator.textContent = "Crack your code!";
     }
 
-    const canPlay = myTurn && !gameOver;
-    if (cbGuessInput) cbGuessInput.disabled = !canPlay;
-    if (cbSubmitBtn) cbSubmitBtn.disabled = !canPlay;
+    const allow = canGuess && !gameOver && !finished;
+    if (cbGuessInput) cbGuessInput.disabled = !allow;
+    if (cbSubmitBtn) cbSubmitBtn.disabled = !allow;
     renderHistory(history);
+    renderScoreboard();
     renderTimer();
   }
 
   function submitGuess() {
-    if (!currentRoom || !myTurn || gameOver) return;
+    if (!currentRoom || !canGuess || finished || gameOver) return;
     const guess = cbGuessInput.value.trim();
     if (!/^\d{6}$/.test(guess)) {
       cbMsg.textContent = "Guess must be exactly 6 digits.";
@@ -227,28 +270,33 @@
     wireControls();
     currentRoom = data.room;
     players = data.players || [];
-    myTurn = data.yourTurn;
+    scores = data.scores || [];
+    canGuess = data.canGuess !== false;
+    finished = !!data.finished;
     history = data.history || [];
     gameOver = false;
     hideEndButtons();
-    startTimerTick(data.turnEndsAt);
+    startTimerTick(data.startedAt || Date.now());
     renderState();
     showCodeBreakerScreen();
-    cbMsg.textContent = "Crack the 6-digit code together — 20 seconds per turn!";
+    cbMsg.textContent = "Race on — crack your code with as few guesses as you can!";
     if (cbGuessInput) cbGuessInput.value = "";
   }
 
   function onGameOver(data) {
     if (!active) return;
     gameOver = true;
-    myTurn = false;
+    canGuess = false;
     stopTimerTick();
-    turnEndsAt = null;
-    if (data.history) history = data.history;
+    if (data.scores) scores = data.scores;
     renderState();
-    const youWin = data.winnerId === socket.id;
-    cbMsg.textContent = (data.message || "Code cracked!") +
-      (youWin ? " Nice work!" : "");
+    if (data.draw) {
+      cbMsg.textContent = data.message || "Draw!";
+    } else {
+      const youWin = data.winnerId === socket.id;
+      cbMsg.textContent = (data.message || "Race over!") +
+        (youWin ? " You win!" : "");
+    }
     showEndButtons();
   }
 
@@ -258,30 +306,49 @@
     // "codeBreakerStarted" — Code Breaker only.
     socket.on("codeBreakerStarted", onStarted);
 
-    // "codeBreakerGuess" — Code Breaker only. Shared guess + colors.
+    // "codeBreakerGuess" — private feedback for your own guesses.
     socket.on("codeBreakerGuess", (data) => {
       if (!active) return;
       if (data.history) history = data.history;
-      cbMsg.textContent = (data.name || "Player") + " guessed " + String(data.guess);
+      cbMsg.textContent = "Guess recorded.";
       renderHistory(history);
+      renderScoreboard();
     });
 
-    // "cbTurnChanged" — Code Breaker only.
-    socket.on("cbTurnChanged", (data) => {
+    // "cbRaceState" — private race sync (history + canGuess).
+    socket.on("cbRaceState", (data) => {
       if (!active) return;
-      if (data.over) return;
-      gameOver = false;
-      myTurn = data.yourTurn;
       if (data.history) history = data.history;
-      startTimerTick(data.turnEndsAt);
+      if (data.scores) scores = data.scores;
+      if (data.finished != null) finished = !!data.finished;
+      if (data.canGuess != null) canGuess = !!data.canGuess;
+      if (data.over) gameOver = true;
+      if (data.startedAt) startedAt = data.startedAt;
       renderState();
     });
 
-    // "codeBreakerTimedOut" — Code Breaker only.
-    socket.on("codeBreakerTimedOut", (data) => {
+    // "codeBreakerScores" — public guess counts / finish times.
+    socket.on("codeBreakerScores", (data) => {
       if (!active) return;
-      cbMsg.textContent = data.message ||
-        ((data.name || "Player") + " ran out of time. Turn passes.");
+      if (data.scores) scores = data.scores;
+      renderScoreboard();
+    });
+
+    // "codeBreakerCracked" — someone finished their private code.
+    socket.on("codeBreakerCracked", (data) => {
+      if (!active) return;
+      if (data.scores) scores = data.scores;
+      const mine = data.by === socket.id;
+      if (mine) {
+        finished = true;
+        canGuess = false;
+        cbMsg.textContent = "You cracked it in " + data.guessCount +
+          " guess" + (data.guessCount === 1 ? "" : "es") +
+          " (" + formatElapsed(data.elapsedMs) + "). Waiting for opponent…";
+      } else {
+        cbMsg.textContent = (data.name || "Opponent") + " cracked their code!";
+      }
+      renderState();
     });
 
     // "codeBreakerOver" — Code Breaker only.
@@ -297,6 +364,8 @@
     socket.on("codeBreakerReset", () => {
       if (!active) return;
       gameOver = false;
+      finished = false;
+      canGuess = true;
       cbMsg.textContent = "";
       hideEndButtons();
       if (cbGuessInput) cbGuessInput.value = "";
