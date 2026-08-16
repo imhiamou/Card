@@ -137,19 +137,101 @@ input.addEventListener("input",()=>{input.value=input.value.toUpperCase();});
 // Seat-count controls for multi-seat games (hidden for 2-player-only modes).
 const gameSelectEl=document.getElementById("gameSelect");
 const dominoMaxPlayersWrap=document.getElementById("dominoMaxPlayersWrap");
+const dominoMaxPlayersEl=document.getElementById("dominoMaxPlayers");
+const dominoTeamWrap=document.getElementById("dominoTeamWrap");
+const dominoTeamSelect=document.getElementById("dominoTeamSelect");
+const dominoLobbyTeams=document.getElementById("dominoLobbyTeams");
+const dominoTeamAList=document.getElementById("dominoTeamAList");
+const dominoTeamBList=document.getElementById("dominoTeamBList");
+const dominoJoinTeamA=document.getElementById("dominoJoinTeamA");
+const dominoJoinTeamB=document.getElementById("dominoJoinTeamB");
 const unoMaxPlayersWrap=document.getElementById("unoMaxPlayersWrap");
 const botFillWrap=document.getElementById("botFillWrap");
 const startBotsBtn=document.getElementById("startBotsBtn");
+let selectedDominoTeam="A";
+
+function getSelectedDominoTeam(){
+const picked=dominoTeamSelect&&dominoTeamSelect.querySelector(".charOption.selected");
+return picked&&picked.dataset.team==="B"?"B":"A";
+}
+
 function syncMaxPlayersVisibility(){
 const game=gameSelectEl?gameSelectEl.value:"";
 if(dominoMaxPlayersWrap)dominoMaxPlayersWrap.classList.toggle("hidden",game!=="dominoes");
 if(unoMaxPlayersWrap)unoMaxPlayersWrap.classList.toggle("hidden",game!=="uno");
 // Bots exist only for Dominoes and UNO.
 if(botFillWrap)botFillWrap.classList.toggle("hidden",game!=="dominoes"&&game!=="uno");
+// Team pick: shown for Dominoes so creators (4p) and joiners can choose.
+// 2–3 player lobbies ignore the pick on the server.
+const showTeam=game==="dominoes";
+if(dominoTeamWrap)dominoTeamWrap.classList.toggle("hidden",!showTeam);
+if(!showTeam&&dominoLobbyTeams)dominoLobbyTeams.classList.add("hidden");
 }
+
+function renderDominoLobbyTeams(data){
+if(!dominoLobbyTeams||!data||!data.teamMode){
+if(dominoLobbyTeams)dominoLobbyTeams.classList.add("hidden");
+return;
+}
+dominoLobbyTeams.classList.remove("hidden");
+const mine=socket&&socket.id;
+const byTeam={A:[],B:[]};
+(data.players||[]).forEach((p)=>{
+if(p.team==="A"||p.team==="B")byTeam[p.team].push(p);
+});
+function fill(listEl,rows){
+if(!listEl)return;
+listEl.innerHTML="";
+if(!rows.length){
+const li=document.createElement("li");
+li.textContent="Open seat";
+li.style.opacity=".55";
+listEl.appendChild(li);
+return;
+}
+rows.forEach((p)=>{
+const li=document.createElement("li");
+li.textContent=p.name+(p.isBot?" (bot)":"");
+if(p.id===mine)li.classList.add("me");
+listEl.appendChild(li);
+});
+}
+fill(dominoTeamAList,byTeam.A);
+fill(dominoTeamBList,byTeam.B);
+const myRow=(data.players||[]).find((p)=>p.id===mine);
+const myTeam=myRow&&myRow.team;
+if(dominoJoinTeamA){
+dominoJoinTeamA.disabled=byTeam.A.length>=2&&myTeam!=="A";
+dominoJoinTeamA.textContent=myTeam==="A"?"On Team A":"Join Team A";
+}
+if(dominoJoinTeamB){
+dominoJoinTeamB.disabled=byTeam.B.length>=2&&myTeam!=="B";
+dominoJoinTeamB.textContent=myTeam==="B"?"On Team B":"Join Team B";
+}
+}
+
+if(dominoTeamSelect){
+dominoTeamSelect.querySelectorAll(".charOption").forEach((option)=>{
+option.onclick=()=>{
+dominoTeamSelect.querySelectorAll(".charOption").forEach((o)=>o.classList.remove("selected"));
+option.classList.add("selected");
+selectedDominoTeam=option.dataset.team==="B"?"B":"A";
+};
+});
+}
+function pickLobbyTeam(team){
+if(!currentRoom)return;
+socket.emit("dominoPickTeam",{roomCode:currentRoom,team});
+}
+if(dominoJoinTeamA)dominoJoinTeamA.onclick=()=>pickLobbyTeam("A");
+if(dominoJoinTeamB)dominoJoinTeamB.onclick=()=>pickLobbyTeam("B");
+
 if(gameSelectEl){
 gameSelectEl.addEventListener("change",syncMaxPlayersVisibility);
 syncMaxPlayersVisibility();
+}
+if(dominoMaxPlayersEl){
+dominoMaxPlayersEl.addEventListener("change",syncMaxPlayersVisibility);
 }
 
 // Creator-only: fill the remaining seats with server bots and start.
@@ -178,6 +260,7 @@ const payload={name,room,game};
 if(game==="dominoes"){
 const maxEl=document.getElementById("dominoMaxPlayers");
 payload.maxPlayers=maxEl?Number(maxEl.value):2;
+if(payload.maxPlayers===4)payload.team=getSelectedDominoTeam();
 }
 if(game==="uno"){
 const maxEl=document.getElementById("unoMaxPlayers");
@@ -196,7 +279,12 @@ const name=getPlayerName();
 if(!isValidPlayerName(name)){alert("Enter a name (2-16 letters, numbers, spaces, - or _)");return;}
 const room=document.getElementById("roomCode").value.trim().toUpperCase();
 if(!room){alert("Enter lobby code");return;}
-socket.emit("joinLobby",{name,room});
+const payload={name,room};
+// Preferred team for 4-player Dominoes (ignored by other modes / 2–3p).
+if(gameSelectEl&&gameSelectEl.value==="dominoes"){
+payload.team=getSelectedDominoTeam();
+}
+socket.emit("joinLobby",payload);
 // Remember the code we tried to join; confirmed once "gameStart" arrives.
 currentRoom=room;
 status.textContent="Joining...";
@@ -218,6 +306,22 @@ startBotsBtn.classList.toggle("hidden",!showBots);
 startBotsBtn.disabled=false;
 startBotsBtn.textContent="Start Now (fill empty seats with bots)";
 }
+if(data.game==="dominoes"&&data.teamMode){
+renderDominoLobbyTeams(data);
+}else if(dominoLobbyTeams){
+dominoLobbyTeams.classList.add("hidden");
+}
+});
+
+socket.on("dominoLobbyUpdate",(data)=>{
+if(!data)return;
+if(data.room)currentRoom=data.room;
+if(code&&data.room)code.textContent="Lobby Code: "+data.room;
+if(status&&data.players&&data.maxPlayers){
+status.textContent="Waiting for players ("+
+data.players.length+"/"+data.maxPlayers+")...";
+}
+renderDominoLobbyTeams(data);
 });
 
 // Fired by the server when the second player joins the lobby.
@@ -238,6 +342,7 @@ lobbyScreen.classList.remove("hidden");
 code.textContent="";
 status.textContent="Other player disconnected.";
 if(startBotsBtn)startBotsBtn.classList.add("hidden");
+if(dominoLobbyTeams)dominoLobbyTeams.classList.add("hidden");
 });
 
 socket.on("errorMessage",(msg)=>{

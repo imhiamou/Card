@@ -660,6 +660,8 @@
     resetPan();
     applyState(data);
     showDominoScreen();
+    const lobbyTeams = $("dominoLobbyTeams");
+    if (lobbyTeams) lobbyTeams.classList.add("hidden");
     const starter = (data.players || []).find((p) => p.id === data.currentTurnId);
     let msg = (starter ? starter.name : "A player") + " opens with the highest double.";
     if (data.teamMode && data.teammate) {
@@ -800,6 +802,7 @@
           data.players.length + "/" + data.maxPlayers + ")...";
       }
       if (data && data.room) currentRoom = data.room;
+      // Team roster / switcher lives on the lobby screen (index.js also listens).
     });
 
     socket.on("playerLeft", () => {

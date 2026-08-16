@@ -752,7 +752,7 @@ io.on("connection", (socket) => {
       maxPlayers,
       fillBots,
       // character is filled in during Hidden Hunt placement (null until then).
-      players: [{ id: socket.id, name, character: null }],
+      players: [{ id: socket.id, name, character: null, dominoTeam: null }],
       positions: {},
       ready: {},
       rematch: {},
@@ -760,8 +760,25 @@ io.on("connection", (socket) => {
       game: null
     };
 
+    // 4-player Dominoes: creator picks Team A or B up front.
+    if (gameMode === "dominoes" && maxPlayers === 4) {
+      domino.assignPlayerTeam(rooms[roomCode], rooms[roomCode].players[0], data && data.team);
+    }
+
     socket.join(roomCode);
-    socket.emit("lobbyCreated", { room: roomCode, game: gameMode, maxPlayers, fillBots });
+    socket.emit("lobbyCreated", {
+      room: roomCode,
+      game: gameMode,
+      maxPlayers,
+      fillBots,
+      teamMode: gameMode === "dominoes" && maxPlayers === 4,
+      players: gameMode === "dominoes"
+        ? domino.publicLobbyPlayers(rooms[roomCode])
+        : undefined
+    });
+    if (gameMode === "dominoes" && maxPlayers === 4) {
+      domino.emitDominoLobbyUpdate(rooms[roomCode], io, roomCode);
+    }
   });
 
   /*
@@ -802,7 +819,12 @@ io.on("connection", (socket) => {
     for (let i = 0; i < needed; i++) {
       const botId = "bot-" + roomCode + "-" + (i + 1) + "-" + Math.random().toString(36).slice(2, 8);
       const botName = needed === 1 ? baseName : baseName + " " + (i + 1);
-      room.players.push({ id: botId, name: botName, character: null, isBot: true });
+      const bot = { id: botId, name: botName, character: null, isBot: true, dominoTeam: null };
+      room.players.push(bot);
+      // Balance bots onto underfilled Dominoes teams in 4-player lobbies.
+      if (isDomino && (room.maxPlayers || 0) === 4) {
+        domino.assignPlayerTeam(room, bot, null);
+      }
       // Bots register the SAME Socket.IO handlers as human players, so
       // every bot action runs through identical validation.
       const botSocket = createBotSocket(botId);
@@ -851,7 +873,7 @@ io.on("connection", (socket) => {
       return;
     }
 
-    room.players.push({ id: socket.id, name, character: null });
+    room.players.push({ id: socket.id, name, character: null, dominoTeam: null });
     socket.join(roomCode);
 
     // Router: Word Chain lobbies never enter Hidden Hunt placement.
@@ -867,13 +889,19 @@ io.on("connection", (socket) => {
     // Router: Dominoes waits until every chosen seat is filled.
     if (room.gameMode === "dominoes") {
       const max = room.maxPlayers || 2;
+      const joiner = room.players[room.players.length - 1];
+      if (max === 4) {
+        const assigned = domino.assignPlayerTeam(room, joiner, data && data.team);
+        if (!assigned.ok) {
+          room.players.pop();
+          socket.leave(roomCode);
+          socket.emit("errorMessage", assigned.error || "Could not join a team.");
+          return;
+        }
+      }
       if (room.players.length < max) {
         // "dominoLobbyUpdate" — Dominoes only. Lobby not full yet.
-        io.to(roomCode).emit("dominoLobbyUpdate", {
-          room: roomCode,
-          maxPlayers: max,
-          players: room.players.map((p) => ({ id: p.id, name: p.name }))
-        });
+        domino.emitDominoLobbyUpdate(room, io, roomCode);
         return;
       }
       domino.onLobbyFull(room, io, roomCode);

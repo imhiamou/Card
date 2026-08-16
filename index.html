@@ -41,6 +41,30 @@
 </select>
 </div>
 
+<!-- Dominoes 4-player only: pick Team A or Team B before create/join -->
+<div id="dominoTeamWrap" class="hidden">
+<h3>Your team</h3>
+<p class="domTeamHint">For 4-player Dominoes, partners sit opposite. Pick Team A or Team B (ignored in 2–3 player games).</p>
+<div class="charSelect" id="dominoTeamSelect">
+<div class="charOption selected" data-team="A">Team A</div>
+<div class="charOption" data-team="B">Team B</div>
+</div>
+</div>
+
+<!-- Shown while waiting in a 4-player Dominoes lobby -->
+<div id="dominoLobbyTeams" class="dominoLobbyTeams hidden">
+<div class="domLobbyTeamCol" data-team="A">
+<strong>Team A</strong>
+<ul id="dominoTeamAList"></ul>
+<button type="button" id="dominoJoinTeamA" class="domJoinTeamBtn">Join Team A</button>
+</div>
+<div class="domLobbyTeamCol" data-team="B">
+<strong>Team B</strong>
+<ul id="dominoTeamBList"></ul>
+<button type="button" id="dominoJoinTeamB" class="domJoinTeamBtn">Join Team B</button>
+</div>
+</div>
+
 <!-- UNO only: lobby creator picks 2–5 seats -->
 <div id="unoMaxPlayersWrap" class="hidden">
 <h3>Players</h3>
