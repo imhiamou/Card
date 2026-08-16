@@ -255,9 +255,118 @@ function handScore(hand) {
    ROOM STATE / PUBLIC SNAPSHOTS
    ============================================================ */
 
+/** Normalize a client team pick to "A" | "B" | null. */
+function normalizeTeam(team) {
+  if (team === "A" || team === "a") return "A";
+  if (team === "B" || team === "b") return "B";
+  return null;
+}
+
+function isTeamLobby(room) {
+  return !!(room && room.gameMode === "dominoes" && (room.maxPlayers || 0) === 4);
+}
+
+function countTeam(room, team) {
+  return (room.players || []).filter((p) => p.dominoTeam === team).length;
+}
+
+/**
+ * Assign a player to Team A or B in a 4-player lobby (max 2 per team).
+ * Returns { ok, team, error }.
+ */
+function assignPlayerTeam(room, player, preferredTeam) {
+  if (!isTeamLobby(room) || !player) {
+    if (player) player.dominoTeam = null;
+    return { ok: true, team: null };
+  }
+  let team = normalizeTeam(preferredTeam);
+  const countA = countTeam(room, "A") - (player.dominoTeam === "A" ? 1 : 0);
+  const countB = countTeam(room, "B") - (player.dominoTeam === "B" ? 1 : 0);
+
+  if (team === "A" && countA >= 2) team = countB < 2 ? "B" : null;
+  else if (team === "B" && countB >= 2) team = countA < 2 ? "A" : null;
+
+  if (!team) {
+    // Prefer the side with fewer players; ties → A.
+    if (countA < 2 && (countA <= countB || countB >= 2)) team = "A";
+    else if (countB < 2) team = "B";
+  }
+  if (!team) {
+    return { ok: false, team: null, error: "Both teams are full." };
+  }
+  player.dominoTeam = team;
+  return { ok: true, team };
+}
+
+/**
+ * Fill any missing team picks, then seat partners opposite:
+ * seats 0+2 = Team A, seats 1+3 = Team B (turn order P1→P2→P3→P4).
+ */
+function arrangePlayersForTeams(room) {
+  if (!isTeamLobby(room) || !room.players || room.players.length !== 4) return;
+
+  room.players.forEach((p) => {
+    if (p.dominoTeam !== "A" && p.dominoTeam !== "B") {
+      assignPlayerTeam(room, p, null);
+    }
+  });
+
+  // Cap overflow if somehow >2 claimed one side (bots / race).
+  const a = [];
+  const b = [];
+  const rest = [];
+  room.players.forEach((p) => {
+    if (p.dominoTeam === "A" && a.length < 2) a.push(p);
+    else if (p.dominoTeam === "B" && b.length < 2) b.push(p);
+    else rest.push(p);
+  });
+  rest.forEach((p) => {
+    if (a.length < 2) {
+      p.dominoTeam = "A";
+      a.push(p);
+    } else {
+      p.dominoTeam = "B";
+      b.push(p);
+    }
+  });
+  while (a.length < 2 && b.length > 2) {
+    const moved = b.pop();
+    moved.dominoTeam = "A";
+    a.push(moved);
+  }
+  while (b.length < 2 && a.length > 2) {
+    const moved = a.pop();
+    moved.dominoTeam = "B";
+    b.push(moved);
+  }
+
+  room.players = [a[0], b[0], a[1], b[1]].filter(Boolean);
+}
+
+/** Public lobby roster used while waiting for a 4-player Dominoes table. */
+function publicLobbyPlayers(room) {
+  return (room.players || []).map((p) => ({
+    id: p.id,
+    name: p.name,
+    isBot: !!p.isBot,
+    team: isTeamLobby(room) ? (p.dominoTeam || null) : null
+  }));
+}
+
+function emitDominoLobbyUpdate(room, io, roomCode) {
+  const max = room.maxPlayers || 2;
+  io.to(roomCode).emit("dominoLobbyUpdate", {
+    room: roomCode,
+    maxPlayers: max,
+    teamMode: isTeamLobby(room),
+    players: publicLobbyPlayers(room)
+  });
+}
+
 /**
  * 4-player team mode: seats 0+2 = Team A, seats 1+3 = Team B
  * (partners sit opposite; turn order stays P1→P2→P3→P4).
+ * Call arrangePlayersForTeams() before this when players picked teams.
  */
 function buildTeams(room) {
   if (!room.players || room.players.length !== 4) {
@@ -780,6 +889,8 @@ function endBlocked(room, io, roomCode) {
  * Never called for Hidden Hunt / Word Chain / Code Breaker.
  */
 function onLobbyFull(room, io, roomCode) {
+  // Honor lobby team picks: partners sit opposite before dealing.
+  arrangePlayersForTeams(room);
   ensureMatch(room);
   initRound(room);
   const teams = publicTeams(room);
@@ -973,6 +1084,46 @@ function registerSocket(socket, io, rooms) {
   });
 
   /*
+   * "dominoPickTeam" — Dominoes only (4-player lobbies, before the deal).
+   * Payload: { roomCode, team: "A"|"B" }
+   */
+  socket.on("dominoPickTeam", (data) => {
+    const roomCode = data && typeof data.roomCode === "string" ? data.roomCode.trim().toUpperCase() : "";
+    const room = rooms[roomCode];
+    if (!room || room.gameMode !== "dominoes") {
+      socket.emit("errorMessage", "You are not in a Dominoes lobby.");
+      return;
+    }
+    if (room.domino) {
+      socket.emit("errorMessage", "Teams are locked once the game starts.");
+      return;
+    }
+    if (!isTeamLobby(room)) {
+      socket.emit("errorMessage", "Team picks are only for 4-player Dominoes.");
+      return;
+    }
+    const me = room.players.find((p) => p.id === socket.id);
+    if (!me) {
+      socket.emit("errorMessage", "You are not in this lobby.");
+      return;
+    }
+    const wanted = normalizeTeam(data && data.team);
+    if (!wanted) {
+      socket.emit("errorMessage", "Pick Team A or Team B.");
+      return;
+    }
+    const othersOnTeam = room.players.filter(
+      (p) => p.id !== socket.id && p.dominoTeam === wanted
+    ).length;
+    if (othersOnTeam >= 2) {
+      socket.emit("errorMessage", "Team " + wanted + " is full.");
+      return;
+    }
+    me.dominoTeam = wanted;
+    emitDominoLobbyUpdate(room, io, roomCode);
+  });
+
+  /*
    * "dominoPlayAgain" — Dominoes only.
    * All seated players must vote; then a fresh shuffle/deal begins.
    */
@@ -1017,6 +1168,12 @@ module.exports = {
   buildTeams,
   teamOfPlayer,
   normalizeMaxPlayers,
+  normalizeTeam,
+  isTeamLobby,
+  assignPlayerTeam,
+  arrangePlayersForTeams,
+  publicLobbyPlayers,
+  emitDominoLobbyUpdate,
   ALLOWED_MAX_PLAYERS,
   HAND_SIZE,
   MAX_PIP

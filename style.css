@@ -85,6 +85,68 @@ border:none;
 border-radius:8px;
 }
 
+.domTeamHint{
+font-size:13px;
+color:#9aabc4;
+margin:4px 0 10px;
+line-height:1.35;
+}
+
+.dominoLobbyTeams{
+display:grid;
+grid-template-columns:1fr 1fr;
+gap:10px;
+margin:12px 0;
+text-align:left;
+}
+
+.domLobbyTeamCol{
+background:#2a3142;
+border:1px solid #3d4860;
+border-radius:8px;
+padding:10px;
+}
+
+.domLobbyTeamCol strong{
+display:block;
+margin-bottom:6px;
+color:#e8eef8;
+}
+
+.domLobbyTeamCol ul{
+list-style:none;
+margin:0 0 8px;
+padding:0;
+min-height:44px;
+}
+
+.domLobbyTeamCol li{
+font-size:14px;
+color:#c5d2e8;
+padding:2px 0;
+}
+
+.domLobbyTeamCol li.me{
+color:#7eb6ff;
+font-weight:600;
+}
+
+.domJoinTeamBtn{
+width:100%;
+margin:0;
+padding:8px;
+font-size:13px;
+border-radius:6px;
+border:1px solid #4f9cff;
+background:#31537a;
+color:#fff;
+}
+
+.domJoinTeamBtn:disabled{
+border-color:#555;
+background:#3a4256;
+}
+
 /* Clickable option groups (character classics on placement screen) */
 .charSelect{
 display:flex;
