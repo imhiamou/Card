@@ -78,6 +78,9 @@
   let scale = 1;
   let dragging = false;
   let dragStart = null;
+  /** Once the player pans/zooms, keep that view until the next round. */
+  let viewTouched = false;
+  let boardLayoutSize = { w: 1, h: 1 };
 
   let lobbyScreen;
   let placementScreen;
@@ -220,8 +223,8 @@
     dominoScreen.classList.remove("hidden");
     syncMobileLayout();
     requestAnimationFrame(() => {
-      centerBoard();
-      requestAnimationFrame(centerBoard);
+      centerBoard(true);
+      requestAnimationFrame(() => centerBoard(true));
     });
   }
 
@@ -247,28 +250,157 @@
     panX = 0;
     panY = 0;
     scale = 1;
+    viewTouched = false;
     applyPan();
   }
 
-  function centerBoard() {
+  /**
+   * Fit the snaking chain into the table viewport.
+   * force=true ignores a user pan/zoom (new round / first show).
+   */
+  function centerBoard(force) {
     if (!domBoardWrap || !domBoardInner) return;
+    if (viewTouched && !force) return;
     const wrap = domBoardWrap.getBoundingClientRect();
     if (wrap.width < 8 || wrap.height < 8) return;
-    // Unscaled size from layout (ignore current transform for measurement).
-    const iw = Math.max(domBoardInner.scrollWidth, 1);
-    const ih = Math.max(domBoardInner.scrollHeight, 1);
+    const iw = Math.max(boardLayoutSize.w || domBoardInner.offsetWidth || 1, 1);
+    const ih = Math.max(boardLayoutSize.h || domBoardInner.offsetHeight || 1, 1);
     const pad = isPhoneLayout() ? 28 : 40;
     const fit = Math.min(
       1,
       (wrap.width - pad) / iw,
       (wrap.height - pad) / ih
     );
-    // Phones need to shrink long chains further so the table stays readable.
     const minScale = isPhoneLayout() ? 0.28 : 0.45;
     scale = Math.max(minScale, fit);
     panX = -((iw * scale) / 2);
     panY = -((ih * scale) / 2);
     applyPan();
+  }
+
+  /**
+   * Lay the chain out in a clockwise square spiral instead of one long line.
+   * Doubles sit crosswise to the travel direction (classic table look).
+   */
+  function layoutSnakeChain(chain) {
+    const LONG = 88;
+    const SHORT = 44;
+    const GAP = 2;
+    const RUN = 6;
+    const PAD = 28;
+
+    let dir = 0; // 0 E, 1 S, 2 W, 3 N
+    let attachX = 0;
+    let attachY = 0;
+    let countInRun = 0;
+    let runLen = RUN;
+    let turnCount = 0;
+    let minX = 0;
+    let minY = 0;
+    let maxX = 0;
+    let maxY = 0;
+    const placed = [];
+
+    (chain || []).forEach((tile, i) => {
+      const dbl = !!tile.isDouble;
+      const travelHoriz = dir === 0 || dir === 2;
+      let vertical;
+      let w;
+      let h;
+      if (travelHoriz) {
+        if (dbl) {
+          vertical = true;
+          w = SHORT;
+          h = LONG;
+        } else {
+          vertical = false;
+          w = LONG;
+          h = SHORT;
+        }
+      } else if (dbl) {
+        vertical = false;
+        w = LONG;
+        h = SHORT;
+      } else {
+        vertical = true;
+        w = SHORT;
+        h = LONG;
+      }
+
+      let x;
+      let y;
+      if (dir === 0) {
+        x = attachX;
+        y = attachY - h / 2;
+      } else if (dir === 1) {
+        x = attachX - w / 2;
+        y = attachY;
+      } else if (dir === 2) {
+        x = attachX - w;
+        y = attachY - h / 2;
+      } else {
+        x = attachX - w / 2;
+        y = attachY - h;
+      }
+
+      // When traveling west/north the near face is leftPip but sits on the
+      // opposite screen side of the SVG, so swap for display.
+      let showLeft = tile.leftPip;
+      let showRight = tile.rightPip;
+      if (dir === 2 || dir === 3) {
+        showLeft = tile.rightPip;
+        showRight = tile.leftPip;
+      }
+
+      placed.push({
+        tile: tile,
+        x: x,
+        y: y,
+        w: w,
+        h: h,
+        vertical: vertical,
+        showLeft: showLeft,
+        showRight: showRight
+      });
+
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x + w);
+      maxY = Math.max(maxY, y + h);
+
+      if (dir === 0) {
+        attachX = x + w + GAP;
+        attachY = y + h / 2;
+      } else if (dir === 1) {
+        attachX = x + w / 2;
+        attachY = y + h + GAP;
+      } else if (dir === 2) {
+        attachX = x - GAP;
+        attachY = y + h / 2;
+      } else {
+        attachX = x + w / 2;
+        attachY = y - GAP;
+      }
+
+      countInRun += 1;
+      if (i < chain.length - 1 && countInRun >= runLen) {
+        dir = (dir + 1) % 4;
+        countInRun = 0;
+        turnCount += 1;
+        // Lengthen every full half-turn so the path spirals into a square.
+        if (turnCount % 2 === 0) runLen += 1;
+      }
+    });
+
+    const width = Math.max(LONG * 2, maxX - minX + PAD * 2);
+    const height = Math.max(LONG * 2, maxY - minY + PAD * 2);
+    const ox = -minX + PAD;
+    const oy = -minY + PAD;
+    placed.forEach((p) => {
+      p.x += ox;
+      p.y += oy;
+    });
+    return { placed: placed, width: width, height: height };
   }
 
   function wireBoardPan() {
@@ -285,8 +417,11 @@
     };
     const onMove = (clientX, clientY) => {
       if (!dragging || !dragStart) return;
-      panX = dragStart.panX + (clientX - dragStart.x);
-      panY = dragStart.panY + (clientY - dragStart.y);
+      const nextX = dragStart.panX + (clientX - dragStart.x);
+      const nextY = dragStart.panY + (clientY - dragStart.y);
+      if (nextX !== panX || nextY !== panY) viewTouched = true;
+      panX = nextX;
+      panY = nextY;
       applyPan();
     };
     const onUp = () => {
@@ -327,7 +462,9 @@
         const dist = touchDistance(e.touches);
         const next = pinchStartScale * (dist / pinchStartDist);
         const minScale = isPhoneLayout() ? 0.28 : 0.35;
-        scale = Math.min(1.8, Math.max(minScale, next));
+        const clamped = Math.min(1.8, Math.max(minScale, next));
+        if (clamped !== scale) viewTouched = true;
+        scale = clamped;
         applyPan();
         return;
       }
@@ -341,19 +478,22 @@
       e.preventDefault();
       const next = scale + (e.deltaY < 0 ? 0.08 : -0.08);
       const minScale = isPhoneLayout() ? 0.28 : 0.35;
-      scale = Math.min(1.8, Math.max(minScale, next));
+      const clamped = Math.min(1.8, Math.max(minScale, next));
+      if (clamped !== scale) viewTouched = true;
+      scale = clamped;
       applyPan();
     }, { passive: false });
 
     window.addEventListener("resize", () => {
       if (!active) return;
       syncMobileLayout();
-      requestAnimationFrame(centerBoard);
+      // Refit only if the player has not chosen a custom zoom/pan.
+      requestAnimationFrame(() => centerBoard(false));
     });
     if (window.visualViewport) {
       window.visualViewport.addEventListener("resize", () => {
         if (!active) return;
-        requestAnimationFrame(centerBoard);
+        requestAnimationFrame(() => centerBoard(false));
       });
     }
   }
@@ -542,14 +682,21 @@
 
   function renderBoard(animateId) {
     if (!domBoardInner || !board) return;
+    const chain = board.chain || [];
+    const layout = layoutSnakeChain(chain);
+    boardLayoutSize = { w: layout.width, h: layout.height };
+    domBoardInner.style.width = layout.width + "px";
+    domBoardInner.style.height = layout.height + "px";
     domBoardInner.innerHTML = "";
-    (board.chain || []).forEach((tile) => {
-      const vertical = !!tile.isDouble;
-      const el = makeTileEl(tile.leftPip, tile.rightPip, {
-        vertical,
-        extraClass: "boardTile" + (animateId && tile.id === animateId ? " playAnim" : ""),
-        tileId: tile.id
+    layout.placed.forEach((p) => {
+      const el = makeTileEl(p.showLeft, p.showRight, {
+        vertical: p.vertical,
+        extraClass: "boardTile" +
+          (animateId && p.tile.id === animateId ? " playAnim" : ""),
+        tileId: p.tile.id
       });
+      el.style.left = p.x + "px";
+      el.style.top = p.y + "px";
       domBoardInner.appendChild(el);
     });
     if (domLeftEnd) {
@@ -561,7 +708,10 @@
     if (domBoneyard) {
       domBoneyard.textContent = "Boneyard: " + (board.boneyardCount || 0);
     }
-    requestAnimationFrame(centerBoard);
+    // Keep the player's zoom/pan. Only auto-fit when they haven't touched the view.
+    if (!viewTouched) {
+      requestAnimationFrame(() => centerBoard(true));
+    }
   }
 
   function movesForTile(tileId) {
@@ -852,6 +1002,7 @@
     socket.on("dominoReset", () => {
       if (!active) return;
       gameOver = false;
+      resetPan();
       // Keep scoreboard visible until the player leaves the lobby.
       hideEndButtons();
       hideSidePicker();
