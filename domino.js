@@ -284,24 +284,25 @@
 
   /**
    * Same tile look as before (doubles stand crosswise on the line).
-   * Tiles live on a grid spiral (one cell each) so turns never overlap.
-   * Visual only — gameplay / chain order unchanged.
+   * Zigzag rows (east → down → west → down → east…) — does NOT loop
+   * back up into a square. Visual only; gameplay unchanged.
    */
   function layoutSnake(chain) {
     const LONG = 88;
     const SHORT = 44;
-    const GAP = 10;
-    const PAD = 24;
-    // Cell bigger than the longest tile so neighbors never collide.
-    const PITCH = LONG + GAP;
+    const PAD = 16;
+    // Tight cells — still large enough that neighbors never overlap.
+    const COL = LONG + 2;
+    const ROW = LONG + 2;
+    const ROW_LEN = 6;
 
-    // 0 = east, 1 = south, 2 = west, 3 = north
+    // 0 east, 1 south, 2 west
     let dir = 0;
     let cx = 0;
     let cy = 0;
-    let runCount = 0;
-    let runLen = 5;
-    let legsAtLen = 0;
+    let inLeg = 0;
+    // "east" | "dropFromEast" | "west" | "dropFromWest"
+    let leg = "east";
     const placed = [];
 
     function dims(travelDir, isDouble) {
@@ -318,11 +319,8 @@
 
     (chain || []).forEach((tile, i) => {
       const d = dims(dir, !!tile.isDouble);
-      const cellX = cx * PITCH;
-      const cellY = cy * PITCH;
-      // Center the tile inside its cell.
-      const x = cellX + (PITCH - d.w) / 2;
-      const y = cellY + (PITCH - d.h) / 2;
+      const x = cx * COL + (COL - d.w) / 2;
+      const y = cy * ROW + (ROW - d.h) / 2;
 
       let left = tile.leftPip;
       let right = tile.rightPip;
@@ -342,21 +340,40 @@
         right: right
       });
 
-      if (dir === 0) cx += 1;
-      else if (dir === 1) cy += 1;
-      else if (dir === 2) cx -= 1;
-      else cy -= 1;
+      if (i >= chain.length - 1) return;
 
-      runCount += 1;
-      if (i < chain.length - 1 && runCount >= runLen) {
-        dir = (dir + 1) % 4;
-        runCount = 0;
-        legsAtLen += 1;
-        // 5,5,6,6,7,7… keeps the spiral growing outward.
-        if (legsAtLen >= 2) {
-          runLen += 1;
-          legsAtLen = 0;
+      inLeg += 1;
+
+      if (leg === "east") {
+        if (inLeg >= ROW_LEN) {
+          // Drop down under the last tile, then go west.
+          leg = "dropFromEast";
+          dir = 1;
+          inLeg = 0;
+          cy += 1;
+        } else {
+          cx += 1;
         }
+      } else if (leg === "dropFromEast") {
+        leg = "west";
+        dir = 2;
+        inLeg = 0;
+        cx -= 1;
+      } else if (leg === "west") {
+        if (inLeg >= ROW_LEN) {
+          leg = "dropFromWest";
+          dir = 1;
+          inLeg = 0;
+          cy += 1;
+        } else {
+          cx -= 1;
+        }
+      } else {
+        // dropFromWest → resume east on the next row
+        leg = "east";
+        dir = 0;
+        inLeg = 0;
+        cx += 1;
       }
     });
 
