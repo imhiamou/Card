@@ -223,8 +223,8 @@
     dominoScreen.classList.remove("hidden");
     syncMobileLayout();
     requestAnimationFrame(() => {
-      centerBoard(true);
-      requestAnimationFrame(() => centerBoard(true));
+      centerBoard();
+      requestAnimationFrame(centerBoard);
     });
   }
 
@@ -263,14 +263,16 @@
     if (viewTouched && !force) return;
     const wrap = domBoardWrap.getBoundingClientRect();
     if (wrap.width < 8 || wrap.height < 8) return;
-    const iw = Math.max(boardLayoutSize.w || domBoardInner.offsetWidth || 1, 1);
-    const ih = Math.max(boardLayoutSize.h || domBoardInner.offsetHeight || 1, 1);
+    // Unscaled size from layout (ignore current transform for measurement).
+    const iw = Math.max(domBoardInner.scrollWidth, 1);
+    const ih = Math.max(domBoardInner.scrollHeight, 1);
     const pad = isPhoneLayout() ? 28 : 40;
     const fit = Math.min(
       1,
       (wrap.width - pad) / iw,
       (wrap.height - pad) / ih
     );
+    // Phones need to shrink long chains further so the table stays readable.
     const minScale = isPhoneLayout() ? 0.28 : 0.45;
     scale = Math.max(minScale, fit);
     panX = -((iw * scale) / 2);
@@ -462,9 +464,7 @@
         const dist = touchDistance(e.touches);
         const next = pinchStartScale * (dist / pinchStartDist);
         const minScale = isPhoneLayout() ? 0.28 : 0.35;
-        const clamped = Math.min(1.8, Math.max(minScale, next));
-        if (clamped !== scale) viewTouched = true;
-        scale = clamped;
+        scale = Math.min(1.8, Math.max(minScale, next));
         applyPan();
         return;
       }
@@ -478,22 +478,19 @@
       e.preventDefault();
       const next = scale + (e.deltaY < 0 ? 0.08 : -0.08);
       const minScale = isPhoneLayout() ? 0.28 : 0.35;
-      const clamped = Math.min(1.8, Math.max(minScale, next));
-      if (clamped !== scale) viewTouched = true;
-      scale = clamped;
+      scale = Math.min(1.8, Math.max(minScale, next));
       applyPan();
     }, { passive: false });
 
     window.addEventListener("resize", () => {
       if (!active) return;
       syncMobileLayout();
-      // Refit only if the player has not chosen a custom zoom/pan.
-      requestAnimationFrame(() => centerBoard(false));
+      requestAnimationFrame(centerBoard);
     });
     if (window.visualViewport) {
       window.visualViewport.addEventListener("resize", () => {
         if (!active) return;
-        requestAnimationFrame(() => centerBoard(false));
+        requestAnimationFrame(centerBoard);
       });
     }
   }
