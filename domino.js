@@ -277,29 +277,57 @@
   }
 
   /**
-   * Square snake: east → south → west → north, turning every SIDE tiles.
-   * Tiles always follow the path so ends meet cleanly.
+   * Same tile look as before (doubles stand crosswise on the line),
+   * but the train turns every RUN tiles so it doesn't shoot off-screen.
+   * Visual only — gameplay / chain order unchanged.
    */
   function layoutSnake(chain) {
     const LONG = 88;
     const SHORT = 44;
-    const GAP = 3;
-    const SIDE = 5;
-    const PAD = 20;
+    const GAP = 4;
+    const RUN = 6;
+    const PAD = 24;
 
-    let dir = 0; // 0E 1S 2W 3N
-    let cursorX = 0;
-    let cursorY = 0;
-    let inSide = 0;
+    // 0 = east, 1 = south, 2 = west, 3 = north
+    let dir = 0;
+    let ax = 0; // attach point (center of the open end)
+    let ay = 0;
+    let runCount = 0;
     const placed = [];
 
-    function sizeFor(d) {
-      const horiz = d === 0 || d === 2;
-      return horiz ? { w: LONG, h: SHORT, vertical: false } : { w: SHORT, h: LONG, vertical: true };
+    function dims(travelDir, isDouble) {
+      const horiz = travelDir === 0 || travelDir === 2;
+      // Same rule as the old straight board: doubles sit across the line.
+      if (horiz) {
+        return isDouble
+          ? { w: SHORT, h: LONG, vertical: true }
+          : { w: LONG, h: SHORT, vertical: false };
+      }
+      return isDouble
+        ? { w: LONG, h: SHORT, vertical: false }
+        : { w: SHORT, h: LONG, vertical: true };
     }
 
-    (chain || []).forEach((tile, idx) => {
-      const sz = sizeFor(dir);
+    (chain || []).forEach((tile, i) => {
+      const d = dims(dir, !!tile.isDouble);
+      let x;
+      let y;
+      if (dir === 0) {
+        x = ax;
+        y = ay - d.h / 2;
+      } else if (dir === 1) {
+        x = ax - d.w / 2;
+        y = ay;
+      } else if (dir === 2) {
+        x = ax - d.w;
+        y = ay - d.h / 2;
+      } else {
+        x = ax - d.w / 2;
+        y = ay - d.h;
+      }
+
+      // Old board: leftPip on the "left" of the chain axis.
+      // Mirror faces when the train is running west/north.
       let left = tile.leftPip;
       let right = tile.rightPip;
       if (dir === 2 || dir === 3) {
@@ -309,58 +337,47 @@
 
       placed.push({
         tile: tile,
-        x: cursorX,
-        y: cursorY,
-        vertical: sz.vertical,
+        x: x,
+        y: y,
+        w: d.w,
+        h: d.h,
+        vertical: d.vertical,
         left: left,
         right: right
       });
 
-      // Advance cursor along the current direction.
-      if (dir === 0) cursorX += sz.w + GAP;
-      else if (dir === 1) cursorY += sz.h + GAP;
-      else if (dir === 2) cursorX -= sz.w + GAP;
-      else cursorY -= sz.h + GAP;
+      if (dir === 0) {
+        ax = x + d.w + GAP;
+        ay = y + d.h / 2;
+      } else if (dir === 1) {
+        ax = x + d.w / 2;
+        ay = y + d.h + GAP;
+      } else if (dir === 2) {
+        ax = x - GAP;
+        ay = y + d.h / 2;
+      } else {
+        ax = x + d.w / 2;
+        ay = y - GAP;
+      }
 
-      inSide += 1;
-      if (idx < chain.length - 1 && inSide >= SIDE) {
-        // Turn clockwise and park the next tile against the outer corner.
-        const last = placed[placed.length - 1];
-        const lw = last.vertical ? SHORT : LONG;
-        const lh = last.vertical ? LONG : SHORT;
+      runCount += 1;
+      if (i < chain.length - 1 && runCount >= RUN) {
         dir = (dir + 1) % 4;
-        inSide = 0;
-        if (dir === 1) {
-          cursorX = last.x + lw - SHORT;
-          cursorY = last.y + lh + GAP;
-        } else if (dir === 2) {
-          cursorX = last.x - LONG - GAP;
-          cursorY = last.y + lh - SHORT;
-        } else if (dir === 3) {
-          cursorX = last.x;
-          cursorY = last.y - LONG - GAP;
-        } else {
-          cursorX = last.x + lw + GAP;
-          cursorY = last.y;
-        }
+        runCount = 0;
       }
     });
 
-    if (!placed.length) {
-      return { placed: placed, width: 200, height: 200 };
-    }
+    if (!placed.length) return { placed: placed, width: 200, height: 120 };
 
     let minX = Infinity;
     let minY = Infinity;
     let maxX = -Infinity;
     let maxY = -Infinity;
     placed.forEach((p) => {
-      const w = p.vertical ? SHORT : LONG;
-      const h = p.vertical ? LONG : SHORT;
       minX = Math.min(minX, p.x);
       minY = Math.min(minY, p.y);
-      maxX = Math.max(maxX, p.x + w);
-      maxY = Math.max(maxY, p.y + h);
+      maxX = Math.max(maxX, p.x + p.w);
+      maxY = Math.max(maxY, p.y + p.h);
     });
 
     const ox = -minX + PAD;
@@ -372,8 +389,8 @@
 
     return {
       placed: placed,
-      width: Math.max(180, maxX - minX + PAD * 2),
-      height: Math.max(180, maxY - minY + PAD * 2)
+      width: Math.max(160, maxX - minX + PAD * 2),
+      height: Math.max(120, maxY - minY + PAD * 2)
     };
   }
 
@@ -669,6 +686,8 @@
       });
       el.style.left = Math.round(p.x) + "px";
       el.style.top = Math.round(p.y) + "px";
+      el.style.width = p.w + "px";
+      el.style.height = p.h + "px";
       domBoardInner.appendChild(el);
     });
     if (domLeftEnd) {
@@ -680,7 +699,6 @@
     if (domBoneyard) {
       domBoneyard.textContent = "Boneyard: " + (board.boneyardCount || 0);
     }
-    // Do NOT refit here — that was resetting zoom on every play.
   }
 
   function movesForTile(tileId) {
