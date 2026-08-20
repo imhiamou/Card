@@ -8,6 +8,15 @@ min-height:100vh;
 font-family:Arial;
 color:white;
 }
+
+/* Prevent background scroll while Dominoes phone play is fullscreen */
+html.domino-phone-play,
+body.domino-phone-play{
+overflow:hidden;
+height:100%;
+overscroll-behavior:none;
+}
+
 .box{
 background:#2a3140;
 padding:25px;
