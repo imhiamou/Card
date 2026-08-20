@@ -427,33 +427,266 @@ margin:0;
 display:none;
 }
 
-@media(max-width:600px){
+/* ——— Phone / narrow: full-screen table play ——— */
+@media(max-width:720px){
 #dominoScreen{
+position:fixed;
+inset:0;
+z-index:30;
 width:100vw;
 max-width:100vw;
-padding:10px 8px 14px;
-border-radius:0;
+height:100dvh;
+min-height:100dvh;
 margin:0;
+border-radius:0;
+padding:
+max(8px, env(safe-area-inset-top, 0px))
+max(8px, env(safe-area-inset-right, 0px))
+max(8px, env(safe-area-inset-bottom, 0px))
+max(8px, env(safe-area-inset-left, 0px));
+display:flex;
+flex-direction:column;
+overflow:hidden;
+background:#1a2230;
+box-sizing:border-box;
 }
+
+#dominoScreen.hidden{
+display:none;
+}
+
+.domTitleRow{
+flex:0 0 auto;
+margin-bottom:4px;
+gap:6px;
+align-items:center;
+}
+.domTitleRow h2{
+font-size:1.05rem;
+}
+.domMeta{
+font-size:11px;
+}
+
+/* Opponents along the top; big table in the middle */
 .domTableArena{
-grid-template-columns:minmax(78px,110px) minmax(0,1fr) minmax(78px,110px);
-gap:6px 8px;
+flex:1 1 auto;
+min-height:0;
+width:100%;
+margin:0 0 4px;
+gap:6px;
+align-items:stretch;
+justify-items:stretch;
 }
+
+.domSeat{
+max-width:none;
+width:100%;
+}
+
+.domTableArena .seat-tl,
+.domTableArena .seat-tr,
+.domTableArena .seat-bl,
+.domTableArena .seat-br{
+display:none;
+}
+
+/* You are the hand dock — hide redundant bottom chip to free table height */
+.domTableArena .seat-bottom{
+display:none !important;
+}
+
+.domTableArena[data-count="2"]{
+grid-template-columns:1fr;
+grid-template-rows:auto minmax(0,1fr);
+}
+.domTableArena[data-count="2"] .seat-top{
+grid-column:1;
+grid-row:1;
+max-width:240px;
+justify-self:center;
+}
+.domTableArena[data-count="2"] .domTableCenter{
+grid-column:1;
+grid-row:2;
+}
+.domTableArena[data-count="2"] .seat-left,
+.domTableArena[data-count="2"] .seat-right{
+display:none;
+}
+
+.domTableArena[data-count="3"]{
+grid-template-columns:1fr 1fr;
+grid-template-rows:auto minmax(0,1fr);
+}
+.domTableArena[data-count="3"] .seat-left{ grid-column:1; grid-row:1; }
+.domTableArena[data-count="3"] .seat-right{ grid-column:2; grid-row:1; }
+.domTableArena[data-count="3"] .domTableCenter{ grid-column:1 / -1; grid-row:2; }
+.domTableArena[data-count="3"] .seat-top{ display:none; }
+
+.domTableArena[data-count="4"]{
+grid-template-columns:1fr 1fr 1fr;
+grid-template-rows:auto minmax(0,1fr);
+}
+.domTableArena[data-count="4"] .seat-left{ grid-column:1; grid-row:1; }
+.domTableArena[data-count="4"] .seat-top{ grid-column:2; grid-row:1; }
+.domTableArena[data-count="4"] .seat-right{ grid-column:3; grid-row:1; }
+.domTableArena[data-count="4"] .domTableCenter{ grid-column:1 / -1; grid-row:2; }
+
+.domTableCenter{
+display:flex;
+flex-direction:column;
+min-height:0;
+height:100%;
+width:100%;
+position:relative;
+}
+
+#domTurnIndicator{
+flex:0 0 auto;
+font-size:13px;
+margin:0 0 4px;
+line-height:1.2;
+}
+
 .domBoardWrap{
-height:min(40vh,320px);
+flex:1 1 auto;
+width:100%;
+height:auto !important;
+min-height:min(52dvh, 420px);
+border-radius:12px;
+border-width:2px;
 }
+
+.domEnds{
+flex:0 0 auto;
+position:absolute;
+left:6px;
+right:6px;
+bottom:6px;
+z-index:3;
+margin:0;
+gap:4px;
+font-size:10px;
+pointer-events:none;
+}
+.domEnds span{
+padding:3px 6px;
+background:rgba(14,20,28,.82);
+backdrop-filter:blur(4px);
+}
+
 .domPlayerChip{
-padding:6px 7px;
+padding:5px 6px;
+border-radius:8px;
 }
 .domPlayerChip .domName{
-font-size:12px;
+font-size:11px;
 }
+.domPlayerChip .domTeamLine{
+font-size:9px;
+}
+.domPlayerChip .domCount{
+font-size:10px;
+}
+.domTurnBadge{
+font-size:9px;
+padding:1px 5px;
+margin-bottom:2px;
+}
+
+.domHandSection{
+flex:0 0 auto;
+margin-top:2px;
+}
+.domHandSection h3{
+display:none;
+}
+.domHand{
+flex-wrap:nowrap;
+justify-content:flex-start;
+overflow-x:auto;
+overflow-y:hidden;
+-webkit-overflow-scrolling:touch;
+scrollbar-width:thin;
+gap:6px;
+min-height:0;
+padding:8px 6px 10px;
+border-radius:12px;
+background:#121820;
+}
+
 .domTile{
-width:36px;
-height:72px;
+width:40px;
+height:80px;
 }
 .domTile.horizontal{
-width:72px;
-height:36px;
+width:80px;
+height:40px;
+}
+.domTile.inHand{
+/* Easier tap targets on phones */
+width:42px;
+height:84px;
+}
+.domTile.inHand.valid{
+transform:translateY(-4px);
+}
+.domTile.inHand.selected{
+transform:translateY(-6px) scale(1.05);
+}
+
+.domActions{
+flex:0 0 auto;
+margin-top:6px;
+gap:6px;
+}
+.domActions button{
+padding:12px 10px;
+font-size:15px;
+border-radius:10px;
+}
+
+.domSidePicker{
+flex:0 0 auto;
+margin-top:6px;
+gap:6px;
+}
+.domSidePicker button{
+padding:12px 10px;
+font-size:14px;
+border-radius:10px;
+}
+
+#domMsg{
+flex:0 0 auto;
+font-size:12px;
+margin:4px 0 0;
+min-height:1.2em;
+}
+
+.domScoreboard{
+flex:0 0 auto;
+max-height:28dvh;
+overflow:auto;
+margin-top:6px;
+padding:10px;
+}
+.domEndButtons{
+flex:0 0 auto;
+}
+}
+
+/* Very small phones: even more table */
+@media(max-width:400px){
+.domBoardWrap{
+min-height:min(48dvh, 360px);
+}
+.domTile.inHand{
+width:38px;
+height:76px;
+}
+.domPlayerChip .domName{
+font-size:10px;
 }
 }

@@ -198,6 +198,18 @@
 
   /* ---- Screen / pan ---- */
 
+  function isPhoneLayout() {
+    return window.matchMedia("(max-width: 720px)").matches;
+  }
+
+  function syncMobileLayout() {
+    if (!dominoScreen) return;
+    const phone = isPhoneLayout();
+    dominoScreen.classList.toggle("dom-touch", phone);
+    document.documentElement.classList.toggle("domino-phone-play", phone && active);
+    document.body.classList.toggle("domino-phone-play", phone && active);
+  }
+
   function showDominoScreen() {
     active = true;
     if (lobbyScreen) lobbyScreen.classList.add("hidden");
@@ -206,13 +218,23 @@
     if (wordChainScreen) wordChainScreen.classList.add("hidden");
     if (codeBreakerScreen) codeBreakerScreen.classList.add("hidden");
     dominoScreen.classList.remove("hidden");
+    syncMobileLayout();
+    requestAnimationFrame(() => {
+      centerBoard();
+      requestAnimationFrame(centerBoard);
+    });
   }
 
   function hideDominoScreen() {
     active = false;
     clearScoreboard();
     hideEndButtons();
-    if (dominoScreen) dominoScreen.classList.add("hidden");
+    if (dominoScreen) {
+      dominoScreen.classList.add("hidden");
+      dominoScreen.classList.remove("dom-touch");
+    }
+    document.documentElement.classList.remove("domino-phone-play");
+    document.body.classList.remove("domino-phone-play");
   }
 
   function applyPan() {
@@ -231,12 +253,19 @@
   function centerBoard() {
     if (!domBoardWrap || !domBoardInner) return;
     const wrap = domBoardWrap.getBoundingClientRect();
-    const inner = domBoardInner.getBoundingClientRect();
-    // Reset scale first for measurement via offset sizes
-    const iw = domBoardInner.scrollWidth || inner.width / (scale || 1);
-    const ih = domBoardInner.scrollHeight || inner.height / (scale || 1);
-    const fit = Math.min(1, (wrap.width - 40) / Math.max(iw, 1), (wrap.height - 40) / Math.max(ih, 1));
-    scale = Math.max(0.45, fit);
+    if (wrap.width < 8 || wrap.height < 8) return;
+    // Unscaled size from layout (ignore current transform for measurement).
+    const iw = Math.max(domBoardInner.scrollWidth, 1);
+    const ih = Math.max(domBoardInner.scrollHeight, 1);
+    const pad = isPhoneLayout() ? 28 : 40;
+    const fit = Math.min(
+      1,
+      (wrap.width - pad) / iw,
+      (wrap.height - pad) / ih
+    );
+    // Phones need to shrink long chains further so the table stays readable.
+    const minScale = isPhoneLayout() ? 0.28 : 0.45;
+    scale = Math.max(minScale, fit);
     panX = -((iw * scale) / 2);
     panY = -((ih * scale) / 2);
     applyPan();
@@ -245,6 +274,9 @@
   function wireBoardPan() {
     if (!domBoardWrap || domBoardWrap.dataset.panWired) return;
     domBoardWrap.dataset.panWired = "1";
+
+    let pinchStartDist = 0;
+    let pinchStartScale = 1;
 
     const onDown = (clientX, clientY) => {
       dragging = true;
@@ -260,8 +292,17 @@
     const onUp = () => {
       dragging = false;
       dragStart = null;
+      pinchStartDist = 0;
       domBoardWrap.classList.remove("dragging");
     };
+
+    function touchDistance(touches) {
+      const a = touches[0];
+      const b = touches[1];
+      const dx = a.clientX - b.clientX;
+      const dy = a.clientY - b.clientY;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
 
     domBoardWrap.addEventListener("mousedown", (e) => {
       if (e.button !== 0) return;
@@ -271,21 +312,50 @@
     window.addEventListener("mouseup", onUp);
 
     domBoardWrap.addEventListener("touchstart", (e) => {
+      if (e.touches.length >= 2) {
+        dragging = false;
+        pinchStartDist = touchDistance(e.touches);
+        pinchStartScale = scale;
+        return;
+      }
       if (!e.touches[0]) return;
       onDown(e.touches[0].clientX, e.touches[0].clientY);
     }, { passive: true });
     domBoardWrap.addEventListener("touchmove", (e) => {
+      if (e.touches.length >= 2 && pinchStartDist > 0) {
+        e.preventDefault();
+        const dist = touchDistance(e.touches);
+        const next = pinchStartScale * (dist / pinchStartDist);
+        const minScale = isPhoneLayout() ? 0.28 : 0.35;
+        scale = Math.min(1.8, Math.max(minScale, next));
+        applyPan();
+        return;
+      }
       if (!e.touches[0]) return;
       onMove(e.touches[0].clientX, e.touches[0].clientY);
-    }, { passive: true });
+    }, { passive: false });
     domBoardWrap.addEventListener("touchend", onUp);
+    domBoardWrap.addEventListener("touchcancel", onUp);
 
     domBoardWrap.addEventListener("wheel", (e) => {
       e.preventDefault();
       const next = scale + (e.deltaY < 0 ? 0.08 : -0.08);
-      scale = Math.min(1.6, Math.max(0.35, next));
+      const minScale = isPhoneLayout() ? 0.28 : 0.35;
+      scale = Math.min(1.8, Math.max(minScale, next));
       applyPan();
     }, { passive: false });
+
+    window.addEventListener("resize", () => {
+      if (!active) return;
+      syncMobileLayout();
+      requestAnimationFrame(centerBoard);
+    });
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener("resize", () => {
+        if (!active) return;
+        requestAnimationFrame(centerBoard);
+      });
+    }
   }
 
   /* ---- Render ---- */
