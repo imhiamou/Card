@@ -346,6 +346,7 @@
         right: right
       });
 
+      // Straight continuation along the current direction.
       if (dir === 0) {
         ax = x + d.w + GAP;
         ay = y + d.h / 2;
@@ -362,8 +363,31 @@
 
       runCount += 1;
       if (i < chain.length - 1 && runCount >= RUN) {
+        // L-corner: next tile sits against the far end — no face-center overlap.
+        const last = placed[placed.length - 1];
+        const oldDir = dir;
         dir = (dir + 1) % 4;
         runCount = 0;
+        const next = chain[i + 1];
+        const nd = dims(dir, !!(next && next.isDouble));
+
+        if (oldDir === 0) {
+          // east → south
+          ax = last.x + last.w - nd.w / 2;
+          ay = last.y + last.h + GAP;
+        } else if (oldDir === 1) {
+          // south → west
+          ax = last.x - GAP;
+          ay = last.y + last.h - nd.h / 2;
+        } else if (oldDir === 2) {
+          // west → north
+          ax = last.x + nd.w / 2;
+          ay = last.y - GAP;
+        } else {
+          // north → east
+          ax = last.x + last.w + GAP;
+          ay = last.y + nd.h / 2;
+        }
       }
     });
 
