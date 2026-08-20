@@ -388,11 +388,76 @@ border:none;
 border-radius:8px;
 }
 
+.domScoreDock{
+position:relative;
+margin-top:8px;
+}
+
+.domScoreToggle{
+width:auto;
+margin:0;
+padding:8px 14px;
+border:none;
+border-radius:8px;
+background:#31537a;
+color:#fff;
+font-size:14px;
+}
+
+.domScoreToggle.hidden{
+display:none;
+}
+
 .domScoreboard{
+display:none;
+position:absolute;
+left:0;
+right:0;
+bottom:calc(100% + 8px);
+z-index:40;
 background:#1e2430;
+border:1px solid #3d4860;
 border-radius:10px;
 padding:12px;
-margin-top:12px;
+margin:0;
+box-shadow:0 10px 28px rgba(0,0,0,.45);
+max-height:min(50vh,360px);
+overflow:auto;
+}
+
+.domScoreboard.open{
+display:block;
+}
+
+.domScoreboard.hidden{
+display:none !important;
+}
+
+.domScoreHeader{
+display:flex;
+align-items:center;
+justify-content:space-between;
+gap:8px;
+margin-bottom:8px;
+}
+
+.domScoreHeader h3{
+margin:0;
+}
+
+.domScoreClose{
+width:32px;
+height:32px;
+margin:0;
+padding:0;
+border:none;
+border-radius:8px;
+background:#3a4256;
+color:#fff;
+font-size:20px;
+line-height:1;
+cursor:pointer;
+flex:0 0 auto;
 }
 
 .domScoreboard h3{
@@ -427,8 +492,7 @@ flex:1;
 margin:0;
 }
 
-.domEndButtons.hidden,
-.domScoreboard.hidden{
+.domEndButtons.hidden{
 display:none;
 }
 
@@ -670,13 +734,21 @@ margin:4px 0 0;
 min-height:1.2em;
 }
 
-.domScoreboard{
+.domScoreDock{
 flex:0 0 auto;
-max-height:28dvh;
-overflow:auto;
-margin-top:6px;
-padding:10px;
+position:relative;
+margin-top:4px;
 }
+
+.domScoreboard{
+position:fixed;
+left:max(8px, env(safe-area-inset-left, 0px));
+right:max(8px, env(safe-area-inset-right, 0px));
+bottom:max(72px, calc(env(safe-area-inset-bottom, 0px) + 64px));
+max-height:min(42dvh, 320px);
+z-index:50;
+}
+
 .domEndButtons{
 flex:0 0 auto;
 }
