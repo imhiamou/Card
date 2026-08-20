@@ -48,7 +48,10 @@
       '<button type="button" id="domDrawBtn" disabled>Draw</button>' +
     '</div>' +
     '<p id="domMsg"></p>' +
-    '<div id="domScoreboard" class="domScoreboard hidden"></div>' +
+    '<div class="domScoreDock">' +
+      '<button type="button" id="domScoreToggle" class="domScoreToggle hidden">Score</button>' +
+      '<div id="domScoreboard" class="domScoreboard hidden"></div>' +
+    '</div>' +
     '<div id="domEndButtons" class="domEndButtons hidden">' +
       '<button type="button" id="domPlayAgainBtn">Play Again</button>' +
     '</div>';
@@ -103,9 +106,11 @@
   let domPlayLeft;
   let domPlayRight;
   let domScoreboard;
+  let domScoreToggle;
   let domEndButtons;
   let domPlayAgainBtn;
   let domMeta;
+  let scoreOpen = false;
 
   function $(id) {
     return document.getElementById(id);
@@ -137,6 +142,7 @@
     domPlayLeft = $("domPlayLeft");
     domPlayRight = $("domPlayRight");
     domScoreboard = $("domScoreboard");
+    domScoreToggle = $("domScoreToggle");
     domEndButtons = $("domEndButtons");
     domPlayAgainBtn = $("domPlayAgainBtn");
     domMeta = $("domMeta");
@@ -277,27 +283,29 @@
   }
 
   /**
-   * Same tile look as before (doubles stand crosswise on the line),
-   * but the train turns every RUN tiles so it doesn't shoot off-screen.
+   * Same tile look as before (doubles stand crosswise on the line).
+   * Tiles live on a grid spiral (one cell each) so turns never overlap.
    * Visual only — gameplay / chain order unchanged.
    */
   function layoutSnake(chain) {
     const LONG = 88;
     const SHORT = 44;
-    const GAP = 4;
-    const RUN = 6;
+    const GAP = 10;
     const PAD = 24;
+    // Cell bigger than the longest tile so neighbors never collide.
+    const PITCH = LONG + GAP;
 
     // 0 = east, 1 = south, 2 = west, 3 = north
     let dir = 0;
-    let ax = 0; // attach point (center of the open end)
-    let ay = 0;
+    let cx = 0;
+    let cy = 0;
     let runCount = 0;
+    let runLen = 5;
+    let legsAtLen = 0;
     const placed = [];
 
     function dims(travelDir, isDouble) {
       const horiz = travelDir === 0 || travelDir === 2;
-      // Same rule as the old straight board: doubles sit across the line.
       if (horiz) {
         return isDouble
           ? { w: SHORT, h: LONG, vertical: true }
@@ -310,24 +318,12 @@
 
     (chain || []).forEach((tile, i) => {
       const d = dims(dir, !!tile.isDouble);
-      let x;
-      let y;
-      if (dir === 0) {
-        x = ax;
-        y = ay - d.h / 2;
-      } else if (dir === 1) {
-        x = ax - d.w / 2;
-        y = ay;
-      } else if (dir === 2) {
-        x = ax - d.w;
-        y = ay - d.h / 2;
-      } else {
-        x = ax - d.w / 2;
-        y = ay - d.h;
-      }
+      const cellX = cx * PITCH;
+      const cellY = cy * PITCH;
+      // Center the tile inside its cell.
+      const x = cellX + (PITCH - d.w) / 2;
+      const y = cellY + (PITCH - d.h) / 2;
 
-      // Old board: leftPip on the "left" of the chain axis.
-      // Mirror faces when the train is running west/north.
       let left = tile.leftPip;
       let right = tile.rightPip;
       if (dir === 2 || dir === 3) {
@@ -346,47 +342,20 @@
         right: right
       });
 
-      // Straight continuation along the current direction.
-      if (dir === 0) {
-        ax = x + d.w + GAP;
-        ay = y + d.h / 2;
-      } else if (dir === 1) {
-        ax = x + d.w / 2;
-        ay = y + d.h + GAP;
-      } else if (dir === 2) {
-        ax = x - GAP;
-        ay = y + d.h / 2;
-      } else {
-        ax = x + d.w / 2;
-        ay = y - GAP;
-      }
+      if (dir === 0) cx += 1;
+      else if (dir === 1) cy += 1;
+      else if (dir === 2) cx -= 1;
+      else cy -= 1;
 
       runCount += 1;
-      if (i < chain.length - 1 && runCount >= RUN) {
-        // L-corner: next tile sits against the far end — no face-center overlap.
-        const last = placed[placed.length - 1];
-        const oldDir = dir;
+      if (i < chain.length - 1 && runCount >= runLen) {
         dir = (dir + 1) % 4;
         runCount = 0;
-        const next = chain[i + 1];
-        const nd = dims(dir, !!(next && next.isDouble));
-
-        if (oldDir === 0) {
-          // east → south
-          ax = last.x + last.w - nd.w / 2;
-          ay = last.y + last.h + GAP;
-        } else if (oldDir === 1) {
-          // south → west
-          ax = last.x - GAP;
-          ay = last.y + last.h - nd.h / 2;
-        } else if (oldDir === 2) {
-          // west → north
-          ax = last.x + nd.w / 2;
-          ay = last.y - GAP;
-        } else {
-          // north → east
-          ax = last.x + last.w + GAP;
-          ay = last.y + nd.h / 2;
+        legsAtLen += 1;
+        // 5,5,6,6,7,7… keeps the spiral growing outward.
+        if (legsAtLen >= 2) {
+          runLen += 1;
+          legsAtLen = 0;
         }
       }
     });
@@ -525,10 +494,26 @@
   }
 
   function clearScoreboard() {
+    scoreOpen = false;
     if (domScoreboard) {
       domScoreboard.classList.add("hidden");
+      domScoreboard.classList.remove("open");
       domScoreboard.innerHTML = "";
     }
+    if (domScoreToggle) {
+      domScoreToggle.classList.add("hidden");
+      domScoreToggle.setAttribute("aria-expanded", "false");
+      domScoreToggle.textContent = "Score";
+    }
+  }
+
+  function setScoreOpen(open) {
+    scoreOpen = !!open;
+    if (!domScoreboard || !domScoreToggle) return;
+    domScoreboard.classList.toggle("hidden", !scoreOpen);
+    domScoreboard.classList.toggle("open", scoreOpen);
+    domScoreToggle.setAttribute("aria-expanded", scoreOpen ? "true" : "false");
+    domScoreToggle.textContent = scoreOpen ? "Hide score" : "Score";
   }
 
   /** Clears Play Again controls. Scoreboard stays until the player leaves the lobby. */
@@ -546,7 +531,11 @@
   function showEndUi(scores, winnerId, message, overMeta) {
     if (!domScoreboard) return;
     const meta = overMeta || {};
-    let html = "<h3>Scoreboard</h3>";
+    let html =
+      '<div class="domScoreHeader">' +
+        "<h3>Scoreboard</h3>" +
+        '<button type="button" class="domScoreClose" id="domScoreClose" aria-label="Close scoreboard">×</button>' +
+      "</div>";
 
     if (meta.teamMode && meta.matchScoreboard) {
       // Match totals only: rounds won + score (winner gets opponent leftovers).
@@ -597,7 +586,11 @@
 
     if (message) html += "<p>" + message + "</p>";
     domScoreboard.innerHTML = html;
-    domScoreboard.classList.remove("hidden");
+    if (domScoreToggle) domScoreToggle.classList.remove("hidden");
+    // Keep the table clear by default; player opens score when they want it.
+    setScoreOpen(false);
+    const closeBtn = $("domScoreClose");
+    if (closeBtn) closeBtn.onclick = () => setScoreOpen(false);
     if (domEndButtons) domEndButtons.classList.remove("hidden");
   }
 
@@ -873,6 +866,9 @@
       domPlayAgainBtn.disabled = true;
       domPlayAgainBtn.textContent = "Waiting for others...";
     };
+    if (domScoreToggle) {
+      domScoreToggle.onclick = () => setScoreOpen(!scoreOpen);
+    }
     wireBoardPan();
   }
 
