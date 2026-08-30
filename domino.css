@@ -229,6 +229,10 @@ transform-origin:0 0;
 display:block;
 padding:0;
 will-change:transform;
+transition:transform .28s ease;
+}
+.domBoardWrap.dragging .domBoardInner{
+transition:none;
 }
 
 .domTile.boardTile{
@@ -326,6 +330,17 @@ border-radius:6px;
 transform:translateY(-8px) scale(1.04);
 }
 
+.domTile.boardTile.openEnd{
+box-shadow:0 0 0 2px rgba(255,216,102,.55), 0 0 10px rgba(255,216,102,.25);
+border-radius:6px;
+}
+.domTile.boardTile.openEnd.playAnim{
+animation:domPlace .35s ease, domOpenPulse .9s ease;
+}
+@keyframes domOpenPulse{
+0%{box-shadow:0 0 0 2px rgba(255,216,102,.9), 0 0 14px rgba(255,216,102,.45);}
+100%{box-shadow:0 0 0 2px rgba(255,216,102,.55), 0 0 10px rgba(255,216,102,.25);}
+}
 .domTile.playAnim{
 animation:domPlace .35s ease;
 }
