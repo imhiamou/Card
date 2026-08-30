@@ -454,8 +454,53 @@
       return entry;
     }
 
+    /**
+     * Turn buffer for doubles (visual only):
+     * Never use a double as the corner tile. Keep direction through the
+     * double, place one more straight tile after it, then turn.
+     */
+    function forceStraightRect(fromEntry, preferDir, isDouble) {
+      let straightPt = freeEnd(fromEntry, preferDir);
+      let straight = rectAt(preferDir, isDouble, straightPt.x, straightPt.y);
+      let guard = 0;
+      while ((hitsOccupied(straight) || !insideSoft(straight)) && guard < 8) {
+        expandSoft();
+        straightPt = freeEnd(fromEntry, preferDir);
+        straight = rectAt(preferDir, isDouble, straightPt.x, straightPt.y);
+        guard += 1;
+      }
+      return straight;
+    }
+
+    function reserveFollowOnAfterDouble(doubleRect, preferDir) {
+      // Ensure one normal tile can continue straight past a double.
+      let pt = freeEnd(doubleRect, preferDir);
+      let follow = rectAt(preferDir, false, pt.x, pt.y);
+      let guard = 0;
+      while (!insideSoft(follow) && guard < 8) {
+        expandSoft();
+        pt = freeEnd(doubleRect, preferDir);
+        follow = rectAt(preferDir, false, pt.x, pt.y);
+        guard += 1;
+      }
+    }
+
     function placeNext(index, tile, fromEntry, preferDir, towardHigherIndex) {
       const isDouble = !!tile.isDouble;
+      const prevIsDouble = !!(fromEntry && fromEntry.tile && fromEntry.tile.isDouble);
+      // Doubles stay in the straight run; the tile right after a double stays
+      // straight too so the double is never the immediate corner.
+      const mustStayStraight = isDouble || prevIsDouble;
+
+      if (mustStayStraight) {
+        const straight = forceStraightRect(fromEntry, preferDir, isDouble);
+        if (!hitsOccupied(straight)) {
+          if (isDouble) reserveFollowOnAfterDouble(straight, preferDir);
+          return commit(index, tile, straight, preferDir, towardHigherIndex);
+        }
+        // Absolute last resort only: fall through to normal placement.
+      }
+
       const straightPt = freeEnd(fromEntry, preferDir);
       const candidates = [];
 
