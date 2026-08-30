@@ -81,7 +81,7 @@
   let scale = 1;
   let dragging = false;
   let dragStart = null;
-  /** Explicit board size from snake layout (for fit math). */
+  /** Explicit board size from natural-chain layout (for fit math). */
   let boardSize = { w: 200, h: 200 };
   /** After the player pans/zooms, leave the camera alone until the next round. */
   let lockView = false;
@@ -269,13 +269,13 @@
     if (wrap.width < 8 || wrap.height < 8) return;
     const iw = Math.max(boardSize.w, 1);
     const ih = Math.max(boardSize.h, 1);
-    const pad = isPhoneLayout() ? 24 : 36;
+    const pad = isPhoneLayout() ? 20 : 32;
     const fit = Math.min(
-      1.15,
+      1.05,
       (wrap.width - pad) / iw,
       (wrap.height - pad) / ih
     );
-    const minScale = isPhoneLayout() ? 0.3 : 0.4;
+    const minScale = isPhoneLayout() ? 0.28 : 0.32;
     scale = Math.max(minScale, fit);
     panX = -((iw * scale) / 2);
     panY = -((ih * scale) / 2);
@@ -283,27 +283,24 @@
   }
 
   /**
-   * Same tile look as before (doubles stand crosswise on the line).
-   * Zigzag rows (east → down → west → down → east…) — does NOT loop
-   * back up into a square. Visual only; gameplay unchanged.
+   * Natural table-chain layout (visual only).
+   * Grows from a center anchor (spinner / mid-chain) toward BOTH open ends.
+   * Stays mostly straight; 90° turns only near soft edges or collisions.
+   * Never forces a serpentine / zigzag row pattern.
    */
-  function layoutSnake(chain) {
+  function layoutNaturalChain(chain) {
     const LONG = 88;
     const SHORT = 44;
-    const PAD = 16;
-    // Tight cells — still large enough that neighbors never overlap.
-    const COL = LONG + 2;
-    const ROW = LONG + 2;
-    const ROW_LEN = 6;
+    const GAP = 2;
+    const PAD = 28;
+    const tiles = chain || [];
+    if (!tiles.length) return { placed: [], width: 200, height: 140 };
 
-    // 0 east, 1 south, 2 west
-    let dir = 0;
-    let cx = 0;
-    let cy = 0;
-    let inLeg = 0;
-    // "east" | "dropFromEast" | "west" | "dropFromWest"
-    let leg = "east";
-    const placed = [];
+    // Soft playfield — turn only when continuing would leave this area.
+    const soft = { minX: -420, maxX: 420, minY: -280, maxY: 280 };
+
+    const placed = new Array(tiles.length);
+    const occupied = [];
 
     function dims(travelDir, isDouble) {
       const horiz = travelDir === 0 || travelDir === 2;
@@ -317,90 +314,261 @@
         : { w: SHORT, h: LONG, vertical: true };
     }
 
-    (chain || []).forEach((tile, i) => {
-      const d = dims(dir, !!tile.isDouble);
-      const x = cx * COL + (COL - d.w) / 2;
-      const y = cy * ROW + (ROW - d.h) / 2;
+    function rectAt(travelDir, isDouble, attachX, attachY) {
+      const d = dims(travelDir, isDouble);
+      let x;
+      let y;
+      if (travelDir === 0) {
+        x = attachX;
+        y = attachY - d.h / 2;
+      } else if (travelDir === 1) {
+        x = attachX - d.w / 2;
+        y = attachY;
+      } else if (travelDir === 2) {
+        x = attachX - d.w;
+        y = attachY - d.h / 2;
+      } else {
+        x = attachX - d.w / 2;
+        y = attachY - d.h;
+      }
+      return { x: x, y: y, w: d.w, h: d.h, vertical: d.vertical };
+    }
 
+    function overlaps(a, b) {
+      return !(
+        a.x + a.w <= b.x + 0.5 ||
+        b.x + b.w <= a.x + 0.5 ||
+        a.y + a.h <= b.y + 0.5 ||
+        b.y + b.h <= a.y + 0.5
+      );
+    }
+
+    function hitsOccupied(r) {
+      for (let i = 0; i < occupied.length; i++) {
+        if (overlaps(r, occupied[i])) return true;
+      }
+      return false;
+    }
+
+    function insideSoft(r) {
+      return (
+        r.x >= soft.minX &&
+        r.y >= soft.minY &&
+        r.x + r.w <= soft.maxX &&
+        r.y + r.h <= soft.maxY
+      );
+    }
+
+    function expandSoft() {
+      soft.minX -= 100;
+      soft.maxX += 100;
+      soft.minY -= 80;
+      soft.maxY += 80;
+    }
+
+    function freeEnd(r, travelDir) {
+      if (travelDir === 0) return { x: r.x + r.w + GAP, y: r.y + r.h / 2 };
+      if (travelDir === 1) return { x: r.x + r.w / 2, y: r.y + r.h + GAP };
+      if (travelDir === 2) return { x: r.x - GAP, y: r.y + r.h / 2 };
+      return { x: r.x + r.w / 2, y: r.y - GAP };
+    }
+
+    /** Attach point for a 90° turn onto newDir from last tile traveling oldDir. */
+    function cornerAttach(last, oldDir, newDir, isDouble) {
+      const nd = dims(newDir, isDouble);
+      // Outer-corner alignment keeps the connection obvious at the free end.
+      if (oldDir === 0 && newDir === 1) {
+        return { x: last.x + last.w - nd.w / 2, y: last.y + last.h + GAP };
+      }
+      if (oldDir === 0 && newDir === 3) {
+        return { x: last.x + last.w - nd.w / 2, y: last.y - GAP };
+      }
+      if (oldDir === 1 && newDir === 0) {
+        return { x: last.x + last.w + GAP, y: last.y + last.h - nd.h / 2 };
+      }
+      if (oldDir === 1 && newDir === 2) {
+        return { x: last.x - GAP, y: last.y + last.h - nd.h / 2 };
+      }
+      if (oldDir === 2 && newDir === 1) {
+        return { x: last.x + nd.w / 2, y: last.y + last.h + GAP };
+      }
+      if (oldDir === 2 && newDir === 3) {
+        return { x: last.x + nd.w / 2, y: last.y - GAP };
+      }
+      if (oldDir === 3 && newDir === 0) {
+        return { x: last.x + last.w + GAP, y: last.y + nd.h / 2 };
+      }
+      if (oldDir === 3 && newDir === 2) {
+        return { x: last.x - GAP, y: last.y + nd.h / 2 };
+      }
+      // Fallback: continue from free end center.
+      return freeEnd(last, newDir);
+    }
+
+    function scoreCandidate(r, travelDir, preferDir, turnPenalty) {
+      let s = 0;
+      if (hitsOccupied(r)) s -= 10000;
+      if (!insideSoft(r)) s -= 850;
+      if (travelDir === preferDir) s += 80;
+      s -= turnPenalty;
+      const cx = r.x + r.w / 2;
+      const cy = r.y + r.h / 2;
+      // Mild preference for unused open space (away from cluttered center once long).
+      s -= (Math.abs(cx) + Math.abs(cy)) * 0.01;
+      if (travelDir === 0) s += Math.max(0, soft.maxX - (r.x + r.w)) * 0.02;
+      if (travelDir === 1) s += Math.max(0, soft.maxY - (r.y + r.h)) * 0.02;
+      if (travelDir === 2) s += Math.max(0, r.x - soft.minX) * 0.02;
+      if (travelDir === 3) s += Math.max(0, r.y - soft.minY) * 0.02;
+      return s;
+    }
+
+    function pipsForDir(tile, travelDir, towardHigherIndex) {
+      // leftPip faces toward chain[i-1], rightPip toward chain[i+1].
+      // throughDir = direction along the chain from leftPip → rightPip.
+      const throughDir = towardHigherIndex ? travelDir : (travelDir + 2) % 4;
       let left = tile.leftPip;
       let right = tile.rightPip;
-      if (dir === 2 || dir === 3) {
+      if (throughDir === 2 || throughDir === 3) {
         left = tile.rightPip;
         right = tile.leftPip;
       }
+      return { left: left, right: right };
+    }
 
-      placed.push({
+    function commit(index, tile, rect, travelDir, towardHigherIndex) {
+      const pips = pipsForDir(tile, travelDir, towardHigherIndex);
+      const entry = {
         tile: tile,
-        x: x,
-        y: y,
-        w: d.w,
-        h: d.h,
-        vertical: d.vertical,
-        left: left,
-        right: right
+        x: rect.x,
+        y: rect.y,
+        w: rect.w,
+        h: rect.h,
+        vertical: rect.vertical,
+        left: pips.left,
+        right: pips.right,
+        dir: travelDir,
+        isEnd: index === 0 || index === tiles.length - 1
+      };
+      placed[index] = entry;
+      occupied.push(entry);
+      return entry;
+    }
+
+    function placeNext(index, tile, fromEntry, preferDir, towardHigherIndex) {
+      const isDouble = !!tile.isDouble;
+      const straightPt = freeEnd(fromEntry, preferDir);
+      const candidates = [];
+
+      const straight = rectAt(preferDir, isDouble, straightPt.x, straightPt.y);
+      candidates.push({
+        d: preferDir,
+        r: straight,
+        s: scoreCandidate(straight, preferDir, preferDir, 0)
       });
 
-      if (i >= chain.length - 1) return;
-
-      inLeg += 1;
-
-      if (leg === "east") {
-        if (inLeg >= ROW_LEN) {
-          // Drop down under the last tile, then go west.
-          leg = "dropFromEast";
-          dir = 1;
-          inLeg = 0;
-          cy += 1;
-        } else {
-          cx += 1;
-        }
-      } else if (leg === "dropFromEast") {
-        leg = "west";
-        dir = 2;
-        inLeg = 0;
-        cx -= 1;
-      } else if (leg === "west") {
-        if (inLeg >= ROW_LEN) {
-          leg = "dropFromWest";
-          dir = 1;
-          inLeg = 0;
-          cy += 1;
-        } else {
-          cx -= 1;
-        }
-      } else {
-        // dropFromWest → resume east on the next row
-        leg = "east";
-        dir = 0;
-        inLeg = 0;
-        cx += 1;
+      const turns = [(preferDir + 1) % 4, (preferDir + 3) % 4];
+      for (let t = 0; t < turns.length; t++) {
+        const nd = turns[t];
+        const pt = cornerAttach(fromEntry, preferDir, nd, isDouble);
+        const r = rectAt(nd, isDouble, pt.x, pt.y);
+        candidates.push({
+          d: nd,
+          r: r,
+          s: scoreCandidate(r, nd, preferDir, 25)
+        });
       }
-    });
 
-    if (!placed.length) return { placed: placed, width: 200, height: 120 };
+      candidates.sort((a, b) => b.s - a.s);
+
+      // Keep going straight whenever it still fits — never zig-zag for style.
+      const straightCand = candidates.find((c) => c.d === preferDir);
+      let best = candidates[0];
+      if (
+        straightCand &&
+        !hitsOccupied(straightCand.r) &&
+        insideSoft(straightCand.r)
+      ) {
+        best = straightCand;
+      }
+
+      if (best.s < -5000) {
+        expandSoft();
+        if (straightCand && !hitsOccupied(straightCand.r)) {
+          best = straightCand;
+        } else {
+          // Retry turns after soft expand.
+          for (let i = 0; i < candidates.length; i++) {
+            const c = candidates[i];
+            if (!hitsOccupied(c.r)) {
+              best = c;
+              break;
+            }
+          }
+          // Last resort: nudge soft and force straight even if slightly out.
+          if (best.s < -5000 && straightCand) best = straightCand;
+        }
+      }
+
+      return commit(index, tile, best.r, best.d, towardHigherIndex);
+    }
+
+    // Anchor near the spinner (first double) or mid-chain so both ends grow out.
+    let anchorIdx = -1;
+    for (let i = 0; i < tiles.length; i++) {
+      if (tiles[i].isDouble) {
+        anchorIdx = i;
+        break;
+      }
+    }
+    if (anchorIdx < 0) anchorIdx = Math.floor((tiles.length - 1) / 2);
+
+    const anchorTile = tiles[anchorIdx];
+    const anchorDir = 0; // chain spine starts east/west through the table center
+    const ad = dims(anchorDir, !!anchorTile.isDouble);
+    const anchorRect = {
+      x: -ad.w / 2,
+      y: -ad.h / 2,
+      w: ad.w,
+      h: ad.h,
+      vertical: ad.vertical
+    };
+    let rightEntry = commit(anchorIdx, anchorTile, anchorRect, anchorDir, true);
+    let leftEntry = rightEntry;
+    let rightDir = anchorDir;
+    let leftDir = 2; // left end grows west
+
+    for (let i = anchorIdx + 1; i < tiles.length; i++) {
+      rightEntry = placeNext(i, tiles[i], rightEntry, rightDir, true);
+      rightDir = rightEntry.dir;
+    }
+    for (let i = anchorIdx - 1; i >= 0; i--) {
+      leftEntry = placeNext(i, tiles[i], leftEntry, leftDir, false);
+      leftDir = leftEntry.dir;
+    }
 
     let minX = Infinity;
     let minY = Infinity;
     let maxX = -Infinity;
     let maxY = -Infinity;
-    placed.forEach((p) => {
+    for (let i = 0; i < placed.length; i++) {
+      const p = placed[i];
       minX = Math.min(minX, p.x);
       minY = Math.min(minY, p.y);
       maxX = Math.max(maxX, p.x + p.w);
       maxY = Math.max(maxY, p.y + p.h);
-    });
+    }
 
     const ox = -minX + PAD;
     const oy = -minY + PAD;
-    placed.forEach((p) => {
-      p.x += ox;
-      p.y += oy;
-    });
+    for (let i = 0; i < placed.length; i++) {
+      placed[i].x += ox;
+      placed[i].y += oy;
+    }
 
     return {
       placed: placed,
-      width: Math.max(160, maxX - minX + PAD * 2),
-      height: Math.max(120, maxY - minY + PAD * 2)
+      width: Math.max(180, maxX - minX + PAD * 2),
+      height: Math.max(140, maxY - minY + PAD * 2)
     };
   }
 
@@ -706,7 +874,7 @@
 
   function renderBoard(animateId) {
     if (!domBoardInner || !board) return;
-    const layout = layoutSnake(board.chain || []);
+    const layout = layoutNaturalChain(board.chain || []);
     boardSize = { w: layout.width, h: layout.height };
     domBoardInner.style.width = layout.width + "px";
     domBoardInner.style.height = layout.height + "px";
@@ -715,6 +883,7 @@
       const el = makeTileEl(p.left, p.right, {
         vertical: p.vertical,
         extraClass: "boardTile" +
+          (p.isEnd ? " openEnd" : "") +
           (animateId && p.tile.id === animateId ? " playAnim" : ""),
         tileId: p.tile.id
       });
@@ -732,6 +901,12 @@
     }
     if (domBoneyard) {
       domBoneyard.textContent = "Boneyard: " + (board.boneyardCount || 0);
+    }
+    if (!lockView) {
+      requestAnimationFrame(() => {
+        fitBoard();
+        requestAnimationFrame(fitBoard);
+      });
     }
   }
 
