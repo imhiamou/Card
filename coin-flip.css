@@ -1,133 +1,153 @@
-/* Coin Flip — styles only. Does not alter other game layouts. */
+/* Coin Flip — single-screen HUD. Scoped to #coinFlipScreen only. */
 
 #coinFlipScreen{
-width:460px;
-max-width:96vw;
-}
-
-.cfTitleRow{
+width:min(920px,98vw);
+height:100dvh;
+max-height:100dvh;
+overflow:hidden;
 display:flex;
+flex-direction:column;
+padding:8px 12px;
+box-sizing:border-box;
+}
+
+.cfHud{
+position:relative;
+display:flex;
+flex-direction:column;
+flex:1;
+min-height:0;
+min-width:0;
+gap:6px;
+}
+
+.cfRotate{
+display:none;
+}
+
+/* ---- Top: opponent strip ---- */
+
+.cfTop{
+display:flex;
+align-items:center;
 justify-content:space-between;
-align-items:baseline;
-gap:12px;
-margin-bottom:10px;
-}
-
-.cfTitleRow h2{margin:0;}
-
-.cfMeta{
-font-size:13px;
-color:#c5d2e8;
-}
-
-.cfPlayerTop,
-.cfPlayerBottom{
+gap:8px;
 background:#2a3142;
-border-radius:12px;
-padding:12px 14px;
-text-align:center;
+border-radius:10px;
+padding:6px 10px;
+flex:0 0 auto;
 }
 
-.cfPlayerBottom{
-outline:1px solid rgba(79,156,255,.35);
+.cfOpp{
+display:flex;
+align-items:center;
+gap:8px;
+min-width:0;
 }
 
 .cfPlayerName{
 font-weight:bold;
-font-size:15px;
-margin-bottom:6px;
+font-size:14px;
+white-space:nowrap;
 }
 
 .cfHearts{
 display:flex;
-justify-content:center;
-flex-wrap:wrap;
-gap:2px;
-font-size:18px;
+flex-wrap:nowrap;
+gap:1px;
+font-size:15px;
 line-height:1;
-margin-bottom:4px;
+}
+
+.cfHeartsSm{
+font-size:14px;
 }
 
 .cfHeart.on{color:#ff5d6c;}
 .cfHeart.off{color:#3a4256;}
 
 .cfStatus{
-min-height:16px;
-font-size:12px;
+font-size:11px;
 color:#ffd866;
+min-width:64px;
 }
 
-.cfCenter{
-margin:12px 0;
-}
-
-.cfPreviewLabel,
-.cfWagerLabel{
-text-align:center;
+.cfMeta{
 font-size:12px;
+color:#c5d2e8;
+white-space:nowrap;
+}
+
+/* ---- Middle: round info, slots, coin, betting ---- */
+
+.cfMid{
+flex:1 1 auto;
+min-height:0;
+overflow:hidden;
+display:flex;
+flex-direction:column;
+align-items:center;
+gap:4px;
+}
+
+.cfCounts{
+display:flex;
+justify-content:center;
+gap:8px;
+flex:0 0 auto;
+}
+
+.cfCounts div{
+background:#1e2430;
+border-radius:8px;
+padding:4px 10px;
+text-align:center;
+min-width:74px;
+}
+
+.cfCounts strong{
+display:block;
+font-size:clamp(15px,2.6vh,21px);
+color:#ffd866;
+line-height:1.1;
+}
+
+.cfCounts span{
+display:block;
+font-size:9px;
 color:#9db2d0;
-margin-bottom:6px;
 text-transform:uppercase;
-letter-spacing:.04em;
 }
 
 .cfPreview{
 display:flex;
 flex-wrap:wrap;
 justify-content:center;
-gap:8px;
-margin-bottom:14px;
-}
-
-.cfCounts{
-display:grid;
-grid-template-columns:repeat(3,1fr);
-gap:8px;
-margin:0 0 12px;
-}
-
-.cfCounts div{
-background:#1e2430;
-border-radius:8px;
-padding:8px 6px;
-text-align:center;
-}
-
-.cfCounts strong{
-display:block;
-font-size:22px;
-color:#ffd866;
-}
-
-.cfCounts span{
-display:block;
-font-size:10px;
-color:#9db2d0;
-text-transform:uppercase;
+gap:5px;
+max-width:100%;
+flex:0 1 auto;
+min-height:0;
+overflow:hidden;
 }
 
 .cfThrow{
-width:44px;
-height:44px;
-border-radius:10px;
+width:clamp(24px,4.4vh,38px);
+height:clamp(24px,4.4vh,38px);
+border-radius:8px;
 display:flex;
 align-items:center;
 justify-content:center;
 font-weight:bold;
-font-size:18px;
+font-size:clamp(12px,2.4vh,17px);
 background:#1e2430;
 color:#c5d2e8;
+flex:0 0 auto;
 }
 
 .cfThrow.current{
 background:linear-gradient(145deg,#f0d060,#c9a227);
 color:#3a2e0a;
 box-shadow:0 0 0 2px rgba(255,216,102,.55);
-transform:scale(1.06);
-}
-
-.cfThrow.next{
-opacity:.92;
 }
 
 .cfThrow.revealed{
@@ -139,34 +159,23 @@ color:#eef3ff;
 color:#9db2d0;
 }
 
-.cfWagerBox{
-text-align:center;
-margin-bottom:12px;
-}
-
-.cfWagerValue{
-font-size:28px;
-font-weight:bold;
-color:#ffd866;
-}
-
 .cfArena{
 display:flex;
-flex-direction:column;
+flex-direction:row;
 align-items:center;
 justify-content:center;
-min-height:130px;
-margin:8px 0 10px;
+gap:10px;
 background:
   radial-gradient(ellipse at 50% 35%, rgba(255,216,102,.14), transparent 55%),
   linear-gradient(180deg,#232a38 0%,#1a1f2a 100%);
-border-radius:14px;
-padding:16px;
+border-radius:12px;
+padding:6px 12px;
+flex:0 0 auto;
 }
 
 .cfCoin{
-width:72px;
-height:72px;
+width:clamp(40px,8vh,64px);
+height:clamp(40px,8vh,64px);
 border-radius:50%;
 position:relative;
 background:linear-gradient(145deg,#f0d060,#c9a227);
@@ -174,10 +183,11 @@ box-shadow:0 6px 16px rgba(0,0,0,.35), inset 0 0 0 3px rgba(255,255,255,.2);
 display:flex;
 align-items:center;
 justify-content:center;
-font-size:28px;
+font-size:clamp(18px,3.6vh,26px);
 font-weight:bold;
 color:#3a2e0a;
 transform-style:preserve-3d;
+flex:0 0 auto;
 }
 
 .cfCoin.spinning{animation:cfSpin .4s linear infinite;}
@@ -196,173 +206,250 @@ backface-visibility:hidden;
 .cfCoin[data-face="heads"]{transform:rotateY(0deg);}
 
 .cfCoinLabel{
-margin-top:12px;
-font-size:15px;
+font-size:clamp(11px,2vh,14px);
 font-weight:bold;
 letter-spacing:1px;
 color:#ffd866;
-min-height:22px;
+white-space:nowrap;
 }
 
 .cfOutcomeLabel{
-min-height:24px;
-margin-top:4px;
-font-size:18px;
+font-size:clamp(12px,2.4vh,17px);
 font-weight:bold;
 letter-spacing:.06em;
+min-width:110px;
 }
 
 .cfOutcomeLabel.won{color:#74df9b;}
 .cfOutcomeLabel.lost{color:#ff6b6b;}
 
-#cfTurnIndicator{
-text-align:center;
-font-size:18px;
-margin:6px 0 10px;
+#coinFlipScreen #cfTurnIndicator{
+font-size:clamp(14px,2.6vh,18px);
+margin:0;
+flex:0 0 auto;
 }
 
-.cfControls{
+.cfBet{
 display:flex;
 flex-direction:column;
 align-items:center;
-gap:10px;
-margin-bottom:8px;
+gap:4px;
+flex:0 0 auto;
+}
+
+.cfWagerRow{
+display:flex;
+align-items:center;
+gap:8px;
+font-size:12px;
+color:#c5d2e8;
+}
+
+.cfWagerTitle{
+text-transform:uppercase;
+font-size:10px;
+letter-spacing:.05em;
+color:#9db2d0;
+}
+
+.cfStepBtn{
+width:30px;
+height:30px;
+border:0;
+border-radius:8px;
+background:#3a4256;
+color:#eef3ff;
+font-size:17px;
+font-weight:bold;
+cursor:pointer;
+line-height:1;
+}
+
+.cfStepBtn:disabled{
+opacity:.35;
+cursor:default;
+}
+
+#coinFlipScreen #cfWagerPickVal{
+font-size:clamp(15px,2.8vh,20px);
+font-weight:bold;
+color:#ffd866;
+min-width:52px;
+text-align:center;
 }
 
 .cfChoiceRow{
 display:flex;
-gap:10px;
+gap:8px;
 }
 
-.cfChoiceBtn{
-min-width:120px;
-padding:12px 18px;
-font-size:16px;
+.cfChoiceBtn,
+.cfConfirmBtn{
+min-width:96px;
+padding:9px 14px;
+font-size:14px;
 font-weight:bold;
 border:0;
-border-radius:10px;
+border-radius:9px;
 cursor:pointer;
+background:#3a4256;
+color:#eef3ff;
+}
+
+.cfChoiceBtn.selected{
+outline:2px solid #ffd866;
+background:#4a3d1a;
+}
+
+.cfConfirmBtn{
 background:#4f9cff;
 color:#0b1220;
 }
 
-.cfChoiceBtn:disabled{
+.cfChoiceBtn:disabled,
+.cfConfirmBtn:disabled{
 opacity:.45;
 cursor:default;
 }
 
-.cfHint{
-font-size:12px;
-color:#9db2d0;
+#coinFlipScreen #cfMsg{
+min-height:1.2em;
+max-height:2.4em;
+overflow:hidden;
+text-overflow:ellipsis;
 text-align:center;
-margin:8px 0 0;
+font-size:12px;
+margin:0;
+flex:0 0 auto;
 }
 
-.cfItemsSection h3,
-.cfRoundEnd h3{
-margin:10px 0 6px;
-font-size:14px;
+/* ---- Bottom: you + compact items ---- */
+
+.cfBottom{
+display:flex;
+align-items:stretch;
+gap:8px;
+flex:0 0 auto;
+min-height:0;
+}
+
+.cfMe{
+display:flex;
+align-items:center;
+gap:8px;
+background:#2a3142;
+outline:1px solid rgba(79,156,255,.35);
+border-radius:10px;
+padding:6px 10px;
+flex:0 0 auto;
+}
+
+.cfItemsSection{
+flex:1 1 auto;
+min-width:0;
+display:flex;
+flex-direction:column;
+}
+
+.cfItemsSection h3{
+margin:0 0 3px;
+font-size:11px;
 color:#c5d2e8;
+text-transform:uppercase;
+letter-spacing:.04em;
 }
 
 .cfItems{
-display:grid;
-grid-template-columns:repeat(2,minmax(0,1fr));
+display:flex;
+flex-direction:row;
 gap:6px;
+overflow-x:auto;
+overflow-y:hidden;
+padding-bottom:2px;
+min-height:0;
 }
 
 .cfItemBtn{
 display:flex;
 flex-direction:column;
-gap:2px;
-padding:8px;
+gap:1px;
+padding:5px 8px;
 text-align:left;
 border:0;
 border-radius:8px;
 background:#1e2430;
 color:#eef3ff;
 cursor:pointer;
+flex:0 0 auto;
+max-width:150px;
 }
 
-.cfItemBtn strong{font-size:12px;}
-.cfItemBtn span{font-size:10px;color:#9db2d0;}
+.cfItemBtn strong{font-size:11px;white-space:nowrap;}
+.cfItemBtn span{
+font-size:9px;
+color:#9db2d0;
+white-space:nowrap;
+overflow:hidden;
+text-overflow:ellipsis;
+max-width:134px;
+}
 .cfItemBtn:disabled{opacity:.45;cursor:default;}
 
 .cfNoItems{
-grid-column:1/-1;
-font-size:12px;
+font-size:11px;
 color:#9db2d0;
-text-align:center;
-padding:6px;
+padding:4px 0;
 }
 
+/* ---- Overlays / collapsibles (never push controls off-screen) ---- */
+
 .cfRoundEnd{
-margin-top:12px;
+position:absolute;
+inset:30% 8% auto 8%;
+z-index:5;
 padding:12px;
 border-radius:10px;
-background:#1e2430;
+background:rgba(30,36,48,.97);
+border:1px solid rgba(255,216,102,.4);
 text-align:center;
 }
 
 .cfRoundEnd h3{
-margin-top:0;
+margin:0 0 4px;
 color:#ffd866;
 letter-spacing:.06em;
+font-size:15px;
 }
 
 .cfRoundEnd p{
-margin:5px 0;
+margin:4px 0;
 font-size:12px;
 color:#c5d2e8;
 }
 
-.cfNextWagerButtons{
-display:flex;
-justify-content:center;
-gap:8px;
-margin-top:10px;
+.cfHistoryWrap{
+flex:0 0 auto;
+font-size:11px;
+color:#9db2d0;
 }
 
-.cfNextWagerButtons button{
-padding:9px 12px;
-border:0;
-border-radius:8px;
-background:#4f9cff;
-color:#0b1220;
-font-weight:bold;
+.cfHistoryWrap summary{
 cursor:pointer;
-}
-
-.cfNextWagerButtons button:disabled{
-opacity:.45;
-cursor:default;
-}
-
-#cfMsg{
-min-height:20px;
-text-align:center;
-font-size:14px;
-margin:10px 0;
-}
-
-.cfHistoryWrap h3{
-margin:8px 0 6px;
-font-size:14px;
-color:#c5d2e8;
+font-size:11px;
 }
 
 .cfHistory{
-max-height:110px;
-overflow:auto;
+max-height:52px;
+overflow-y:auto;
 background:#1e2430;
 border-radius:8px;
-padding:8px;
-font-size:12px;
+padding:6px 8px;
+font-size:11px;
 color:#c5d2e8;
 }
 
 .cfHistoryRow{
-padding:3px 0;
+padding:2px 0;
 border-bottom:1px solid rgba(255,255,255,.06);
 }
 
@@ -371,11 +458,11 @@ border-bottom:1px solid rgba(255,255,255,.06);
 .cfEndButtons{
 display:flex;
 justify-content:center;
-margin-top:10px;
+flex:0 0 auto;
 }
 
 .cfEndButtons button{
-padding:10px 16px;
+padding:9px 14px;
 border:0;
 border-radius:8px;
 background:#4f9cff;
@@ -394,7 +481,45 @@ from{transform:rotateY(0deg);}
 to{transform:rotateY(360deg);}
 }
 
-@media (max-width:720px){
-#coinFlipScreen{width:100%;}
-.cfThrow{width:38px;height:38px;font-size:16px;}
+/* ---- Small-height landscape compression ---- */
+
+@media (max-height:520px){
+#coinFlipScreen{padding:4px 8px;}
+.cfHud{gap:3px;}
+.cfTop{padding:3px 8px;}
+.cfArena{padding:3px 8px;}
+.cfCounts div{padding:2px 8px;}
+#cfWagerPickVal,.cfOutcomeLabel{font-size:14px;}
+#coinFlipScreen #cfMsg{display:none;}
+.cfHistoryWrap{display:none;}
+}
+
+/* ---- Portrait phones: landscape-only game ---- */
+
+@media (orientation:portrait) and (max-width:700px){
+.cfHud > :not(.cfRotate){visibility:hidden;}
+.cfRotate{
+display:flex;
+position:absolute;
+inset:0;
+z-index:10;
+align-items:center;
+justify-content:center;
+text-align:center;
+padding:24px;
+font-size:18px;
+font-weight:bold;
+letter-spacing:.05em;
+color:#ffd866;
+background:#1a1f2a;
+border-radius:12px;
+visibility:visible;
+}
+}
+
+/* ---- Narrow desktop ---- */
+
+@media (max-width:560px){
+.cfBottom{flex-direction:column;}
+.cfMe{justify-content:center;}
 }
