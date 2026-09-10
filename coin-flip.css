@@ -78,6 +78,33 @@ gap:8px;
 margin-bottom:14px;
 }
 
+.cfCounts{
+display:grid;
+grid-template-columns:repeat(3,1fr);
+gap:8px;
+margin:0 0 12px;
+}
+
+.cfCounts div{
+background:#1e2430;
+border-radius:8px;
+padding:8px 6px;
+text-align:center;
+}
+
+.cfCounts strong{
+display:block;
+font-size:22px;
+color:#ffd866;
+}
+
+.cfCounts span{
+display:block;
+font-size:10px;
+color:#9db2d0;
+text-transform:uppercase;
+}
+
 .cfThrow{
 width:44px;
 height:44px;
@@ -100,6 +127,15 @@ transform:scale(1.06);
 
 .cfThrow.next{
 opacity:.92;
+}
+
+.cfThrow.revealed{
+background:#3a4256;
+color:#eef3ff;
+}
+
+.cfThrow.hiddenResult{
+color:#9db2d0;
 }
 
 .cfWagerBox{
