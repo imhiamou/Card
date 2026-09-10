@@ -1,69 +1,78 @@
 /* Coin Flip — client module (isolated from other games). */
 (function () {
   const SCREEN_HTML =
-    '<div class="cfTitleRow">' +
-      '<h2>Coin Flip</h2>' +
-      '<div class="cfMeta" id="cfMeta">Round 1</div>' +
+    '<div class="cfRotate" id="cfRotate">' +
+      '<div class="cfRotateIcon">⟳</div>' +
+      '<div class="cfRotateText">PLEASE ROTATE YOUR PHONE TO LANDSCAPE</div>' +
     '</div>' +
-    '<div class="cfPlayerTop" id="cfOppCard">' +
-      '<div class="cfPlayerName" id="cfOppName">Opponent</div>' +
-      '<div class="cfHearts" id="cfOppHearts"></div>' +
-      '<div class="cfStatus" id="cfOppStatus"></div>' +
-    '</div>' +
-    '<div class="cfCenter">' +
-      '<div class="cfPreviewLabel">Current five-flip group</div>' +
-      '<div class="cfCounts">' +
-        '<div><strong id="cfHeadsRemaining">0</strong><span>Heads remaining</span></div>' +
-        '<div><strong id="cfTailsRemaining">0</strong><span>Tails remaining</span></div>' +
-        '<div><strong id="cfFlipsRemaining">5</strong><span>Flips remaining</span></div>' +
+    '<div class="cfHud" id="cfHud">' +
+      '<div class="cfTop">' +
+        '<div class="cfPlayerCard cfOppCard" id="cfOppCard">' +
+          '<div class="cfPlayerName" id="cfOppName">Opponent</div>' +
+          '<div class="cfHearts" id="cfOppHearts"></div>' +
+          '<div class="cfStatus" id="cfOppStatus"></div>' +
+        '</div>' +
+        '<div class="cfTitleBlock">' +
+          '<h2>COIN FLIP</h2>' +
+          '<div class="cfMeta" id="cfMeta">Round 1 · 5 throws</div>' +
+        '</div>' +
+        '<div class="cfCounts">' +
+          '<div><strong id="cfHeadsRemaining">0</strong><span>Heads left</span></div>' +
+          '<div><strong id="cfTailsRemaining">0</strong><span>Tails left</span></div>' +
+          '<div><strong id="cfFlipsRemaining">5</strong><span>Throws left</span></div>' +
+        '</div>' +
       '</div>' +
       '<div class="cfPreview" id="cfPreview"></div>' +
-      '<div class="cfWagerBox">' +
-        '<div class="cfWagerLabel">Current wager</div>' +
-        '<div class="cfWagerValue" id="cfWagerValue">1 ♥</div>' +
-      '</div>' +
-      '<div class="cfArena">' +
-        '<div class="cfCoin" id="cfCoin" data-face="idle">' +
-          '<div class="cfCoinFace heads">H</div>' +
-          '<div class="cfCoinFace tails">T</div>' +
+      '<div class="cfMid">' +
+        '<div class="cfArena">' +
+          '<div class="cfCoin" id="cfCoin" data-face="idle">' +
+            '<div class="cfCoinFace heads">H</div>' +
+            '<div class="cfCoinFace tails">T</div>' +
+          '</div>' +
+          '<div class="cfCoinLabel" id="cfCoinLabel">Awaiting bet</div>' +
+          '<div class="cfOutcomeLabel" id="cfOutcomeLabel"></div>' +
         '</div>' +
-        '<div class="cfCoinLabel" id="cfCoinLabel">Awaiting bet</div>' +
-        '<div class="cfOutcomeLabel" id="cfOutcomeLabel"></div>' +
-      '</div>' +
-      '<h2 id="cfTurnIndicator">Your turn</h2>' +
-      '<div class="cfControls" id="cfControls">' +
-        '<div class="cfChoiceRow">' +
-          '<button type="button" class="cfChoiceBtn" id="cfHeadsBtn">Heads</button>' +
-          '<button type="button" class="cfChoiceBtn" id="cfTailsBtn">Tails</button>' +
+        '<div class="cfAction">' +
+          '<div class="cfTurnIndicator" id="cfTurnIndicator">Your turn</div>' +
+          '<div class="cfBet" id="cfControls">' +
+            '<div class="cfWagerRow">' +
+              '<button type="button" class="cfStepBtn" id="cfWagerMinus" aria-label="Decrease wager">−</button>' +
+              '<div class="cfWagerPick"><span id="cfWagerPickVal">1</span> HEARTS</div>' +
+              '<button type="button" class="cfStepBtn" id="cfWagerPlus" aria-label="Increase wager">+</button>' +
+            '</div>' +
+            '<div class="cfChoiceRow">' +
+              '<button type="button" class="cfChoiceBtn" id="cfHeadsBtn">HEADS</button>' +
+              '<button type="button" class="cfChoiceBtn" id="cfTailsBtn">TAILS</button>' +
+            '</div>' +
+            '<button type="button" class="cfConfirmBtn" id="cfConfirmBtn">CONFIRM BET</button>' +
+          '</div>' +
+          '<div class="cfWaitBox" id="cfWaitBox"></div>' +
+          '<p class="cfMsg" id="cfMsg"></p>' +
         '</div>' +
       '</div>' +
-      '<p class="cfHint">Use the remaining counts to choose Heads or Tails. Your choice stays a prediction until the server reveals the flip.</p>' +
-    '</div>' +
-    '<div class="cfPlayerBottom" id="cfMeCard">' +
-      '<div class="cfPlayerName" id="cfMyName">You</div>' +
-      '<div class="cfHearts" id="cfMyHearts"></div>' +
-      '<div class="cfStatus" id="cfMyStatus"></div>' +
-    '</div>' +
-    '<div class="cfItemsSection">' +
-      '<h3>Your items</h3>' +
-      '<div class="cfItems" id="cfItems"></div>' +
-    '</div>' +
-    '<div class="cfRoundEnd hidden" id="cfRoundEnd">' +
-      '<h3>ROUND COMPLETE</h3>' +
-      '<p id="cfRoundSummary"></p>' +
-      '<p id="cfRoundWagerPrompt"></p>' +
-      '<div class="cfNextWagerButtons">' +
-        '<button type="button" id="cfKeepWagerBtn">Keep wager</button>' +
-        '<button type="button" id="cfRaiseWagerBtn">Increase wager</button>' +
+      '<div class="cfBottom">' +
+        '<div class="cfPlayerCard cfMeCard" id="cfMeCard">' +
+          '<div class="cfPlayerName" id="cfMyName">You</div>' +
+          '<div class="cfHearts" id="cfMyHearts"></div>' +
+          '<div class="cfStatus" id="cfMyStatus"></div>' +
+        '</div>' +
+        '<div class="cfItemsSection">' +
+          '<div class="cfItemsHead">ITEMS</div>' +
+          '<div class="cfItems" id="cfItems"></div>' +
+        '</div>' +
+        '<details class="cfHistoryWrap">' +
+          '<summary>History</summary>' +
+          '<div class="cfHistory" id="cfHistory"></div>' +
+        '</details>' +
       '</div>' +
-    '</div>' +
-    '<p id="cfMsg"></p>' +
-    '<div class="cfHistoryWrap">' +
-      '<h3>History</h3>' +
-      '<div class="cfHistory" id="cfHistory"></div>' +
-    '</div>' +
-    '<div id="cfEndButtons" class="cfEndButtons hidden">' +
-      '<button type="button" id="cfPlayAgainBtn">Play Again</button>' +
+      '<div class="cfRoundEnd hidden" id="cfRoundEnd">' +
+        '<h3>ROUND COMPLETE</h3>' +
+        '<p id="cfRoundSummary"></p>' +
+        '<p id="cfRoundNext"></p>' +
+      '</div>' +
+      '<div id="cfEndButtons" class="cfEndButtons hidden">' +
+        '<button type="button" id="cfPlayAgainBtn">Play Again</button>' +
+      '</div>' +
     '</div>';
 
   let socket = null;
@@ -71,6 +80,12 @@
   let active = false;
   let gameOver = false;
   let state = null;
+
+  // Per-throw bet draft. Reset every time a new own turn begins so the
+  // previous wager is never carried over automatically.
+  let selectedWager = 1;
+  let selectedSide = null;
+  let lastTurnKey = null;
 
   let lobbyScreen;
   let placementScreen;
@@ -93,20 +108,22 @@
   let cfHeadsRemaining;
   let cfTailsRemaining;
   let cfFlipsRemaining;
-  let cfWagerValue;
   let cfCoin;
   let cfCoinLabel;
   let cfOutcomeLabel;
   let cfTurnIndicator;
   let cfControls;
+  let cfWagerMinus;
+  let cfWagerPlus;
+  let cfWagerPickVal;
   let cfHeadsBtn;
   let cfTailsBtn;
+  let cfConfirmBtn;
+  let cfWaitBox;
   let cfItems;
   let cfRoundEnd;
   let cfRoundSummary;
-  let cfRoundWagerPrompt;
-  let cfKeepWagerBtn;
-  let cfRaiseWagerBtn;
+  let cfRoundNext;
   let cfMsg;
   let cfHistory;
   let cfEndButtons;
@@ -142,20 +159,22 @@
     cfHeadsRemaining = $("cfHeadsRemaining");
     cfTailsRemaining = $("cfTailsRemaining");
     cfFlipsRemaining = $("cfFlipsRemaining");
-    cfWagerValue = $("cfWagerValue");
     cfCoin = $("cfCoin");
     cfCoinLabel = $("cfCoinLabel");
     cfOutcomeLabel = $("cfOutcomeLabel");
     cfTurnIndicator = $("cfTurnIndicator");
     cfControls = $("cfControls");
+    cfWagerMinus = $("cfWagerMinus");
+    cfWagerPlus = $("cfWagerPlus");
+    cfWagerPickVal = $("cfWagerPickVal");
     cfHeadsBtn = $("cfHeadsBtn");
     cfTailsBtn = $("cfTailsBtn");
+    cfConfirmBtn = $("cfConfirmBtn");
+    cfWaitBox = $("cfWaitBox");
     cfItems = $("cfItems");
     cfRoundEnd = $("cfRoundEnd");
     cfRoundSummary = $("cfRoundSummary");
-    cfRoundWagerPrompt = $("cfRoundWagerPrompt");
-    cfKeepWagerBtn = $("cfKeepWagerBtn");
-    cfRaiseWagerBtn = $("cfRaiseWagerBtn");
+    cfRoundNext = $("cfRoundNext");
     cfMsg = $("cfMsg");
     cfHistory = $("cfHistory");
     cfEndButtons = $("cfEndButtons");
@@ -220,7 +239,7 @@
     for (let i = 0; i < cap; i++) {
       html += '<span class="cfHeart' + (i < n ? " on" : " off") + '">♥</span>';
     }
-    el.innerHTML = html;
+    el.innerHTML = html + '<span class="cfHeartNum">' + n + "/" + cap + "</span>";
   }
 
   function sideLetter(side) {
@@ -232,17 +251,18 @@
     cfPreview.innerHTML = "";
     const revealed = (state && state.revealedInGroup) || [];
     const total = (state && state.throwsThisRound) || 5;
+    cfPreview.dataset.count = String(total);
     for (let i = 0; i < total; i++) {
       const cell = document.createElement("div");
       if (i < revealed.length) {
-        cell.className = "cfThrow revealed";
+        cell.className = "cfThrow revealed " + revealed[i];
         cell.textContent = sideLetter(revealed[i]);
-        cell.title = "Revealed";
+        cell.title = "Revealed: " + revealed[i];
       } else {
         cell.className = "cfThrow hiddenResult" +
           (i === revealed.length ? " current" : "");
         cell.textContent = "?";
-        cell.title = i === revealed.length ? "Current hidden flip" : "Hidden flip";
+        cell.title = i === revealed.length ? "Current hidden throw" : "Hidden throw";
       }
       cfPreview.appendChild(cell);
     }
@@ -253,19 +273,17 @@
     cfHistory.innerHTML = "";
     const list = ((state && state.history) || []).slice().reverse();
     if (!list.length) {
-      cfHistory.textContent = "No flips yet.";
+      cfHistory.textContent = "No throws yet.";
       return;
     }
     list.forEach((entry) => {
       const row = document.createElement("div");
       row.className = "cfHistoryRow";
       const who = entry.actorId === socket.id ? "You" : (entry.actorName || "Opp");
-      const coin = sideLetter(entry.coin);
-      const outcome = entry.actorWins
-        ? (entry.actorId === socket.id ? "you won" : "opp won")
-        : (entry.actorId === socket.id ? "you lost" : "opp lost");
-      row.textContent = "R" + entry.round + " · " + who + " · " + coin +
-        " · wager " + entry.wager + " · " + outcome + " (−" + entry.damage + ")";
+      const outcome = entry.actorWins ? "won" : "lost";
+      row.textContent = "R" + entry.round + " T" + entry.throwNumber + " · " + who +
+        " bet " + entry.wager + "♥ on " + sideLetter(entry.choice) +
+        " · coin " + sideLetter(entry.coin) + " · " + outcome + " (−" + entry.damage + ")";
       cfHistory.appendChild(row);
     });
   }
@@ -287,7 +305,7 @@
     });
     const ids = Object.keys(inventory).filter((id) => inventory[id] > 0);
     if (!ids.length) {
-      cfItems.innerHTML = '<span class="cfNoItems">Complete a round to earn an item.</span>';
+      cfItems.innerHTML = '<span class="cfNoItems">Finish a round to earn an item.</span>';
       return;
     }
     ids.forEach((id) => {
@@ -296,9 +314,10 @@
       button.type = "button";
       button.className = "cfItemBtn";
       button.disabled = !availability[id];
+      button.title = item.description || item.name;
       button.innerHTML =
-        "<strong>" + item.name + " ×" + inventory[id] + "</strong>" +
-        "<span>" + item.description + "</span>";
+        "<strong>" + item.name + "</strong>" +
+        '<span class="cfItemCount">×' + inventory[id] + "</span>";
       button.onclick = () => {
         if (!currentRoom || !availability[id]) return;
         socket.emit("coinFlipUseItem", { roomCode: currentRoom, itemId: id });
@@ -316,36 +335,51 @@
     if (cfRoundSummary) {
       cfRoundSummary.textContent =
         "Round " + (summary.round || state.round) + " · " +
-        (summary.throws || state.throwsThisRound) + " / " +
-        (summary.throws || state.throwsThisRound) + " throws · +" +
+        (summary.throws || state.throwsThisRound) + " throws resolved · +" +
         (summary.itemsPerPlayer || 1) + " item each";
     }
-    const mine = state.canSetWager;
-    if (cfRoundWagerPrompt) {
-      cfRoundWagerPrompt.textContent = mine
-        ? "Choose the shared wager for the next round."
-        : "Opponent is choosing the next round's wager.";
-    }
-    const min = state.nextWagerMin || state.roundWager;
-    const max = state.nextWagerMax || min;
-    if (cfKeepWagerBtn) {
-      cfKeepWagerBtn.textContent = "Keep " + min + " ♥";
-      cfKeepWagerBtn.disabled = !mine;
-      cfKeepWagerBtn.dataset.wager = String(min);
-    }
-    if (cfRaiseWagerBtn) {
-      cfRaiseWagerBtn.textContent = "Increase to " + max + " ♥";
-      cfRaiseWagerBtn.disabled = !mine || max === min;
-      cfRaiseWagerBtn.classList.toggle("hidden", max === min);
-      cfRaiseWagerBtn.dataset.wager = String(max);
+    if (cfRoundNext) {
+      cfRoundNext.textContent = summary.nextThrows
+        ? "Next round: " + summary.nextThrows + " throws"
+        : "";
     }
   }
 
-  function syncControls() {
+  function turnKey() {
+    if (!state) return null;
+    return state.round + ":" + state.currentTurnId + ":" + state.flipsRemaining;
+  }
+
+  function clampWager() {
+    const min = (state && state.minWager) || 1;
+    const max = Math.max(min, (state && state.maxWager) || min);
+    if (selectedWager < min) selectedWager = min;
+    if (selectedWager > max) selectedWager = max;
+  }
+
+  function syncBetControls() {
     if (!state) return;
-    const can = !!state.canAct && !gameOver && state.wagerAtRisk > 0;
-    if (cfHeadsBtn) cfHeadsBtn.disabled = !can;
-    if (cfTailsBtn) cfTailsBtn.disabled = !can;
+    const can = !!state.canAct && !gameOver;
+    const min = state.minWager || 1;
+    const max = Math.max(min, state.maxWager || min);
+    clampWager();
+    if (cfWagerPickVal) cfWagerPickVal.textContent = String(selectedWager);
+    if (cfWagerMinus) cfWagerMinus.disabled = !can || selectedWager <= min;
+    if (cfWagerPlus) cfWagerPlus.disabled = !can || selectedWager >= max;
+    if (cfHeadsBtn) {
+      cfHeadsBtn.disabled = !can;
+      cfHeadsBtn.classList.toggle("selected", selectedSide === "heads");
+    }
+    if (cfTailsBtn) {
+      cfTailsBtn.disabled = !can;
+      cfTailsBtn.classList.toggle("selected", selectedSide === "tails");
+    }
+    if (cfConfirmBtn) {
+      cfConfirmBtn.disabled = !can || !selectedSide;
+      cfConfirmBtn.textContent = selectedSide
+        ? "CONFIRM BET · " + selectedWager + "♥ ON " + selectedSide.toUpperCase()
+        : "CONFIRM BET";
+    }
   }
 
   function renderState() {
@@ -353,6 +387,13 @@
     const me = mePlayer();
     const opp = oppPlayer();
     const maxH = state.startingHearts || 10;
+
+    const key = turnKey();
+    if (key !== lastTurnKey) {
+      lastTurnKey = key;
+      selectedWager = state.minWager || 1;
+      selectedSide = null;
+    }
 
     if (cfMeta) {
       cfMeta.textContent =
@@ -365,15 +406,12 @@
     renderHearts(cfMyHearts, me ? me.hearts : maxH, maxH);
 
     if (cfOppStatus) {
-      cfOppStatus.textContent = opp && opp.isTurn ? "Their turn" : "";
+      cfOppStatus.textContent = opp && opp.isTurn ? "Betting…" : "";
     }
     if (cfMyStatus) {
-      cfMyStatus.textContent = me && me.isTurn ? "Your turn" : "";
+      cfMyStatus.textContent = me && me.isTurn ? "Your bet" : "";
     }
 
-    if (cfWagerValue) {
-      cfWagerValue.textContent = (state.wagerAtRisk || state.roundWager || 1) + " ♥";
-    }
     if (cfHeadsRemaining) cfHeadsRemaining.textContent = String(state.headsRemaining || 0);
     if (cfTailsRemaining) cfTailsRemaining.textContent = String(state.tailsRemaining || 0);
     if (cfFlipsRemaining) cfFlipsRemaining.textContent = String(state.flipsRemaining || 0);
@@ -382,31 +420,33 @@
     renderHistory();
     renderItems();
     renderRoundEnd();
-    syncControls();
+    syncBetControls();
 
+    const showControls = !gameOver && state.phase === "turn" && state.yourTurn;
+    if (cfControls) cfControls.classList.toggle("hidden", !showControls);
+    if (cfWaitBox) cfWaitBox.classList.toggle("hidden", showControls);
+
+    let indicator = "";
+    let wait = "";
     if (gameOver || state.phase === "over") {
-      if (cfTurnIndicator) cfTurnIndicator.textContent = "Match Over";
-      if (cfControls) cfControls.classList.add("hidden");
+      indicator = "MATCH OVER";
     } else if (state.phase === "resolving") {
-      if (cfTurnIndicator) cfTurnIndicator.textContent = "Flipping…";
-      if (cfControls) cfControls.classList.add("hidden");
+      indicator = "FLIPPING…";
+      wait = (state.wagerAtRisk || 0) + " ♥ at stake";
     } else if (state.phase === "between") {
-      if (cfTurnIndicator) cfTurnIndicator.textContent = "Resolving…";
-      if (cfControls) cfControls.classList.add("hidden");
+      indicator = "RESOLVED";
+      wait = "Next throw coming up…";
     } else if (state.phase === "round-end") {
-      if (cfTurnIndicator) {
-        cfTurnIndicator.textContent = state.canSetWager
-          ? "Choose next wager"
-          : "Round complete";
-      }
-      if (cfControls) cfControls.classList.add("hidden");
+      indicator = "ROUND COMPLETE";
+      wait = "Next round starting…";
     } else if (state.yourTurn) {
-      if (cfTurnIndicator) cfTurnIndicator.textContent = "Your turn";
-      if (cfControls) cfControls.classList.remove("hidden");
+      indicator = "YOUR THROW — SET WAGER & SIDE";
     } else {
-      if (cfTurnIndicator) cfTurnIndicator.textContent = "Opponent's turn";
-      if (cfControls) cfControls.classList.add("hidden");
+      indicator = "OPPONENT'S THROW";
+      wait = "Waiting for " + (opp ? opp.name : "opponent") + " to bet…";
     }
+    if (cfTurnIndicator) cfTurnIndicator.textContent = indicator;
+    if (cfWaitBox) cfWaitBox.textContent = wait;
   }
 
   function applyState(data) {
@@ -416,29 +456,38 @@
     renderState();
   }
 
-  function playFlip(choice) {
-    if (!currentRoom || !state || !state.canAct || gameOver) return;
-    socket.emit("coinFlipPlay", {
-      roomCode: currentRoom,
-      choice: choice
-    });
+  function stepWager(delta) {
+    if (!state || !state.canAct || gameOver) return;
+    selectedWager += delta;
+    clampWager();
+    syncBetControls();
   }
 
-  function setNextWager(button) {
-    if (!currentRoom || !state || !state.canSetWager || !button) return;
-    socket.emit("coinFlipSetNextWager", {
+  function pickSide(side) {
+    if (!state || !state.canAct || gameOver) return;
+    selectedSide = side;
+    syncBetControls();
+  }
+
+  function confirmBet() {
+    if (!currentRoom || !state || !state.canAct || gameOver || !selectedSide) return;
+    clampWager();
+    socket.emit("coinFlipPlay", {
       roomCode: currentRoom,
-      wager: Number(button.dataset.wager)
+      choice: selectedSide,
+      wager: selectedWager
     });
+    if (cfConfirmBtn) cfConfirmBtn.disabled = true;
   }
 
   function wireControls() {
     if (!cfHeadsBtn || cfHeadsBtn.dataset.wired) return;
     cfHeadsBtn.dataset.wired = "1";
-    cfHeadsBtn.onclick = () => playFlip("heads");
-    cfTailsBtn.onclick = () => playFlip("tails");
-    cfKeepWagerBtn.onclick = () => setNextWager(cfKeepWagerBtn);
-    cfRaiseWagerBtn.onclick = () => setNextWager(cfRaiseWagerBtn);
+    cfWagerMinus.onclick = () => stepWager(-1);
+    cfWagerPlus.onclick = () => stepWager(1);
+    cfHeadsBtn.onclick = () => pickSide("heads");
+    cfTailsBtn.onclick = () => pickSide("tails");
+    cfConfirmBtn.onclick = confirmBet;
     if (cfPlayAgainBtn) {
       cfPlayAgainBtn.onclick = () => {
         if (!currentRoom || !gameOver) return;
@@ -449,6 +498,15 @@
     }
   }
 
+  function resetArena(label) {
+    setCoinFace("idle", false);
+    if (cfCoinLabel) cfCoinLabel.textContent = label || "Awaiting bet";
+    if (cfOutcomeLabel) {
+      cfOutcomeLabel.textContent = "";
+      cfOutcomeLabel.className = "cfOutcomeLabel";
+    }
+  }
+
   function onStarted(data) {
     if (!bindDom()) {
       console.error("Coin Flip screen missing from the page.");
@@ -456,14 +514,15 @@
     }
     wireControls();
     gameOver = false;
+    lastTurnKey = null;
+    selectedWager = 1;
+    selectedSide = null;
     hideEndButtons();
     applyState(data);
     showCoinFlipScreen();
-    setCoinFace("idle", false);
-    if (cfCoinLabel) cfCoinLabel.textContent = "Awaiting bet";
-    if (cfOutcomeLabel) cfOutcomeLabel.textContent = "";
+    resetArena("Awaiting bet");
     if (cfMsg) {
-      cfMsg.textContent = "Both players know the remaining counts, but the five-flip order stays hidden.";
+      cfMsg.textContent = "Counts are public, order is hidden. Pick a wager before every throw.";
     }
   }
 
@@ -474,8 +533,11 @@
       const choice = data && data.choice ? String(data.choice).toUpperCase() : "";
       cfCoinLabel.textContent = choice ? "CHOICE LOCKED: " + choice : "CHOICE LOCKED";
     }
-    if (cfOutcomeLabel) cfOutcomeLabel.textContent = "";
-    if (cfTurnIndicator) cfTurnIndicator.textContent = "Flipping…";
+    if (cfOutcomeLabel) {
+      cfOutcomeLabel.textContent = "";
+      cfOutcomeLabel.className = "cfOutcomeLabel";
+    }
+    if (cfTurnIndicator) cfTurnIndicator.textContent = "FLIPPING…";
   }
 
   function onReveal(data) {
@@ -494,20 +556,23 @@
         cfOutcomeLabel.textContent = "WAGER " + (r.actorWins ? "WON" : "LOST");
         cfOutcomeLabel.className = "cfOutcomeLabel " + (r.actorWins ? "won" : "lost");
       }
+      if (!cfMsg) return;
       if (r.actorWins) {
         const doubleText = r.doubled ? " (Double)" : "";
         cfMsg.textContent = youActed
-          ? "Your " + String(r.choice).toUpperCase() + " bet matched" + doubleText +
-            ". Opponent loses " + r.damage + " ♥"
-          : "Opponent's bet matched" + doubleText + ". You lose " + r.damage + " ♥";
+          ? "Your " + r.wager + "♥ bet on " + String(r.choice).toUpperCase() +
+            " hit" + doubleText + ". Opponent loses " + r.damage + " ♥."
+          : "Opponent's " + r.wager + "♥ bet hit" + doubleText +
+            ". You lose " + r.damage + " ♥.";
       } else {
         const protectionText = r.protection
           ? " (" + (r.protection === "shield" ? "Shield" : "Safe Bet") + ")"
           : "";
         cfMsg.textContent = youActed
-          ? "Your " + String(r.choice).toUpperCase() + " bet missed" + protectionText +
-            ". You lose " + r.damage + " ♥"
-          : "Opponent's bet missed" + protectionText + ". They lose " + r.damage + " ♥";
+          ? "Your " + r.wager + "♥ bet on " + String(r.choice).toUpperCase() +
+            " missed" + protectionText + ". You lose " + r.damage + " ♥."
+          : "Opponent's " + r.wager + "♥ bet missed" + protectionText +
+            ". They lose " + r.damage + " ♥.";
       }
     }
   }
@@ -515,11 +580,13 @@
   function onGameOver(data) {
     if (!active) return;
     gameOver = true;
-    if (cfTurnIndicator) cfTurnIndicator.textContent = "Match Over";
-    if (data.draw) cfMsg.textContent = data.message || "Draw!";
-    else {
-      const youWin = data.winnerId === socket.id;
-      cfMsg.textContent = (data.message || "Match over!") + (youWin ? " You win!" : "");
+    if (cfTurnIndicator) cfTurnIndicator.textContent = "MATCH OVER";
+    if (cfMsg) {
+      if (data.draw) cfMsg.textContent = data.message || "Draw!";
+      else {
+        const youWin = data.winnerId === socket.id;
+        cfMsg.textContent = (data.message || "Match over!") + (youWin ? " You win!" : "");
+      }
     }
     showEndButtons();
     renderState();
@@ -568,16 +635,10 @@
     });
     socket.on("coinFlipRoundStarted", (data) => {
       if (!active || !data) return;
-      setCoinFace("idle", false);
-      if (cfCoinLabel) cfCoinLabel.textContent = "Awaiting bet";
-      if (cfOutcomeLabel) {
-        cfOutcomeLabel.textContent = "";
-        cfOutcomeLabel.className = "cfOutcomeLabel";
-      }
+      resetArena("Awaiting bet");
       if (cfMsg) {
         cfMsg.textContent =
-          "Round " + data.round + ": " + data.throws +
-          " hidden flips, wager " + data.roundWager + " ♥.";
+          "Round " + data.round + ": " + data.throws + " hidden throws.";
       }
     });
     socket.on("coinFlipOver", onGameOver);
@@ -588,12 +649,12 @@
     socket.on("coinFlipReset", () => {
       if (!active) return;
       gameOver = false;
+      lastTurnKey = null;
+      selectedWager = 1;
+      selectedSide = null;
       hideEndButtons();
-      if (cfOutcomeLabel) {
-        cfOutcomeLabel.textContent = "";
-        cfOutcomeLabel.className = "cfOutcomeLabel";
-      }
-      if (cfMsg) cfMsg.textContent = "New match — use the known counts to manage your risk.";
+      resetArena("Awaiting bet");
+      if (cfMsg) cfMsg.textContent = "New match — wager before every throw.";
     });
     socket.on("playerLeft", () => {
       if (!active) return;
@@ -601,6 +662,7 @@
       currentRoom = null;
       gameOver = false;
       state = null;
+      lastTurnKey = null;
     });
 
     if (bindDom()) wireControls();
