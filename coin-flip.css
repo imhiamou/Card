@@ -1,133 +1,198 @@
-/* Coin Flip — styles only. Does not alter other game layouts. */
+/* Coin Flip — styles only. Scoped to #coinFlipScreen; never touches other games. */
 
 #coinFlipScreen{
-width:460px;
-max-width:96vw;
-}
-
-.cfTitleRow{
+--cf-gap:clamp(6px,1.2vh,14px);
+--cf-pad:clamp(8px,1.6vh,20px);
+--cf-font:clamp(11px,1.6vh,15px);
+--cf-slot:clamp(26px,4.8vh,52px);
+--cf-coin:clamp(56px,12vh,120px);
+--cf-btn:clamp(34px,6vh,52px);
+position:relative;
+box-sizing:border-box;
+width:min(1100px,100vw);
+height:100dvh;
+max-height:100dvh;
+margin:0;
+padding:var(--cf-pad);
+border-radius:0;
+overflow:hidden;
 display:flex;
-justify-content:space-between;
-align-items:baseline;
-gap:12px;
-margin-bottom:10px;
+flex-direction:column;
+font-size:var(--cf-font);
 }
 
-.cfTitleRow h2{margin:0;}
+#coinFlipScreen.hidden{display:none;}
 
-.cfMeta{
-font-size:13px;
-color:#c5d2e8;
-}
-
-.cfPlayerTop,
-.cfPlayerBottom{
-background:#2a3142;
-border-radius:12px;
-padding:12px 14px;
+/* Portrait phones: the HUD is landscape-only. */
+.cfRotate{
+display:none;
+flex:1;
+flex-direction:column;
+align-items:center;
+justify-content:center;
+gap:14px;
 text-align:center;
+color:#ffd866;
 }
 
-.cfPlayerBottom{
-outline:1px solid rgba(79,156,255,.35);
+.cfRotateIcon{
+font-size:56px;
+line-height:1;
+animation:cfRotateHint 1.6s ease-in-out infinite;
 }
+
+.cfRotateText{
+font-size:18px;
+font-weight:bold;
+letter-spacing:.08em;
+}
+
+.cfHud{
+flex:1;
+min-height:0;
+display:flex;
+flex-direction:column;
+gap:var(--cf-gap);
+}
+
+/* ---- Top bar: opponent · title · counts ---- */
+
+.cfTop,
+.cfBottom{
+display:grid;
+grid-template-columns:minmax(0,1.1fr) minmax(0,1fr) minmax(0,1.1fr);
+gap:var(--cf-gap);
+align-items:stretch;
+flex:0 0 auto;
+}
+
+.cfPlayerCard{
+background:#1e2430;
+border-radius:10px;
+padding:calc(var(--cf-gap) * .8) var(--cf-gap);
+min-width:0;
+display:flex;
+flex-direction:column;
+justify-content:center;
+gap:2px;
+}
+
+.cfMeCard{outline:1px solid rgba(79,156,255,.4);}
 
 .cfPlayerName{
 font-weight:bold;
-font-size:15px;
-margin-bottom:6px;
+font-size:calc(var(--cf-font) * 1.05);
+white-space:nowrap;
+overflow:hidden;
+text-overflow:ellipsis;
 }
 
 .cfHearts{
 display:flex;
-justify-content:center;
-flex-wrap:wrap;
-gap:2px;
-font-size:18px;
+flex-wrap:nowrap;
+align-items:center;
+gap:1px;
+font-size:calc(var(--cf-font) * 1.15);
 line-height:1;
-margin-bottom:4px;
 }
 
 .cfHeart.on{color:#ff5d6c;}
 .cfHeart.off{color:#3a4256;}
 
+.cfHeartNum{
+margin-left:6px;
+font-size:calc(var(--cf-font) * .85);
+color:#c5d2e8;
+font-weight:bold;
+}
+
 .cfStatus{
-min-height:16px;
-font-size:12px;
+min-height:1em;
+font-size:calc(var(--cf-font) * .85);
 color:#ffd866;
 }
 
-.cfCenter{
-margin:12px 0;
-}
-
-.cfPreviewLabel,
-.cfWagerLabel{
-text-align:center;
-font-size:12px;
-color:#9db2d0;
-margin-bottom:6px;
-text-transform:uppercase;
-letter-spacing:.04em;
-}
-
-.cfPreview{
+.cfTitleBlock{
 display:flex;
-flex-wrap:wrap;
+flex-direction:column;
+align-items:center;
 justify-content:center;
-gap:8px;
-margin-bottom:14px;
+min-width:0;
+}
+
+.cfTitleBlock h2{
+margin:0;
+font-size:clamp(15px,2.6vh,26px);
+letter-spacing:.12em;
+}
+
+.cfMeta{
+font-size:calc(var(--cf-font) * .9);
+color:#c5d2e8;
+white-space:nowrap;
 }
 
 .cfCounts{
 display:grid;
-grid-template-columns:repeat(3,1fr);
-gap:8px;
-margin:0 0 12px;
+grid-template-columns:repeat(3,minmax(0,1fr));
+gap:calc(var(--cf-gap) * .6);
+min-width:0;
 }
 
 .cfCounts div{
 background:#1e2430;
 border-radius:8px;
-padding:8px 6px;
+padding:calc(var(--cf-gap) * .5) 2px;
 text-align:center;
+min-width:0;
 }
 
 .cfCounts strong{
 display:block;
-font-size:22px;
+font-size:clamp(15px,2.8vh,28px);
+line-height:1.1;
 color:#ffd866;
 }
 
 .cfCounts span{
 display:block;
-font-size:10px;
+font-size:calc(var(--cf-font) * .7);
 color:#9db2d0;
 text-transform:uppercase;
+white-space:nowrap;
+overflow:hidden;
+text-overflow:ellipsis;
+}
+
+/* ---- Throw slots (compact, scale with count) ---- */
+
+.cfPreview{
+display:flex;
+flex-wrap:nowrap;
+justify-content:center;
+gap:calc(var(--cf-gap) * .6);
+flex:0 0 auto;
 }
 
 .cfThrow{
-width:44px;
-height:44px;
-border-radius:10px;
+width:var(--cf-slot);
+height:var(--cf-slot);
+flex:0 1 var(--cf-slot);
+min-width:20px;
+border-radius:22%;
 display:flex;
 align-items:center;
 justify-content:center;
 font-weight:bold;
-font-size:18px;
+font-size:calc(var(--cf-slot) * .42);
 background:#1e2430;
-color:#c5d2e8;
+color:#9db2d0;
 }
 
 .cfThrow.current{
 background:linear-gradient(145deg,#f0d060,#c9a227);
 color:#3a2e0a;
 box-shadow:0 0 0 2px rgba(255,216,102,.55);
-transform:scale(1.06);
-}
-
-.cfThrow.next{
-opacity:.92;
 }
 
 .cfThrow.revealed{
@@ -135,19 +200,17 @@ background:#3a4256;
 color:#eef3ff;
 }
 
-.cfThrow.hiddenResult{
-color:#9db2d0;
-}
+.cfThrow.revealed.heads{background:#2f5c8f;}
+.cfThrow.revealed.tails{background:#6b4a8f;}
 
-.cfWagerBox{
-text-align:center;
-margin-bottom:12px;
-}
+/* ---- Middle: coin arena + betting action ---- */
 
-.cfWagerValue{
-font-size:28px;
-font-weight:bold;
-color:#ffd866;
+.cfMid{
+flex:1 1 auto;
+min-height:0;
+display:grid;
+grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);
+gap:var(--cf-gap);
 }
 
 .cfArena{
@@ -155,26 +218,27 @@ display:flex;
 flex-direction:column;
 align-items:center;
 justify-content:center;
-min-height:130px;
-margin:8px 0 10px;
+gap:calc(var(--cf-gap) * .6);
+min-height:0;
 background:
-  radial-gradient(ellipse at 50% 35%, rgba(255,216,102,.14), transparent 55%),
+  radial-gradient(ellipse at 50% 40%, rgba(255,216,102,.14), transparent 55%),
   linear-gradient(180deg,#232a38 0%,#1a1f2a 100%);
 border-radius:14px;
-padding:16px;
+padding:var(--cf-gap);
 }
 
 .cfCoin{
-width:72px;
-height:72px;
+width:var(--cf-coin);
+height:var(--cf-coin);
 border-radius:50%;
 position:relative;
+flex:0 0 auto;
 background:linear-gradient(145deg,#f0d060,#c9a227);
 box-shadow:0 6px 16px rgba(0,0,0,.35), inset 0 0 0 3px rgba(255,255,255,.2);
 display:flex;
 align-items:center;
 justify-content:center;
-font-size:28px;
+font-size:calc(var(--cf-coin) * .42);
 font-weight:bold;
 color:#3a2e0a;
 transform-style:preserve-3d;
@@ -196,169 +260,237 @@ backface-visibility:hidden;
 .cfCoin[data-face="heads"]{transform:rotateY(0deg);}
 
 .cfCoinLabel{
-margin-top:12px;
-font-size:15px;
+font-size:calc(var(--cf-font) * 1.05);
 font-weight:bold;
-letter-spacing:1px;
+letter-spacing:.08em;
 color:#ffd866;
-min-height:22px;
+min-height:1.2em;
+text-align:center;
 }
 
 .cfOutcomeLabel{
-min-height:24px;
-margin-top:4px;
-font-size:18px;
+min-height:1.2em;
+font-size:calc(var(--cf-font) * 1.3);
 font-weight:bold;
-letter-spacing:.06em;
+letter-spacing:.08em;
+text-align:center;
 }
 
 .cfOutcomeLabel.won{color:#74df9b;}
 .cfOutcomeLabel.lost{color:#ff6b6b;}
 
-#cfTurnIndicator{
-text-align:center;
-font-size:18px;
-margin:6px 0 10px;
-}
-
-.cfControls{
+.cfAction{
 display:flex;
 flex-direction:column;
-align-items:center;
-gap:10px;
-margin-bottom:8px;
+align-items:stretch;
+justify-content:center;
+gap:calc(var(--cf-gap) * .7);
+min-height:0;
+min-width:0;
 }
 
-.cfChoiceRow{
-display:flex;
-gap:10px;
-}
-
-.cfChoiceBtn{
-min-width:120px;
-padding:12px 18px;
-font-size:16px;
+.cfTurnIndicator{
+text-align:center;
+font-size:calc(var(--cf-font) * 1.1);
 font-weight:bold;
-border:0;
-border-radius:10px;
-cursor:pointer;
-background:#4f9cff;
-color:#0b1220;
+letter-spacing:.06em;
+color:#eef3ff;
 }
 
-.cfChoiceBtn:disabled{
-opacity:.45;
-cursor:default;
-}
-
-.cfHint{
-font-size:12px;
-color:#9db2d0;
-text-align:center;
-margin:8px 0 0;
-}
-
-.cfItemsSection h3,
-.cfRoundEnd h3{
-margin:10px 0 6px;
-font-size:14px;
-color:#c5d2e8;
-}
-
-.cfItems{
-display:grid;
-grid-template-columns:repeat(2,minmax(0,1fr));
-gap:6px;
-}
-
-.cfItemBtn{
+.cfBet{
 display:flex;
 flex-direction:column;
-gap:2px;
-padding:8px;
-text-align:left;
+gap:calc(var(--cf-gap) * .7);
+}
+
+.cfBet.hidden{display:none;}
+
+.cfWagerRow{
+display:grid;
+grid-template-columns:var(--cf-btn) minmax(0,1fr) var(--cf-btn);
+gap:calc(var(--cf-gap) * .7);
+align-items:stretch;
+}
+
+#coinFlipScreen .cfStepBtn,
+#coinFlipScreen .cfChoiceBtn,
+#coinFlipScreen .cfConfirmBtn,
+#coinFlipScreen .cfItemBtn,
+#coinFlipScreen .cfEndButtons button{
+width:auto;
+margin:0;
+padding:0;
 border:0;
-border-radius:8px;
-background:#1e2430;
-color:#eef3ff;
 cursor:pointer;
+font-weight:bold;
 }
 
-.cfItemBtn strong{font-size:12px;}
-.cfItemBtn span{font-size:10px;color:#9db2d0;}
-.cfItemBtn:disabled{opacity:.45;cursor:default;}
-
-.cfNoItems{
-grid-column:1/-1;
-font-size:12px;
-color:#9db2d0;
-text-align:center;
-padding:6px;
+.cfStepBtn{
+height:var(--cf-btn);
+border-radius:10px;
+background:#3a4256;
+color:#eef3ff;
+font-size:calc(var(--cf-btn) * .5);
+line-height:1;
 }
 
-.cfRoundEnd{
-margin-top:12px;
-padding:12px;
+.cfWagerPick{
+height:var(--cf-btn);
+display:flex;
+align-items:center;
+justify-content:center;
+gap:6px;
 border-radius:10px;
 background:#1e2430;
-text-align:center;
-}
-
-.cfRoundEnd h3{
-margin-top:0;
 color:#ffd866;
+font-weight:bold;
+font-size:calc(var(--cf-font) * 1.15);
 letter-spacing:.06em;
 }
 
-.cfRoundEnd p{
-margin:5px 0;
-font-size:12px;
-color:#c5d2e8;
+.cfWagerPick span{font-size:calc(var(--cf-font) * 1.7);}
+
+.cfChoiceRow{
+display:grid;
+grid-template-columns:1fr 1fr;
+gap:calc(var(--cf-gap) * .7);
 }
 
-.cfNextWagerButtons{
-display:flex;
-justify-content:center;
-gap:8px;
-margin-top:10px;
+.cfChoiceBtn{
+height:var(--cf-btn);
+border-radius:10px;
+background:#2f3a52;
+color:#eef3ff;
+font-size:calc(var(--cf-font) * 1.05);
+letter-spacing:.08em;
+outline:2px solid transparent;
 }
 
-.cfNextWagerButtons button{
-padding:9px 12px;
-border:0;
-border-radius:8px;
+.cfChoiceBtn.selected{
 background:#4f9cff;
 color:#0b1220;
-font-weight:bold;
-cursor:pointer;
+outline-color:#ffd866;
 }
 
-.cfNextWagerButtons button:disabled{
-opacity:.45;
+.cfConfirmBtn{
+height:var(--cf-btn);
+border-radius:10px;
+background:#ffd866;
+color:#3a2e0a;
+font-size:calc(var(--cf-font) * 1.05);
+letter-spacing:.08em;
+white-space:nowrap;
+overflow:hidden;
+text-overflow:ellipsis;
+padding:0 8px !important;
+}
+
+#coinFlipScreen .cfStepBtn:disabled,
+#coinFlipScreen .cfChoiceBtn:disabled,
+#coinFlipScreen .cfConfirmBtn:disabled,
+#coinFlipScreen .cfItemBtn:disabled{
+opacity:.4;
 cursor:default;
 }
 
-#cfMsg{
-min-height:20px;
+.cfWaitBox{
 text-align:center;
-font-size:14px;
-margin:10px 0;
+font-size:var(--cf-font);
+color:#c5d2e8;
+min-height:1.2em;
 }
 
-.cfHistoryWrap h3{
-margin:8px 0 6px;
-font-size:14px;
+.cfWaitBox.hidden{display:none;}
+
+.cfMsg{
+margin:0;
+min-height:2.4em;
+text-align:center;
+font-size:calc(var(--cf-font) * .95);
+color:#c5d2e8;
+overflow:hidden;
+display:-webkit-box;
+-webkit-line-clamp:2;
+-webkit-box-orient:vertical;
+}
+
+/* ---- Bottom bar: me · items · history ---- */
+
+.cfItemsSection{
+background:#1e2430;
+border-radius:10px;
+padding:calc(var(--cf-gap) * .6) var(--cf-gap);
+min-width:0;
+display:flex;
+flex-direction:column;
+gap:4px;
+}
+
+.cfItemsHead{
+font-size:calc(var(--cf-font) * .75);
+letter-spacing:.1em;
+color:#9db2d0;
+}
+
+.cfItems{
+display:flex;
+flex-wrap:nowrap;
+gap:6px;
+overflow-x:auto;
+overflow-y:hidden;
+scrollbar-width:thin;
+}
+
+.cfItemBtn{
+flex:0 0 auto;
+display:flex;
+align-items:center;
+gap:6px;
+padding:0 10px !important;
+height:calc(var(--cf-btn) * .75);
+border-radius:8px;
+background:#2f3a52;
+color:#eef3ff;
+font-size:calc(var(--cf-font) * .9);
+}
+
+.cfItemCount{color:#ffd866;}
+
+.cfNoItems{
+font-size:calc(var(--cf-font) * .85);
+color:#9db2d0;
+align-self:center;
+}
+
+.cfHistoryWrap{
+position:relative;
+background:#1e2430;
+border-radius:10px;
+padding:calc(var(--cf-gap) * .6) var(--cf-gap);
+min-width:0;
 color:#c5d2e8;
 }
 
+.cfHistoryWrap summary{
+cursor:pointer;
+font-size:calc(var(--cf-font) * .9);
+font-weight:bold;
+letter-spacing:.06em;
+}
+
 .cfHistory{
-max-height:110px;
+position:absolute;
+right:0;
+bottom:100%;
+width:min(360px,80vw);
+max-height:40vh;
 overflow:auto;
 background:#1e2430;
 border-radius:8px;
 padding:8px;
-font-size:12px;
-color:#c5d2e8;
+font-size:calc(var(--cf-font) * .85);
+box-shadow:0 8px 24px rgba(0,0,0,.4);
+z-index:5;
 }
 
 .cfHistoryRow{
@@ -368,33 +500,83 @@ border-bottom:1px solid rgba(255,255,255,.06);
 
 .cfHistoryRow:last-child{border-bottom:0;}
 
+/* ---- Overlays inside the Coin Flip container ---- */
+
+.cfRoundEnd,
 .cfEndButtons{
-display:flex;
-justify-content:center;
-margin-top:10px;
+position:absolute;
+left:50%;
+top:50%;
+transform:translate(-50%,-50%);
+z-index:6;
+background:rgba(30,36,48,.96);
+border-radius:14px;
+padding:clamp(12px,3vh,24px) clamp(16px,4vw,36px);
+text-align:center;
+box-shadow:0 12px 40px rgba(0,0,0,.5);
+}
+
+.cfRoundEnd.hidden,
+.cfEndButtons.hidden{display:none;}
+
+.cfRoundEnd h3{
+margin:0 0 6px;
+color:#ffd866;
+letter-spacing:.1em;
+font-size:calc(var(--cf-font) * 1.3);
+}
+
+.cfRoundEnd p{
+margin:4px 0;
+font-size:var(--cf-font);
+color:#c5d2e8;
 }
 
 .cfEndButtons button{
-padding:10px 16px;
-border:0;
+padding:10px 18px !important;
 border-radius:8px;
 background:#4f9cff;
 color:#0b1220;
-font-weight:bold;
-cursor:pointer;
 }
 
-.cfEndButtons button:disabled{
-opacity:.6;
-cursor:default;
-}
+.cfEndButtons button:disabled{opacity:.6;cursor:default;}
 
 @keyframes cfSpin{
 from{transform:rotateY(0deg);}
 to{transform:rotateY(360deg);}
 }
 
-@media (max-width:720px){
-#coinFlipScreen{width:100%;}
-.cfThrow{width:38px;height:38px;font-size:16px;}
+@keyframes cfRotateHint{
+0%,100%{transform:rotate(0deg);}
+50%{transform:rotate(90deg);}
+}
+
+/* ---- Landscape phones (844×390 … 915×412): tighten without shrinking the essentials ---- */
+
+@media (max-height:520px){
+#coinFlipScreen{
+--cf-gap:5px;
+--cf-pad:6px;
+--cf-font:11px;
+--cf-slot:clamp(22px,6vh,30px);
+--cf-coin:clamp(44px,14vh,60px);
+--cf-btn:32px;
+}
+.cfTitleBlock h2{font-size:14px;}
+.cfCounts strong{font-size:16px;}
+.cfCounts span{font-size:8px;}
+.cfHearts{font-size:12px;}
+.cfStatus{display:none;}
+.cfMsg{min-height:1.2em;-webkit-line-clamp:1;}
+.cfOutcomeLabel{font-size:13px;}
+.cfCoinLabel{font-size:11px;}
+.cfArena{padding:4px;}
+.cfItemsHead{display:none;}
+}
+
+/* ---- Portrait phones: show the rotate notice instead of the HUD ---- */
+
+@media (orientation:portrait) and (max-width:700px){
+#coinFlipScreen .cfRotate{display:flex;}
+#coinFlipScreen .cfHud{display:none;}
 }
