@@ -1,40 +1,33 @@
 /*
- * Coin Flip — isolated 1v1 turn-based wagering game.
+ * Coin Flip — isolated 1v1 turn-based wagering and item game.
  *
- * Lobby gameMode: "coin-flip". Uses room.cf state and its own Socket.IO
- * events. Does not alter Hidden Hunt, Word Chain, Code Breaker, Dominoes,
- * UNO, Dodge Ball, or any other game.
- *
- * Design (modular foundation — rules may change later):
- * - Server generates fair Heads/Tails groups (batches of 5).
- * - Both players see only the remaining composition, never the hidden order.
- * - Turns alternate; only the active player may act.
- * - Round wager starts at 1 and increases each full round.
- * - Active player chooses Heads or Tails and a valid wager, then flips.
- * - Matching the hidden result wins; missing it loses.
- * - Animation never decides the result; server already knows it.
+ * The existing lobby owns rooms and players. This module owns only room.cf
+ * and Coin Flip events. Future flip order never leaves this server module.
  */
 
 const { randomInt } = require("crypto");
 
 const STARTING_HEARTS = 10;
-const QUEUE_SIZE = 5;
+const STARTING_THROWS = 5;
+const THROWS_PER_ROUND_INCREMENT = 1;
+const ITEMS_PER_ROUND = 1;
+const MAX_WAGER_INCREASE = 1;
+const SHIELD_REDUCTION = 2;
+const SAFE_BET_REDUCTION = 1;
 const SUSPENSE_MS = 1400;
 const BETWEEN_TURN_MS = 900;
 const SIDES = ["heads", "tails"];
 
-/* ---- 1. Coin sequence generation (server-only) ---- */
+/* ---- Round composition and hidden ordering (server-only) ---- */
 
-function randomSide() {
-  return randomInt(2) === 0 ? "heads" : "tails";
+function throwsForRound(round) {
+  return STARTING_THROWS + Math.max(0, round - 1) * THROWS_PER_ROUND_INCREMENT;
 }
 
 function generateComposition(count) {
-  const size = count || QUEUE_SIZE;
-  let heads = 0;
-  for (let i = 0; i < size; i++) {
-    if (randomSide() === "heads") heads += 1;
-  }
+  const size = Math.max(2, Number(count) || STARTING_THROWS);
+  // randomInt's upper bound is exclusive: Heads is always 1..size-1.
+  const heads = randomInt(1, size);
   return { heads, tails: size - heads };
 }
 
@@ -50,12 +43,12 @@ function shuffleResults(results) {
 }
 
 function generateFlipGroup(count) {
-  const size = count || QUEUE_SIZE;
-  const composition = generateComposition(size);
+  const composition = generateComposition(count);
   const results = [];
   for (let i = 0; i < composition.heads; i++) results.push("heads");
   for (let i = 0; i < composition.tails; i++) results.push("tails");
   return {
+    totalThrows: results.length,
     hiddenOrder: shuffleResults(results),
     headsRemaining: composition.heads,
     tailsRemaining: composition.tails,
@@ -77,20 +70,114 @@ function revealNextThrow(cf) {
   return result;
 }
 
-/* ---- 2. Turn / round / wager helpers ---- */
+/* ---- Modular item catalog ---- */
+
+const ITEM_DEFS = {
+  peek: {
+    id: "peek",
+    name: "Peek",
+    description: "Privately reveal the next hidden flip.",
+    phase: "turn"
+  },
+  shield: {
+    id: "shield",
+    name: "Shield",
+    description: "Reduce your next lost wager by up to " + SHIELD_REDUCTION + " hearts.",
+    phase: "turn"
+  },
+  double: {
+    id: "double",
+    name: "Double",
+    description: "Your next won wager deals double damage; a loss stays normal.",
+    phase: "turn"
+  },
+  swap: {
+    id: "swap",
+    name: "Swap",
+    description: "Swap your locked Heads/Tails choice during suspense.",
+    phase: "resolving"
+  },
+  "safe-bet": {
+    id: "safe-bet",
+    name: "Safe Bet",
+    description: "Reduce your next lost wager by " + SAFE_BET_REDUCTION + " heart.",
+    phase: "turn"
+  }
+};
+
+const ITEM_IDS = Object.keys(ITEM_DEFS);
+
+function itemCatalog() {
+  return ITEM_IDS.map((id) => {
+    const item = ITEM_DEFS[id];
+    return {
+      id: item.id,
+      name: item.name,
+      description: item.description,
+      consumed: true
+    };
+  });
+}
+
+function createPlayerState() {
+  return {
+    inventory: {},
+    effects: {
+      shield: 0,
+      safeBet: 0,
+      doubleNext: false
+    },
+    itemUsedThisTurn: false,
+    peekInfo: null,
+    lastReward: null
+  };
+}
+
+function grantRoundItems(room, io) {
+  const cf = room.cf;
+  room.players.forEach((player) => {
+    const slot = cf.playerState[player.id];
+    const rewards = [];
+    for (let i = 0; i < ITEMS_PER_ROUND; i++) {
+      const itemId = ITEM_IDS[randomInt(ITEM_IDS.length)];
+      slot.inventory[itemId] = (slot.inventory[itemId] || 0) + 1;
+      rewards.push(itemId);
+    }
+    slot.lastReward = rewards.slice();
+    io.to(player.id).emit("coinFlipItemReward", {
+      round: cf.round,
+      items: rewards.map((id) => {
+        const item = ITEM_DEFS[id];
+        return { id: item.id, name: item.name, description: item.description };
+      })
+    });
+  });
+}
+
+/* ---- Turn, wager, and timer helpers ---- */
 
 function opponentId(room, playerId) {
-  const opp = room.players.find((p) => p.id !== playerId);
-  return opp ? opp.id : null;
+  const opponent = room.players.find((p) => p.id !== playerId);
+  return opponent ? opponent.id : null;
 }
 
 function maxAllowedWager(room, actorId) {
   const cf = room.cf;
-  const actorHearts = cf.hearts[actorId] || 0;
-  return Math.max(0, Math.min(cf.roundWager, actorHearts));
+  return Math.max(0, Math.min(cf.roundWager, cf.hearts[actorId] || 0));
 }
 
-/* ---- 3. Timers ---- */
+function wagerAtRisk(room) {
+  const cf = room.cf;
+  return cf.currentTurnId ? maxAllowedWager(room, cf.currentTurnId) : cf.roundWager;
+}
+
+function nextWagerBounds(room) {
+  const cf = room.cf;
+  const chooserHearts = cf.hearts[cf.wagerChooserId] || 0;
+  const min = Math.max(1, Math.min(cf.roundWager, chooserHearts));
+  const max = Math.max(min, Math.min(cf.roundWager + MAX_WAGER_INCREASE, chooserHearts));
+  return { min, max };
+}
 
 function clearCfTimers(room) {
   if (!room) return;
@@ -108,26 +195,28 @@ function stopRoom(room) {
   clearCfTimers(room);
 }
 
-/* ---- 4. State init / public views ---- */
+/* ---- State initialization and public/private views ---- */
 
 function initRoomState(room) {
   clearCfTimers(room);
   const hearts = {};
-  room.players.forEach((p) => {
-    hearts[p.id] = STARTING_HEARTS;
+  const playerState = {};
+  room.players.forEach((player) => {
+    hearts[player.id] = STARTING_HEARTS;
+    playerState[player.id] = createPlayerState();
   });
-  // First player in lobby order starts (creator).
-  const firstId = room.players[0].id;
   room.cf = {
     hearts,
+    playerState,
     round: 1,
     roundWager: 1,
-    turnsInRound: 0,
-    currentTurnId: firstId,
-    phase: "turn", // turn | resolving | between | over
-    groupNumber: 1,
-    group: generateFlipGroup(QUEUE_SIZE),
+    currentTurnId: room.players[0].id,
+    nextRoundStarterId: null,
+    wagerChooserId: null,
+    phase: "turn", // turn | resolving | between | round-end | over
+    group: generateFlipGroup(throwsForRound(1)),
     lastResult: null,
+    roundSummary: null,
     pending: null,
     history: [],
     over: false,
@@ -139,95 +228,151 @@ function initRoomState(room) {
 
 function publicPlayers(room) {
   const cf = room.cf;
-  return room.players.map((p) => ({
-    id: p.id,
-    name: p.name,
-    hearts: cf.hearts[p.id],
-    isTurn: !cf.over && cf.phase === "turn" && cf.currentTurnId === p.id
+  return room.players.map((player) => ({
+    id: player.id,
+    name: player.name,
+    hearts: cf.hearts[player.id],
+    isTurn: !cf.over && cf.phase === "turn" && cf.currentTurnId === player.id
   }));
+}
+
+function itemAvailability(room, playerId) {
+  const cf = room.cf;
+  const slot = cf.playerState[playerId];
+  const availability = {};
+  ITEM_IDS.forEach((id) => {
+    const owns = !!(slot && slot.inventory[id] > 0);
+    if (!owns || slot.itemUsedThisTurn || cf.over) {
+      availability[id] = false;
+      return;
+    }
+    if (id === "swap") {
+      availability[id] = cf.phase === "resolving" &&
+        !!cf.pending &&
+        cf.pending.actorId === playerId;
+      return;
+    }
+    availability[id] = cf.phase === "turn" && cf.currentTurnId === playerId;
+  });
+  return availability;
 }
 
 function buildStateFor(room, playerId, roomCode) {
   const cf = room.cf;
   const group = cf.group;
+  const slot = cf.playerState[playerId];
   const yourTurn = !!(
-    cf &&
     !cf.over &&
     cf.phase === "turn" &&
     cf.currentTurnId === playerId
   );
-  const maxWager = yourTurn ? maxAllowedWager(room, playerId) : 0;
+  const canSetWager = !!(
+    !cf.over &&
+    cf.phase === "round-end" &&
+    cf.wagerChooserId === playerId
+  );
+  const bounds = cf.phase === "round-end"
+    ? nextWagerBounds(room)
+    : { min: cf.roundWager, max: cf.roundWager };
   return {
     room: roomCode,
     game: "coin-flip",
     round: cf.round,
+    throwsThisRound: group.totalThrows,
     roundWager: cf.roundWager,
-    maxWager,
-    minWager: maxWager > 0 ? 1 : 0,
+    wagerAtRisk: wagerAtRisk(room),
     phase: cf.phase,
     over: !!cf.over,
     winnerId: cf.winnerId,
     draw: !!cf.draw,
     currentTurnId: cf.currentTurnId,
+    wagerChooserId: cf.wagerChooserId,
     yourId: playerId,
     yourTurn,
     canAct: yourTurn,
-    groupNumber: cf.groupNumber,
+    canSetWager,
+    nextWagerMin: bounds.min,
+    nextWagerMax: bounds.max,
     headsRemaining: group.headsRemaining,
     tailsRemaining: group.tailsRemaining,
     flipsRemaining: group.hiddenOrder.length,
     revealedInGroup: group.revealed.slice(),
+    lockedChoice: cf.pending ? cf.pending.choice : null,
     lastResult: cf.lastResult,
-    history: (cf.history || []).slice(-12),
+    roundSummary: cf.roundSummary,
+    history: (cf.history || []).slice(-20),
     players: publicPlayers(room),
     startingHearts: STARTING_HEARTS,
+    inventory: Object.assign({}, slot.inventory),
+    itemAvailability: itemAvailability(room, playerId),
+    itemsCatalog: itemCatalog(),
+    privateInfo: slot.peekInfo,
+    lastReward: slot.lastReward ? slot.lastReward.slice() : [],
     rules: {
-      headsWinsForActive: true,
-      queueSize: QUEUE_SIZE
+      startingThrows: STARTING_THROWS,
+      throwsIncrement: THROWS_PER_ROUND_INCREMENT,
+      itemsPerRound: ITEMS_PER_ROUND,
+      maxWagerIncrease: MAX_WAGER_INCREASE
     }
   };
 }
 
 function emitStates(room, io, roomCode) {
-  room.players.forEach((p) => {
-    io.to(p.id).emit("coinFlipState", buildStateFor(room, p.id, roomCode));
+  room.players.forEach((player) => {
+    io.to(player.id).emit("coinFlipState", buildStateFor(room, player.id, roomCode));
   });
 }
 
-/* ---- 5. Resolution / health / game-end ---- */
+/* ---- Damage and game end ---- */
 
 function applyDamage(cf, targetId, amount) {
-  const dmg = Math.max(0, Math.min(amount, cf.hearts[targetId] || 0));
-  cf.hearts[targetId] = Math.max(0, (cf.hearts[targetId] || 0) - dmg);
-  return dmg;
+  const damage = Math.max(0, Math.min(amount, cf.hearts[targetId] || 0));
+  cf.hearts[targetId] = Math.max(0, (cf.hearts[targetId] || 0) - damage);
+  return damage;
+}
+
+function reduceLostWager(slot, amount) {
+  let damage = amount;
+  let protection = null;
+  if (slot.effects.shield > 0) {
+    damage = Math.max(0, damage - SHIELD_REDUCTION);
+    slot.effects.shield -= 1;
+    protection = "shield";
+  } else if (slot.effects.safeBet > 0) {
+    damage = Math.max(0, damage - SAFE_BET_REDUCTION);
+    slot.effects.safeBet -= 1;
+    protection = "safe-bet";
+  }
+  return { damage, protection };
 }
 
 function checkGameOver(room, io, roomCode) {
   const cf = room.cf;
-  const dead = room.players.filter((p) => cf.hearts[p.id] <= 0);
+  const dead = room.players.filter((player) => cf.hearts[player.id] <= 0);
   if (!dead.length) return false;
 
   clearCfTimers(room);
   cf.over = true;
   cf.phase = "over";
+  cf.wagerChooserId = null;
 
   if (dead.length >= 2) {
     cf.draw = true;
     cf.winnerId = null;
   } else {
     cf.draw = false;
-    const deadId = dead[0].id;
-    const winner = room.players.find((p) => p.id !== deadId);
+    const winner = room.players.find((player) => player.id !== dead[0].id);
     cf.winnerId = winner ? winner.id : null;
   }
 
   const winner = cf.winnerId
-    ? room.players.find((p) => p.id === cf.winnerId)
+    ? room.players.find((player) => player.id === cf.winnerId)
     : null;
-  let message;
-  if (cf.draw) message = "Draw — both players fell!";
-  else if (winner) message = winner.name + " wins!";
-  else message = "Match over.";
+  const message = cf.draw
+    ? "Draw — both players fell!"
+    : winner
+      ? winner.name + " wins!"
+      : "Match over.";
 
   io.to(roomCode).emit("coinFlipOver", {
     room: roomCode,
@@ -242,27 +387,71 @@ function checkGameOver(room, io, roomCode) {
   return true;
 }
 
+/* ---- Throw resolution and round progression ---- */
+
+function resetTurnItemUse(room, playerId) {
+  const slot = room.cf.playerState[playerId];
+  if (!slot) return;
+  slot.itemUsedThisTurn = false;
+  slot.peekInfo = null;
+}
+
 function advanceTurn(room, io, roomCode) {
   const cf = room.cf;
   if (!cf || cf.over) return;
-
-  cf.turnsInRound += 1;
-  if (cf.turnsInRound >= 2) {
-    cf.turnsInRound = 0;
-    cf.round += 1;
-    cf.roundWager = cf.round;
-  }
-
-  if (cf.group.hiddenOrder.length === 0) {
-    cf.groupNumber += 1;
-    cf.group = generateFlipGroup(QUEUE_SIZE);
-  }
-
-  const ids = room.players.map((p) => p.id);
-  const idx = ids.indexOf(cf.currentTurnId);
-  cf.currentTurnId = ids[(idx + 1) % ids.length];
+  const nextId = opponentId(room, cf.currentTurnId);
+  cf.currentTurnId = nextId;
   cf.phase = "turn";
   cf.pending = null;
+  resetTurnItemUse(room, nextId);
+  emitStates(room, io, roomCode);
+}
+
+function completeRound(room, io, roomCode, lastActorId) {
+  const cf = room.cf;
+  cf.phase = "round-end";
+  cf.nextRoundStarterId = opponentId(room, lastActorId);
+  // Rotate who controls the shared wager so neither player owns every round end.
+  cf.wagerChooserId = room.players[(cf.round - 1) % room.players.length].id;
+  cf.roundSummary = {
+    round: cf.round,
+    throws: cf.group.totalThrows,
+    itemsPerPlayer: ITEMS_PER_ROUND
+  };
+  grantRoundItems(room, io);
+  io.to(roomCode).emit("coinFlipRoundComplete", {
+    room: roomCode,
+    summary: cf.roundSummary,
+    wagerChooserId: cf.wagerChooserId,
+    players: publicPlayers(room)
+  });
+  emitStates(room, io, roomCode);
+}
+
+function startNextRound(room, io, roomCode, nextWager) {
+  const cf = room.cf;
+  cf.round += 1;
+  cf.roundWager = nextWager;
+  cf.currentTurnId = cf.nextRoundStarterId || opponentId(room, cf.currentTurnId);
+  cf.nextRoundStarterId = null;
+  cf.wagerChooserId = null;
+  cf.phase = "turn";
+  cf.group = generateFlipGroup(throwsForRound(cf.round));
+  cf.lastResult = null;
+  cf.roundSummary = null;
+  cf.pending = null;
+  room.players.forEach((player) => {
+    const slot = cf.playerState[player.id];
+    slot.itemUsedThisTurn = false;
+    slot.peekInfo = null;
+    slot.lastReward = null;
+  });
+  io.to(roomCode).emit("coinFlipRoundStarted", {
+    room: roomCode,
+    round: cf.round,
+    throws: cf.group.totalThrows,
+    roundWager: cf.roundWager
+  });
   emitStates(room, io, roomCode);
 }
 
@@ -276,21 +465,44 @@ function finishResolve(room, io, roomCode) {
   const wager = pending.wager;
   const choice = pending.choice;
   const actorWins = choice === coin;
+  const actorSlot = cf.playerState[actorId];
 
-  let loserId;
   let winnerId;
+  let loserId;
+  let damageAmount = wager;
+  let protection = null;
+  let doubled = false;
   if (actorWins) {
     winnerId = actorId;
     loserId = opponentId(room, actorId);
+    if (actorSlot.effects.doubleNext) {
+      damageAmount *= 2;
+      doubled = true;
+    }
   } else {
     winnerId = opponentId(room, actorId);
     loserId = actorId;
+    const reduced = reduceLostWager(actorSlot, damageAmount);
+    damageAmount = reduced.damage;
+    protection = reduced.protection;
   }
+  // Double applies to exactly one wager, whether that wager wins or loses.
+  actorSlot.effects.doubleNext = false;
 
-  const dealt = applyDamage(cf, loserId, wager);
+  const dealt = applyDamage(cf, loserId, damageAmount);
+  const revealPosition = cf.group.revealed.length;
+  room.players.forEach((player) => {
+    const slot = cf.playerState[player.id];
+    if (slot.peekInfo &&
+        slot.peekInfo.round === cf.round &&
+        slot.peekInfo.position === revealPosition) {
+      slot.peekInfo = null;
+    }
+  });
 
   const entry = {
-    round: pending.round,
+    round: cf.round,
+    throwNumber: revealPosition,
     actorId,
     actorName: pending.actorName,
     wager,
@@ -299,7 +511,9 @@ function finishResolve(room, io, roomCode) {
     actorWins,
     winnerId,
     loserId,
-    damage: dealt
+    damage: dealt,
+    protection,
+    doubled
   };
   cf.history.push(entry);
   cf.lastResult = entry;
@@ -318,6 +532,10 @@ function finishResolve(room, io, roomCode) {
   emitStates(room, io, roomCode);
 
   if (checkGameOver(room, io, roomCode)) return;
+  if (cf.group.hiddenOrder.length === 0) {
+    completeRound(room, io, roomCode, actorId);
+    return;
+  }
 
   room.cfNextTimer = setTimeout(() => {
     room.cfNextTimer = null;
@@ -326,19 +544,19 @@ function finishResolve(room, io, roomCode) {
   }, BETWEEN_TURN_MS);
 }
 
-function beginResolve(room, io, roomCode, actorId, wager, choice) {
+function beginResolve(room, io, roomCode, actorId, choice) {
   const cf = room.cf;
-  const me = room.players.find((p) => p.id === actorId);
+  const player = room.players.find((entry) => entry.id === actorId);
   const coin = nextHiddenThrow(cf);
   if (!coin) return;
+  const wager = maxAllowedWager(room, actorId);
   cf.phase = "resolving";
   cf.pending = {
     actorId,
-    actorName: me ? me.name : "Player",
+    actorName: player ? player.name : "Player",
     wager,
     choice,
-    coin,
-    round: cf.round
+    coin
   };
 
   io.to(roomCode).emit("coinFlipSuspense", {
@@ -357,42 +575,95 @@ function beginResolve(room, io, roomCode, actorId, wager, choice) {
   }, SUSPENSE_MS);
 }
 
-/* ---- 6. Match lifecycle ---- */
+/* ---- Item validation and effects ---- */
+
+function consumeItem(slot, itemId) {
+  slot.inventory[itemId] -= 1;
+  if (slot.inventory[itemId] <= 0) delete slot.inventory[itemId];
+  slot.itemUsedThisTurn = true;
+}
+
+function useItem(room, io, roomCode, playerId, itemId) {
+  const cf = room.cf;
+  const slot = cf.playerState[playerId];
+  const available = itemAvailability(room, playerId);
+  if (!ITEM_DEFS[itemId]) return { ok: false, error: "Unknown item." };
+  if (!slot.inventory[itemId]) return { ok: false, error: "You do not own that item." };
+  if (!available[itemId]) return { ok: false, error: "That item cannot be used right now." };
+
+  consumeItem(slot, itemId);
+  if (itemId === "peek") {
+    slot.peekInfo = {
+      round: cf.round,
+      position: cf.group.revealed.length + 1,
+      result: nextHiddenThrow(cf)
+    };
+    io.to(playerId).emit("coinFlipItemInfo", {
+      itemId,
+      name: ITEM_DEFS[itemId].name,
+      info: slot.peekInfo
+    });
+  } else if (itemId === "shield") {
+    slot.effects.shield += 1;
+  } else if (itemId === "double") {
+    slot.effects.doubleNext = true;
+  } else if (itemId === "safe-bet") {
+    slot.effects.safeBet += 1;
+  } else if (itemId === "swap") {
+    cf.pending.choice = cf.pending.choice === "heads" ? "tails" : "heads";
+    io.to(roomCode).emit("coinFlipChoiceSwapped", {
+      actorId: playerId,
+      choice: cf.pending.choice
+    });
+  }
+  io.to(playerId).emit("coinFlipItemUsed", {
+    itemId,
+    name: ITEM_DEFS[itemId].name
+  });
+  emitStates(room, io, roomCode);
+  return { ok: true };
+}
+
+/* ---- Match lifecycle and Socket.IO handlers ---- */
 
 function onBothPlayersJoined(room, io, roomCode) {
   initRoomState(room);
-  room.players.forEach((p) => {
-    io.to(p.id).emit("coinFlipStarted", buildStateFor(room, p.id, roomCode));
+  room.players.forEach((player) => {
+    io.to(player.id).emit("coinFlipStarted", buildStateFor(room, player.id, roomCode));
   });
   emitStates(room, io, roomCode);
 }
 
+function roomForPlayer(socket, rooms, data) {
+  const roomCode = data && typeof data.roomCode === "string"
+    ? data.roomCode.trim().toUpperCase()
+    : "";
+  const room = rooms[roomCode];
+  if (!room || room.gameMode !== "coin-flip") {
+    socket.emit("errorMessage", "You are not in a Coin Flip lobby.");
+    return null;
+  }
+  if (!room.players.some((player) => player.id === socket.id)) {
+    socket.emit("errorMessage", "You are not in this lobby.");
+    return null;
+  }
+  return { room, roomCode };
+}
+
 function registerSocket(socket, io, rooms) {
-  /*
-   * "coinFlipPlay" — active player locks a side + wager, then flips.
-   * Payload: { roomCode, wager, choice: "heads"|"tails" }
-   */
   socket.on("coinFlipPlay", (data) => {
-    const roomCode = data && typeof data.roomCode === "string" ? data.roomCode.trim().toUpperCase() : "";
-    const room = rooms[roomCode];
-    if (!room || room.gameMode !== "coin-flip") {
-      socket.emit("errorMessage", "You are not in a Coin Flip lobby.");
-      return;
-    }
-    if (!room.players.some((p) => p.id === socket.id)) {
-      socket.emit("errorMessage", "You are not in this lobby.");
-      return;
-    }
+    const found = roomForPlayer(socket, rooms, data);
+    if (!found) return;
+    const { room, roomCode } = found;
     const cf = room.cf;
     if (!cf || cf.over || cf.phase !== "turn") {
-      socket.emit("errorMessage", "You cannot flip right now.");
+      socket.emit("errorMessage", "You cannot bet right now.");
       return;
     }
     if (cf.currentTurnId !== socket.id) {
       socket.emit("errorMessage", "It is not your turn.");
       return;
     }
-
     const choice = data && typeof data.choice === "string"
       ? data.choice.trim().toLowerCase()
       : "";
@@ -400,41 +671,59 @@ function registerSocket(socket, io, rooms) {
       socket.emit("errorMessage", "Choose Heads or Tails.");
       return;
     }
-
-    const maxW = maxAllowedWager(room, socket.id);
-    if (maxW < 1) {
-      socket.emit("errorMessage", "No valid wager left.");
+    if (maxAllowedWager(room, socket.id) < 1) {
+      socket.emit("errorMessage", "No valid wager remains.");
       return;
     }
-
-    let wager = data && data.wager != null ? Number(data.wager) : maxW;
-    if (!Number.isFinite(wager)) wager = maxW;
-    wager = Math.floor(wager);
-    if (wager < 1 || wager > maxW) {
-      socket.emit("errorMessage", "Wager must be between 1 and " + maxW + ".");
-      return;
-    }
-
-    beginResolve(room, io, roomCode, socket.id, wager, choice);
+    beginResolve(room, io, roomCode, socket.id, choice);
   });
 
-  /*
-   * "coinFlipPlayAgain" — both players vote; then a fresh match starts.
-   */
-  socket.on("coinFlipPlayAgain", (data) => {
-    const roomCode = data && typeof data.roomCode === "string" ? data.roomCode.trim().toUpperCase() : "";
-    const room = rooms[roomCode];
-    if (!room || room.gameMode !== "coin-flip" || !room.players.some((p) => p.id === socket.id)) {
-      socket.emit("errorMessage", "You are not in this lobby.");
+  socket.on("coinFlipUseItem", (data) => {
+    const found = roomForPlayer(socket, rooms, data);
+    if (!found) return;
+    const itemId = data && typeof data.itemId === "string"
+      ? data.itemId.trim().toLowerCase()
+      : "";
+    const result = useItem(found.room, io, found.roomCode, socket.id, itemId);
+    if (!result.ok) socket.emit("errorMessage", result.error);
+  });
+
+  socket.on("coinFlipSetNextWager", (data) => {
+    const found = roomForPlayer(socket, rooms, data);
+    if (!found) return;
+    const { room, roomCode } = found;
+    const cf = room.cf;
+    if (!cf || cf.over || cf.phase !== "round-end") {
+      socket.emit("errorMessage", "The round is not complete.");
       return;
     }
+    if (cf.wagerChooserId !== socket.id) {
+      socket.emit("errorMessage", "Your opponent is choosing the next wager.");
+      return;
+    }
+    const wager = Number(data && data.wager);
+    const bounds = nextWagerBounds(room);
+    if (!Number.isInteger(wager) || wager < bounds.min || wager > bounds.max) {
+      socket.emit(
+        "errorMessage",
+        "Next wager must be between " + bounds.min + " and " + bounds.max + "."
+      );
+      return;
+    }
+    startNextRound(room, io, roomCode, wager);
+  });
+
+  socket.on("coinFlipPlayAgain", (data) => {
+    const found = roomForPlayer(socket, rooms, data);
+    if (!found) return;
+    const { room, roomCode } = found;
     if (!room.cf || !room.cf.over) {
       socket.emit("errorMessage", "The match is still going.");
       return;
     }
     if (!room.cfRematch) room.cfRematch = {};
     room.cfRematch[socket.id] = true;
-    if (!room.players.every((p) => room.cfRematch[p.id])) {
+    if (!room.players.every((player) => room.cfRematch[player.id])) {
       socket.emit("coinFlipPlayAgainWait");
       return;
     }
@@ -450,7 +739,11 @@ module.exports = {
   stopRoom,
   generateComposition,
   generateFlipGroup,
+  throwsForRound,
   STARTING_HEARTS,
-  QUEUE_SIZE,
+  STARTING_THROWS,
+  THROWS_PER_ROUND_INCREMENT,
+  ITEMS_PER_ROUND,
+  ITEM_DEFS,
   SIDES
 };
