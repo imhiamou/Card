@@ -255,6 +255,7 @@ const game=selectedGame==="word-chain"?"word-chain"
 :selectedGame==="dominoes"?"dominoes"
 :selectedGame==="uno"?"uno"
 :selectedGame==="dodge-ball"?"dodge-ball"
+:selectedGame==="obol"?"obol"
 :"hidden-hunt";
 const payload={name,room,game};
 if(game==="dominoes"){
@@ -356,6 +357,8 @@ if(window.Dominoes&&Dominoes.isActive()&&Dominoes.showError(msg))return;
 if(window.Uno&&Uno.isActive()&&Uno.showError(msg))return;
 // Dodge Ball handles its own messages when active.
 if(window.DodgeBall&&DodgeBall.isActive()&&DodgeBall.showError(msg))return;
+// O.B.O.L. handles its own messages when active.
+if(window.Obol&&Obol.isActive()&&Obol.showError(msg))return;
 // During the game, a rejected play (e.g. an invalid Dash target) must
 // NOT freeze the match: unlock the hand so the player can try again,
 // and show the reason on screen instead of an alert.
@@ -1383,3 +1386,5 @@ if(window.Dominoes)Dominoes.init(socket);
 if(window.Uno)Uno.init(socket);
 // Wire Dodge Ball to the shared lobby socket (isolated from other games).
 if(window.DodgeBall)DodgeBall.init(socket);
+// Wire O.B.O.L. to the shared lobby socket (isolated from other games).
+if(window.Obol)Obol.init(socket);

@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="domino.css">
 <link rel="stylesheet" href="uno.css">
 <link rel="stylesheet" href="dodge-ball.css">
+<link rel="stylesheet" href="obol.css">
 <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
 </head>
 <body>
@@ -29,6 +30,7 @@
 <option value="dominoes">Dominoes</option>
 <option value="uno">UNO</option>
 <option value="dodge-ball">Dodge Ball</option>
+<option value="obol">O.B.O.L.</option>
 </select>
 
 <!-- Dominoes only: lobby creator picks 2–4 seats -->
@@ -192,12 +194,16 @@
 <!-- Dodge Ball screen (mounted by dodge-ball.js; unused for other games) -->
 <div class="box hidden" id="dodgeBallScreen"></div>
 
+<!-- O.B.O.L. screen (mounted by obol.js; unused for other games) -->
+<div class="box hidden" id="obolScreen"></div>
+
 <script src="game-sfx.js"></script>
 <script src="wordchain.js"></script>
 <script src="codebreaker.js"></script>
 <script src="domino.js"></script>
 <script src="uno.js"></script>
 <script src="dodge-ball.js"></script>
+<script src="obol.js"></script>
 <script src="index.js"></script>
 </body>
 </html>
