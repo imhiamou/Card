@@ -6,7 +6,6 @@ const codebreaker = require("./codebreaker");
 const domino = require("./domino");
 const uno = require("./uno");
 const dodgeBall = require("./dodgeBall");
-const obol = require("./obol");
 const coinFlip = require("./coinFlip");
 const { createBotSocket } = require("./bots/botSocket");
 
@@ -704,8 +703,6 @@ io.on("connection", (socket) => {
   uno.registerSocket(socket, io, rooms);
   // Dodge Ball socket handlers (no-ops unless the lobby gameMode is dodge-ball).
   dodgeBall.registerSocket(socket, io, rooms);
-  // O.B.O.L. socket handlers (no-ops unless the lobby gameMode is obol).
-  obol.registerSocket(socket, io, rooms);
   // Coin Flip socket handlers (no-ops unless the lobby gameMode is coin-flip).
   coinFlip.registerSocket(socket, io, rooms);
 
@@ -725,7 +722,6 @@ io.on("connection", (socket) => {
       : data && data.game === "dominoes" ? "dominoes"
       : data && data.game === "uno" ? "uno"
       : data && data.game === "dodge-ball" ? "dodge-ball"
-      : data && data.game === "obol" ? "obol"
       : data && data.game === "coin-flip" ? "coin-flip"
       : "hidden-hunt";
     // Dominoes 2–4 / UNO 2–5; every other game stays at 2.
@@ -935,11 +931,6 @@ io.on("connection", (socket) => {
       dodgeBall.onBothPlayersJoined(room, io, roomCode);
       return;
     }
-    // Router: O.B.O.L. starts at exactly 2 players (never Hidden Hunt).
-    if (room.gameMode === "obol") {
-      obol.onBothPlayersJoined(room, io, roomCode);
-      return;
-    }
     // Router: Coin Flip starts at exactly 2 players (never Hidden Hunt).
     if (room.gameMode === "coin-flip") {
       coinFlip.onBothPlayersJoined(room, io, roomCode);
@@ -975,7 +966,7 @@ io.on("connection", (socket) => {
       socket.emit("errorMessage", "You are not in this lobby.");
       return;
     }
-    if (room.gameMode === "word-chain" || room.gameMode === "code-breaker" || room.gameMode === "dominoes" || room.gameMode === "uno" || room.gameMode === "dodge-ball" || room.gameMode === "obol" || room.gameMode === "coin-flip") {
+    if (room.gameMode === "word-chain" || room.gameMode === "code-breaker" || room.gameMode === "dominoes" || room.gameMode === "uno" || room.gameMode === "dodge-ball" || room.gameMode === "coin-flip") {
       socket.emit("errorMessage", "This lobby is not a Hidden Hunt game.");
       return;
     }
@@ -1290,7 +1281,7 @@ io.on("connection", (socket) => {
     const room = rooms[roomCode];
     if (!room || !room.players.some((p) => p.id === socket.id)) return;
     if (!room.game || !room.game.over) return;
-    if (room.gameMode === "word-chain" || room.gameMode === "code-breaker" || room.gameMode === "dominoes" || room.gameMode === "uno" || room.gameMode === "dodge-ball" || room.gameMode === "obol" || room.gameMode === "coin-flip") return;
+    if (room.gameMode === "word-chain" || room.gameMode === "code-breaker" || room.gameMode === "dominoes" || room.gameMode === "uno" || room.gameMode === "dodge-ball" || room.gameMode === "coin-flip") return;
 
     const opponent = getOpponent(room, socket.id);
     if (!opponent) return;
@@ -1365,7 +1356,6 @@ io.on("connection", (socket) => {
       if (room.dominoBotTimer) clearTimeout(room.dominoBotTimer);
       if (room.unoBotTimer) clearTimeout(room.unoBotTimer);
       if (room.db) dodgeBall.stopRoom(room);
-      if (room.obol) obol.stopRoom(room);
       if (room.cf) coinFlip.stopRoom(room);
     }
 

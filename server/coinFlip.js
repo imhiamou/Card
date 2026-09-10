@@ -10,9 +10,8 @@
  * - Both players see only the remaining composition, never the hidden order.
  * - Turns alternate; only the active player may act.
  * - Round wager starts at 1 and increases each full round.
- * - Active player chooses a wager 1..min(roundWager, ownHP, oppHP), then flips.
- * - Heads → active player wins (opponent loses hearts).
- * - Tails → active player loses (self loses hearts).
+ * - Active player chooses Heads or Tails and a valid wager, then flips.
+ * - Matching the hidden result wins; missing it loses.
  * - Animation never decides the result; server already knows it.
  */
 
@@ -275,7 +274,8 @@ function finishResolve(room, io, roomCode) {
   const coin = revealNextThrow(cf);
   const actorId = pending.actorId;
   const wager = pending.wager;
-  const actorWins = coin === "heads"; // Heads → active wins; Tails → active loses
+  const choice = pending.choice;
+  const actorWins = choice === coin;
 
   let loserId;
   let winnerId;
@@ -294,6 +294,7 @@ function finishResolve(room, io, roomCode) {
     actorId,
     actorName: pending.actorName,
     wager,
+    choice,
     coin,
     actorWins,
     winnerId,
@@ -325,7 +326,7 @@ function finishResolve(room, io, roomCode) {
   }, BETWEEN_TURN_MS);
 }
 
-function beginResolve(room, io, roomCode, actorId, wager) {
+function beginResolve(room, io, roomCode, actorId, wager, choice) {
   const cf = room.cf;
   const me = room.players.find((p) => p.id === actorId);
   const coin = nextHiddenThrow(cf);
@@ -335,6 +336,7 @@ function beginResolve(room, io, roomCode, actorId, wager) {
     actorId,
     actorName: me ? me.name : "Player",
     wager,
+    choice,
     coin,
     round: cf.round
   };
@@ -343,6 +345,7 @@ function beginResolve(room, io, roomCode, actorId, wager) {
     room: roomCode,
     actorId,
     wager,
+    choice,
     durationMs: SUSPENSE_MS
   });
   emitStates(room, io, roomCode);
@@ -366,8 +369,8 @@ function onBothPlayersJoined(room, io, roomCode) {
 
 function registerSocket(socket, io, rooms) {
   /*
-   * "coinFlipPlay" — active player locks a wager and flips the next throw.
-   * Payload: { roomCode, wager }
+   * "coinFlipPlay" — active player locks a side + wager, then flips.
+   * Payload: { roomCode, wager, choice: "heads"|"tails" }
    */
   socket.on("coinFlipPlay", (data) => {
     const roomCode = data && typeof data.roomCode === "string" ? data.roomCode.trim().toUpperCase() : "";
@@ -390,6 +393,14 @@ function registerSocket(socket, io, rooms) {
       return;
     }
 
+    const choice = data && typeof data.choice === "string"
+      ? data.choice.trim().toLowerCase()
+      : "";
+    if (!SIDES.includes(choice)) {
+      socket.emit("errorMessage", "Choose Heads or Tails.");
+      return;
+    }
+
     const maxW = maxAllowedWager(room, socket.id);
     if (maxW < 1) {
       socket.emit("errorMessage", "No valid wager left.");
@@ -404,7 +415,7 @@ function registerSocket(socket, io, rooms) {
       return;
     }
 
-    beginResolve(room, io, roomCode, socket.id, wager);
+    beginResolve(room, io, roomCode, socket.id, wager, choice);
   });
 
   /*

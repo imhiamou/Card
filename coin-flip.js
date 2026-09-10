@@ -27,7 +27,8 @@
           '<div class="cfCoinFace heads">H</div>' +
           '<div class="cfCoinFace tails">T</div>' +
         '</div>' +
-        '<div class="cfCoinLabel" id="cfCoinLabel">Heads wins the flip</div>' +
+        '<div class="cfCoinLabel" id="cfCoinLabel">Awaiting bet</div>' +
+        '<div class="cfOutcomeLabel" id="cfOutcomeLabel"></div>' +
       '</div>' +
       '<h2 id="cfTurnIndicator">Your turn</h2>' +
       '<div class="cfControls" id="cfControls">' +
@@ -35,9 +36,12 @@
           '<input type="range" id="cfWagerRange" min="1" max="1" value="1">' +
           '<span id="cfWagerPickVal">1</span>' +
         '</label>' +
-        '<button type="button" id="cfPlayBtn">Flip</button>' +
+        '<div class="cfChoiceRow">' +
+          '<button type="button" class="cfChoiceBtn" id="cfHeadsBtn">Heads</button>' +
+          '<button type="button" class="cfChoiceBtn" id="cfTailsBtn">Tails</button>' +
+        '</div>' +
       '</div>' +
-      '<p class="cfHint">The remaining Heads/Tails counts are known, but their order is hidden. Heads = active player wins; Tails = active player loses.</p>' +
+      '<p class="cfHint">Use the remaining counts to choose Heads or Tails. Your choice stays a prediction until the server reveals the flip.</p>' +
     '</div>' +
     '<div class="cfPlayerBottom" id="cfMeCard">' +
       '<div class="cfPlayerName" id="cfMyName">You</div>' +
@@ -84,11 +88,13 @@
   let cfWagerValue;
   let cfCoin;
   let cfCoinLabel;
+  let cfOutcomeLabel;
   let cfTurnIndicator;
   let cfControls;
   let cfWagerRange;
   let cfWagerPickVal;
-  let cfPlayBtn;
+  let cfHeadsBtn;
+  let cfTailsBtn;
   let cfMsg;
   let cfHistory;
   let cfEndButtons;
@@ -127,11 +133,13 @@
     cfWagerValue = $("cfWagerValue");
     cfCoin = $("cfCoin");
     cfCoinLabel = $("cfCoinLabel");
+    cfOutcomeLabel = $("cfOutcomeLabel");
     cfTurnIndicator = $("cfTurnIndicator");
     cfControls = $("cfControls");
     cfWagerRange = $("cfWagerRange");
     cfWagerPickVal = $("cfWagerPickVal");
-    cfPlayBtn = $("cfPlayBtn");
+    cfHeadsBtn = $("cfHeadsBtn");
+    cfTailsBtn = $("cfTailsBtn");
     cfMsg = $("cfMsg");
     cfHistory = $("cfHistory");
     cfEndButtons = $("cfEndButtons");
@@ -265,7 +273,8 @@
     if (cfWagerPickVal) cfWagerPickVal.textContent = String(selectedWager || 0);
     const can = !!state.canAct && !gameOver && maxW > 0;
     cfWagerRange.disabled = !can;
-    if (cfPlayBtn) cfPlayBtn.disabled = !can;
+    if (cfHeadsBtn) cfHeadsBtn.disabled = !can;
+    if (cfTailsBtn) cfTailsBtn.disabled = !can;
   }
 
   function renderState() {
@@ -326,16 +335,21 @@
     renderState();
   }
 
-  function playFlip() {
+  function playFlip(choice) {
     if (!currentRoom || !state || !state.canAct || gameOver) return;
     const wager = Number(cfWagerRange ? cfWagerRange.value : selectedWager);
-    socket.emit("coinFlipPlay", { roomCode: currentRoom, wager: wager });
+    socket.emit("coinFlipPlay", {
+      roomCode: currentRoom,
+      wager: wager,
+      choice: choice
+    });
   }
 
   function wireControls() {
-    if (!cfPlayBtn || cfPlayBtn.dataset.wired) return;
-    cfPlayBtn.dataset.wired = "1";
-    cfPlayBtn.onclick = playFlip;
+    if (!cfHeadsBtn || cfHeadsBtn.dataset.wired) return;
+    cfHeadsBtn.dataset.wired = "1";
+    cfHeadsBtn.onclick = () => playFlip("heads");
+    cfTailsBtn.onclick = () => playFlip("tails");
     if (cfWagerRange) {
       cfWagerRange.addEventListener("input", () => {
         selectedWager = Number(cfWagerRange.value) || 1;
@@ -364,16 +378,21 @@
     applyState(data);
     showCoinFlipScreen();
     setCoinFace("idle", false);
-    if (cfCoinLabel) cfCoinLabel.textContent = "Heads wins · Tails loses";
+    if (cfCoinLabel) cfCoinLabel.textContent = "Awaiting bet";
+    if (cfOutcomeLabel) cfOutcomeLabel.textContent = "";
     if (cfMsg) {
       cfMsg.textContent = "Both players know the remaining counts, but the five-flip order stays hidden.";
     }
   }
 
-  function onSuspense() {
+  function onSuspense(data) {
     if (!active) return;
     setCoinFace("idle", true);
-    if (cfCoinLabel) cfCoinLabel.textContent = "…";
+    if (cfCoinLabel) {
+      const choice = data && data.choice ? String(data.choice).toUpperCase() : "";
+      cfCoinLabel.textContent = choice ? "CHOICE LOCKED: " + choice : "CHOICE LOCKED";
+    }
+    if (cfOutcomeLabel) cfOutcomeLabel.textContent = "";
     if (cfTurnIndicator) cfTurnIndicator.textContent = "Flipping…";
   }
 
@@ -381,18 +400,26 @@
     if (!active) return;
     const coin = data && data.result ? data.result.coin : null;
     setCoinFace(coin || "idle", false);
-    if (cfCoinLabel) cfCoinLabel.textContent = coin ? String(coin).toUpperCase() : "";
+    if (cfCoinLabel) {
+      cfCoinLabel.textContent = coin
+        ? "COIN RESULT: " + String(coin).toUpperCase()
+        : "";
+    }
     if (data && data.result) {
       const r = data.result;
       const youActed = r.actorId === socket.id;
+      if (cfOutcomeLabel) {
+        cfOutcomeLabel.textContent = "WAGER " + (r.actorWins ? "WON" : "LOST");
+        cfOutcomeLabel.className = "cfOutcomeLabel " + (r.actorWins ? "won" : "lost");
+      }
       if (r.actorWins) {
         cfMsg.textContent = youActed
-          ? "Heads — you win! Opponent loses " + r.damage + " ♥"
-          : "Heads — opponent wins. You lose " + r.damage + " ♥";
+          ? "Your " + String(r.choice).toUpperCase() + " bet matched. Opponent loses " + r.damage + " ♥"
+          : "Opponent's bet matched. You lose " + r.damage + " ♥";
       } else {
         cfMsg.textContent = youActed
-          ? "Tails — you lose " + r.damage + " ♥"
-          : "Tails — opponent loses " + r.damage + " ♥";
+          ? "Your " + String(r.choice).toUpperCase() + " bet missed. You lose " + r.damage + " ♥"
+          : "Opponent's bet missed. They lose " + r.damage + " ♥";
       }
     }
   }
@@ -429,6 +456,7 @@
       if (!active) return;
       gameOver = false;
       hideEndButtons();
+      if (cfOutcomeLabel) cfOutcomeLabel.textContent = "";
       if (cfMsg) cfMsg.textContent = "New match — use the known counts to manage your risk.";
     });
     socket.on("playerLeft", () => {

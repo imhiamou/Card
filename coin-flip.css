@@ -203,6 +203,17 @@ color:#ffd866;
 min-height:22px;
 }
 
+.cfOutcomeLabel{
+min-height:24px;
+margin-top:4px;
+font-size:18px;
+font-weight:bold;
+letter-spacing:.06em;
+}
+
+.cfOutcomeLabel.won{color:#74df9b;}
+.cfOutcomeLabel.lost{color:#ff6b6b;}
+
 #cfTurnIndicator{
 text-align:center;
 font-size:18px;
@@ -229,8 +240,13 @@ color:#c5d2e8;
 width:140px;
 }
 
-#cfPlayBtn{
-min-width:140px;
+.cfChoiceRow{
+display:flex;
+gap:10px;
+}
+
+.cfChoiceBtn{
+min-width:120px;
 padding:12px 18px;
 font-size:16px;
 font-weight:bold;
@@ -241,7 +257,7 @@ background:#4f9cff;
 color:#0b1220;
 }
 
-#cfPlayBtn:disabled{
+.cfChoiceBtn:disabled{
 opacity:.45;
 cursor:default;
 }
