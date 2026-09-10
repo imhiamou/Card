@@ -11,11 +11,11 @@ const STARTING_HEARTS = 10;
 const STARTING_THROWS = 5;
 const THROWS_PER_ROUND_INCREMENT = 1;
 const ITEMS_PER_ROUND = 1;
+const MAX_WAGER_INCREASE = 1;
 const SHIELD_REDUCTION = 2;
 const SAFE_BET_REDUCTION = 1;
 const SUSPENSE_MS = 1400;
 const BETWEEN_TURN_MS = 900;
-const ROUND_END_MS = 3400;
 const SIDES = ["heads", "tails"];
 
 /* ---- Round composition and hidden ordering (server-only) ---- */
@@ -163,13 +163,20 @@ function opponentId(room, playerId) {
 
 function maxAllowedWager(room, actorId) {
   const cf = room.cf;
-  // Per-throw wager: capped only by the active player's current hearts.
-  return Math.max(0, cf.hearts[actorId] || 0);
+  return Math.max(0, Math.min(cf.roundWager, cf.hearts[actorId] || 0));
 }
 
 function wagerAtRisk(room) {
   const cf = room.cf;
-  return cf.pending ? cf.pending.wager : 0;
+  return cf.currentTurnId ? maxAllowedWager(room, cf.currentTurnId) : cf.roundWager;
+}
+
+function nextWagerBounds(room) {
+  const cf = room.cf;
+  const chooserHearts = cf.hearts[cf.wagerChooserId] || 0;
+  const min = Math.max(1, Math.min(cf.roundWager, chooserHearts));
+  const max = Math.max(min, Math.min(cf.roundWager + MAX_WAGER_INCREASE, chooserHearts));
+  return { min, max };
 }
 
 function clearCfTimers(room) {
@@ -205,6 +212,7 @@ function initRoomState(room) {
     roundWager: 1,
     currentTurnId: room.players[0].id,
     nextRoundStarterId: null,
+    wagerChooserId: null,
     phase: "turn", // turn | resolving | between | round-end | over
     group: generateFlipGroup(throwsForRound(1)),
     lastResult: null,
@@ -258,8 +266,14 @@ function buildStateFor(room, playerId, roomCode) {
     cf.phase === "turn" &&
     cf.currentTurnId === playerId
   );
-  // Per-throw wager selection: the active player picks 1..own hearts each turn.
-  const maxWager = yourTurn ? maxAllowedWager(room, playerId) : 0;
+  const canSetWager = !!(
+    !cf.over &&
+    cf.phase === "round-end" &&
+    cf.wagerChooserId === playerId
+  );
+  const bounds = cf.phase === "round-end"
+    ? nextWagerBounds(room)
+    : { min: cf.roundWager, max: cf.roundWager };
   return {
     room: roomCode,
     game: "coin-flip",
@@ -267,16 +281,18 @@ function buildStateFor(room, playerId, roomCode) {
     throwsThisRound: group.totalThrows,
     roundWager: cf.roundWager,
     wagerAtRisk: wagerAtRisk(room),
-    maxWager,
-    minWager: maxWager > 0 ? 1 : 0,
     phase: cf.phase,
     over: !!cf.over,
     winnerId: cf.winnerId,
     draw: !!cf.draw,
     currentTurnId: cf.currentTurnId,
+    wagerChooserId: cf.wagerChooserId,
     yourId: playerId,
     yourTurn,
     canAct: yourTurn,
+    canSetWager,
+    nextWagerMin: bounds.min,
+    nextWagerMax: bounds.max,
     headsRemaining: group.headsRemaining,
     tailsRemaining: group.tailsRemaining,
     flipsRemaining: group.hiddenOrder.length,
@@ -296,7 +312,7 @@ function buildStateFor(room, playerId, roomCode) {
       startingThrows: STARTING_THROWS,
       throwsIncrement: THROWS_PER_ROUND_INCREMENT,
       itemsPerRound: ITEMS_PER_ROUND,
-      perThrowWager: true
+      maxWagerIncrease: MAX_WAGER_INCREASE
     }
   };
 }
@@ -338,6 +354,7 @@ function checkGameOver(room, io, roomCode) {
   clearCfTimers(room);
   cf.over = true;
   cf.phase = "over";
+  cf.wagerChooserId = null;
 
   if (dead.length >= 2) {
     cf.draw = true;
@@ -394,33 +411,30 @@ function completeRound(room, io, roomCode, lastActorId) {
   const cf = room.cf;
   cf.phase = "round-end";
   cf.nextRoundStarterId = opponentId(room, lastActorId);
+  // Rotate who controls the shared wager so neither player owns every round end.
+  cf.wagerChooserId = room.players[(cf.round - 1) % room.players.length].id;
   cf.roundSummary = {
     round: cf.round,
     throws: cf.group.totalThrows,
-    itemsPerPlayer: ITEMS_PER_ROUND,
-    nextThrows: throwsForRound(cf.round + 1)
+    itemsPerPlayer: ITEMS_PER_ROUND
   };
   grantRoundItems(room, io);
   io.to(roomCode).emit("coinFlipRoundComplete", {
     room: roomCode,
     summary: cf.roundSummary,
+    wagerChooserId: cf.wagerChooserId,
     players: publicPlayers(room)
   });
   emitStates(room, io, roomCode);
-  // Rounds advance on their own: every turn already carries its own wager,
-  // so no wager picker is needed between rounds.
-  room.cfNextTimer = setTimeout(() => {
-    room.cfNextTimer = null;
-    if (!room.cf || room.cf.over || room.cf.phase !== "round-end") return;
-    startNextRound(room, io, roomCode);
-  }, ROUND_END_MS);
 }
 
-function startNextRound(room, io, roomCode) {
+function startNextRound(room, io, roomCode, nextWager) {
   const cf = room.cf;
   cf.round += 1;
+  cf.roundWager = nextWager;
   cf.currentTurnId = cf.nextRoundStarterId || opponentId(room, cf.currentTurnId);
   cf.nextRoundStarterId = null;
+  cf.wagerChooserId = null;
   cf.phase = "turn";
   cf.group = generateFlipGroup(throwsForRound(cf.round));
   cf.lastResult = null;
@@ -530,12 +544,12 @@ function finishResolve(room, io, roomCode) {
   }, BETWEEN_TURN_MS);
 }
 
-function beginResolve(room, io, roomCode, actorId, choice, wager) {
+function beginResolve(room, io, roomCode, actorId, choice) {
   const cf = room.cf;
   const player = room.players.find((entry) => entry.id === actorId);
   const coin = nextHiddenThrow(cf);
   if (!coin) return;
-  cf.roundWager = wager;
+  const wager = maxAllowedWager(room, actorId);
   cf.phase = "resolving";
   cf.pending = {
     actorId,
@@ -657,20 +671,11 @@ function registerSocket(socket, io, rooms) {
       socket.emit("errorMessage", "Choose Heads or Tails.");
       return;
     }
-    // Fresh wager before every throw: 1..active player's current hearts.
-    const maxW = maxAllowedWager(room, socket.id);
-    if (maxW < 1) {
+    if (maxAllowedWager(room, socket.id) < 1) {
       socket.emit("errorMessage", "No valid wager remains.");
       return;
     }
-    let wager = data && data.wager != null ? Number(data.wager) : maxW;
-    if (!Number.isFinite(wager)) wager = maxW;
-    wager = Math.floor(wager);
-    if (wager < 1 || wager > maxW) {
-      socket.emit("errorMessage", "Wager must be between 1 and " + maxW + ".");
-      return;
-    }
-    beginResolve(room, io, roomCode, socket.id, choice, wager);
+    beginResolve(room, io, roomCode, socket.id, choice);
   });
 
   socket.on("coinFlipUseItem", (data) => {
@@ -681,6 +686,31 @@ function registerSocket(socket, io, rooms) {
       : "";
     const result = useItem(found.room, io, found.roomCode, socket.id, itemId);
     if (!result.ok) socket.emit("errorMessage", result.error);
+  });
+
+  socket.on("coinFlipSetNextWager", (data) => {
+    const found = roomForPlayer(socket, rooms, data);
+    if (!found) return;
+    const { room, roomCode } = found;
+    const cf = room.cf;
+    if (!cf || cf.over || cf.phase !== "round-end") {
+      socket.emit("errorMessage", "The round is not complete.");
+      return;
+    }
+    if (cf.wagerChooserId !== socket.id) {
+      socket.emit("errorMessage", "Your opponent is choosing the next wager.");
+      return;
+    }
+    const wager = Number(data && data.wager);
+    const bounds = nextWagerBounds(room);
+    if (!Number.isInteger(wager) || wager < bounds.min || wager > bounds.max) {
+      socket.emit(
+        "errorMessage",
+        "Next wager must be between " + bounds.min + " and " + bounds.max + "."
+      );
+      return;
+    }
+    startNextRound(room, io, roomCode, wager);
   });
 
   socket.on("coinFlipPlayAgain", (data) => {
