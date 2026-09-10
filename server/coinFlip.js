@@ -3,11 +3,11 @@
  *
  * Lobby gameMode: "coin-flip". Uses room.cf state and its own Socket.IO
  * events. Does not alter Hidden Hunt, Word Chain, Code Breaker, Dominoes,
- * UNO, Dodge Ball, or O.B.O.L.
+ * UNO, Dodge Ball, or any other game.
  *
  * Design (modular foundation — rules may change later):
- * - Server generates fair Heads/Tails sequences (batches of 5).
- * - Both players see the same upcoming 5 throws.
+ * - Server generates fair Heads/Tails groups (batches of 5).
+ * - Both players see only the remaining composition, never the hidden order.
  * - Turns alternate; only the active player may act.
  * - Round wager starts at 1 and increases each full round.
  * - Active player chooses a wager 1..min(roundWager, ownHP, oppHP), then flips.
@@ -15,6 +15,8 @@
  * - Tails → active player loses (self loses hearts).
  * - Animation never decides the result; server already knows it.
  */
+
+const { randomInt } = require("crypto");
 
 const STARTING_HEARTS = 10;
 const QUEUE_SIZE = 5;
@@ -25,30 +27,55 @@ const SIDES = ["heads", "tails"];
 /* ---- 1. Coin sequence generation (server-only) ---- */
 
 function randomSide() {
-  return Math.random() < 0.5 ? "heads" : "tails";
+  return randomInt(2) === 0 ? "heads" : "tails";
 }
 
-function generateThrowBatch(count) {
-  const n = count || QUEUE_SIZE;
-  const batch = [];
-  for (let i = 0; i < n; i++) batch.push(randomSide());
-  return batch;
-}
-
-function ensureQueue(cf) {
-  while (cf.queue.length < QUEUE_SIZE) {
-    cf.queue.push.apply(cf.queue, generateThrowBatch(QUEUE_SIZE));
+function generateComposition(count) {
+  const size = count || QUEUE_SIZE;
+  let heads = 0;
+  for (let i = 0; i < size; i++) {
+    if (randomSide() === "heads") heads += 1;
   }
+  return { heads, tails: size - heads };
 }
 
-function peekUpcoming(cf) {
-  ensureQueue(cf);
-  return cf.queue.slice(0, QUEUE_SIZE);
+function shuffleResults(results) {
+  const shuffled = results.slice();
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = randomInt(i + 1);
+    const tmp = shuffled[i];
+    shuffled[i] = shuffled[j];
+    shuffled[j] = tmp;
+  }
+  return shuffled;
 }
 
-function consumeThrow(cf) {
-  ensureQueue(cf);
-  return cf.queue.shift();
+function generateFlipGroup(count) {
+  const size = count || QUEUE_SIZE;
+  const composition = generateComposition(size);
+  const results = [];
+  for (let i = 0; i < composition.heads; i++) results.push("heads");
+  for (let i = 0; i < composition.tails; i++) results.push("tails");
+  return {
+    hiddenOrder: shuffleResults(results),
+    headsRemaining: composition.heads,
+    tailsRemaining: composition.tails,
+    revealed: []
+  };
+}
+
+function nextHiddenThrow(cf) {
+  return cf.group && cf.group.hiddenOrder.length
+    ? cf.group.hiddenOrder[0]
+    : null;
+}
+
+function revealNextThrow(cf) {
+  const result = cf.group.hiddenOrder.shift();
+  if (result === "heads") cf.group.headsRemaining -= 1;
+  else if (result === "tails") cf.group.tailsRemaining -= 1;
+  cf.group.revealed.push(result);
+  return result;
 }
 
 /* ---- 2. Turn / round / wager helpers ---- */
@@ -61,9 +88,7 @@ function opponentId(room, playerId) {
 function maxAllowedWager(room, actorId) {
   const cf = room.cf;
   const actorHearts = cf.hearts[actorId] || 0;
-  const opp = room.players.find((p) => p.id !== actorId);
-  const oppHearts = opp ? (cf.hearts[opp.id] || 0) : 0;
-  return Math.max(0, Math.min(cf.roundWager, actorHearts, oppHearts));
+  return Math.max(0, Math.min(cf.roundWager, actorHearts));
 }
 
 /* ---- 3. Timers ---- */
@@ -101,8 +126,8 @@ function initRoomState(room) {
     turnsInRound: 0,
     currentTurnId: firstId,
     phase: "turn", // turn | resolving | between | over
-    queue: generateThrowBatch(QUEUE_SIZE),
-    resolved: [],
+    groupNumber: 1,
+    group: generateFlipGroup(QUEUE_SIZE),
     lastResult: null,
     pending: null,
     history: [],
@@ -125,6 +150,7 @@ function publicPlayers(room) {
 
 function buildStateFor(room, playerId, roomCode) {
   const cf = room.cf;
+  const group = cf.group;
   const yourTurn = !!(
     cf &&
     !cf.over &&
@@ -147,8 +173,11 @@ function buildStateFor(room, playerId, roomCode) {
     yourId: playerId,
     yourTurn,
     canAct: yourTurn,
-    upcoming: peekUpcoming(cf),
-    resolvedRecent: (cf.resolved || []).slice(-5),
+    groupNumber: cf.groupNumber,
+    headsRemaining: group.headsRemaining,
+    tailsRemaining: group.tailsRemaining,
+    flipsRemaining: group.hiddenOrder.length,
+    revealedInGroup: group.revealed.slice(),
     lastResult: cf.lastResult,
     history: (cf.history || []).slice(-12),
     players: publicPlayers(room),
@@ -225,6 +254,11 @@ function advanceTurn(room, io, roomCode) {
     cf.roundWager = cf.round;
   }
 
+  if (cf.group.hiddenOrder.length === 0) {
+    cf.groupNumber += 1;
+    cf.group = generateFlipGroup(QUEUE_SIZE);
+  }
+
   const ids = room.players.map((p) => p.id);
   const idx = ids.indexOf(cf.currentTurnId);
   cf.currentTurnId = ids[(idx + 1) % ids.length];
@@ -238,7 +272,7 @@ function finishResolve(room, io, roomCode) {
   if (!cf || !cf.pending || cf.over) return;
 
   const pending = cf.pending;
-  const coin = pending.coin;
+  const coin = revealNextThrow(cf);
   const actorId = pending.actorId;
   const wager = pending.wager;
   const actorWins = coin === "heads"; // Heads → active wins; Tails → active loses
@@ -267,8 +301,6 @@ function finishResolve(room, io, roomCode) {
     damage: dealt
   };
   cf.history.push(entry);
-  cf.resolved.push(coin);
-  if (cf.resolved.length > 20) cf.resolved = cf.resolved.slice(-20);
   cf.lastResult = entry;
   cf.pending = null;
   cf.phase = "between";
@@ -276,7 +308,10 @@ function finishResolve(room, io, roomCode) {
   io.to(roomCode).emit("coinFlipReveal", {
     room: roomCode,
     result: entry,
-    upcoming: peekUpcoming(cf),
+    headsRemaining: cf.group.headsRemaining,
+    tailsRemaining: cf.group.tailsRemaining,
+    flipsRemaining: cf.group.hiddenOrder.length,
+    revealedInGroup: cf.group.revealed.slice(),
     players: publicPlayers(room)
   });
   emitStates(room, io, roomCode);
@@ -293,7 +328,8 @@ function finishResolve(room, io, roomCode) {
 function beginResolve(room, io, roomCode, actorId, wager) {
   const cf = room.cf;
   const me = room.players.find((p) => p.id === actorId);
-  const coin = consumeThrow(cf);
+  const coin = nextHiddenThrow(cf);
+  if (!coin) return;
   cf.phase = "resolving";
   cf.pending = {
     actorId,
@@ -401,7 +437,8 @@ module.exports = {
   onBothPlayersJoined,
   registerSocket,
   stopRoom,
-  generateThrowBatch,
+  generateComposition,
+  generateFlipGroup,
   STARTING_HEARTS,
   QUEUE_SIZE,
   SIDES
