@@ -11,7 +11,12 @@
       '<div class="cfStatus" id="cfOppStatus"></div>' +
     '</div>' +
     '<div class="cfCenter">' +
-      '<div class="cfPreviewLabel">Next 5 throws</div>' +
+      '<div class="cfPreviewLabel">Current five-flip group</div>' +
+      '<div class="cfCounts">' +
+        '<div><strong id="cfHeadsRemaining">0</strong><span>Heads remaining</span></div>' +
+        '<div><strong id="cfTailsRemaining">0</strong><span>Tails remaining</span></div>' +
+        '<div><strong id="cfFlipsRemaining">5</strong><span>Flips remaining</span></div>' +
+      '</div>' +
       '<div class="cfPreview" id="cfPreview"></div>' +
       '<div class="cfWagerBox">' +
         '<div class="cfWagerLabel">Current wager</div>' +
@@ -32,7 +37,7 @@
         '</label>' +
         '<button type="button" id="cfPlayBtn">Flip</button>' +
       '</div>' +
-      '<p class="cfHint">Upcoming throws are known. Heads = active player wins; Tails = active player loses. Choose how many hearts to risk (up to this round\'s wager).</p>' +
+      '<p class="cfHint">The remaining Heads/Tails counts are known, but their order is hidden. Heads = active player wins; Tails = active player loses.</p>' +
     '</div>' +
     '<div class="cfPlayerBottom" id="cfMeCard">' +
       '<div class="cfPlayerName" id="cfMyName">You</div>' +
@@ -63,7 +68,6 @@
   let dominoScreen;
   let unoScreen;
   let dodgeBallScreen;
-  let obolScreen;
   let coinFlipScreen;
 
   let cfMeta;
@@ -74,6 +78,9 @@
   let cfMyHearts;
   let cfMyStatus;
   let cfPreview;
+  let cfHeadsRemaining;
+  let cfTailsRemaining;
+  let cfFlipsRemaining;
   let cfWagerValue;
   let cfCoin;
   let cfCoinLabel;
@@ -100,7 +107,6 @@
     dominoScreen = $("dominoScreen");
     unoScreen = $("unoScreen");
     dodgeBallScreen = $("dodgeBallScreen");
-    obolScreen = $("obolScreen");
     coinFlipScreen = $("coinFlipScreen");
     if (!coinFlipScreen) return false;
     if (!coinFlipScreen.dataset.ready) {
@@ -115,6 +121,9 @@
     cfMyHearts = $("cfMyHearts");
     cfMyStatus = $("cfMyStatus");
     cfPreview = $("cfPreview");
+    cfHeadsRemaining = $("cfHeadsRemaining");
+    cfTailsRemaining = $("cfTailsRemaining");
+    cfFlipsRemaining = $("cfFlipsRemaining");
     cfWagerValue = $("cfWagerValue");
     cfCoin = $("cfCoin");
     cfCoinLabel = $("cfCoinLabel");
@@ -140,8 +149,7 @@
       codeBreakerScreen,
       dominoScreen,
       unoScreen,
-      dodgeBallScreen,
-      obolScreen
+      dodgeBallScreen
     ].forEach((el) => {
       if (el) el.classList.add("hidden");
     });
@@ -198,14 +206,22 @@
   function renderPreview() {
     if (!cfPreview) return;
     cfPreview.innerHTML = "";
-    const upcoming = (state && state.upcoming) || [];
-    upcoming.forEach((side, i) => {
+    const revealed = (state && state.revealedInGroup) || [];
+    const total = (state && state.rules && state.rules.queueSize) || 5;
+    for (let i = 0; i < total; i++) {
       const cell = document.createElement("div");
-      cell.className = "cfThrow" + (i === 0 ? " current" : " next");
-      cell.textContent = sideLetter(side);
-      cell.title = i === 0 ? "Current throw" : "Upcoming";
+      if (i < revealed.length) {
+        cell.className = "cfThrow revealed";
+        cell.textContent = sideLetter(revealed[i]);
+        cell.title = "Revealed";
+      } else {
+        cell.className = "cfThrow hiddenResult" +
+          (i === revealed.length ? " current" : "");
+        cell.textContent = "?";
+        cell.title = i === revealed.length ? "Current hidden flip" : "Hidden flip";
+      }
       cfPreview.appendChild(cell);
-    });
+    }
   }
 
   function renderHistory() {
@@ -274,6 +290,9 @@
     if (cfWagerValue) {
       cfWagerValue.textContent = (state.roundWager || 1) + " ♥";
     }
+    if (cfHeadsRemaining) cfHeadsRemaining.textContent = String(state.headsRemaining || 0);
+    if (cfTailsRemaining) cfTailsRemaining.textContent = String(state.tailsRemaining || 0);
+    if (cfFlipsRemaining) cfFlipsRemaining.textContent = String(state.flipsRemaining || 0);
 
     renderPreview();
     renderHistory();
@@ -347,7 +366,7 @@
     setCoinFace("idle", false);
     if (cfCoinLabel) cfCoinLabel.textContent = "Heads wins · Tails loses";
     if (cfMsg) {
-      cfMsg.textContent = "Both of you see the next 5 throws. On your turn, set a wager and Flip.";
+      cfMsg.textContent = "Both players know the remaining counts, but the five-flip order stays hidden.";
     }
   }
 
@@ -410,7 +429,7 @@
       if (!active) return;
       gameOver = false;
       hideEndButtons();
-      if (cfMsg) cfMsg.textContent = "New match — check the next 5 throws.";
+      if (cfMsg) cfMsg.textContent = "New match — use the known counts to manage your risk.";
     });
     socket.on("playerLeft", () => {
       if (!active) return;
