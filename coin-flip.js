@@ -32,10 +32,6 @@
       '</div>' +
       '<h2 id="cfTurnIndicator">Your turn</h2>' +
       '<div class="cfControls" id="cfControls">' +
-        '<label class="cfWagerPick">Wager' +
-          '<input type="range" id="cfWagerRange" min="1" max="1" value="1">' +
-          '<span id="cfWagerPickVal">1</span>' +
-        '</label>' +
         '<div class="cfChoiceRow">' +
           '<button type="button" class="cfChoiceBtn" id="cfHeadsBtn">Heads</button>' +
           '<button type="button" class="cfChoiceBtn" id="cfTailsBtn">Tails</button>' +
@@ -47,6 +43,19 @@
       '<div class="cfPlayerName" id="cfMyName">You</div>' +
       '<div class="cfHearts" id="cfMyHearts"></div>' +
       '<div class="cfStatus" id="cfMyStatus"></div>' +
+    '</div>' +
+    '<div class="cfItemsSection">' +
+      '<h3>Your items</h3>' +
+      '<div class="cfItems" id="cfItems"></div>' +
+    '</div>' +
+    '<div class="cfRoundEnd hidden" id="cfRoundEnd">' +
+      '<h3>ROUND COMPLETE</h3>' +
+      '<p id="cfRoundSummary"></p>' +
+      '<p id="cfRoundWagerPrompt"></p>' +
+      '<div class="cfNextWagerButtons">' +
+        '<button type="button" id="cfKeepWagerBtn">Keep wager</button>' +
+        '<button type="button" id="cfRaiseWagerBtn">Increase wager</button>' +
+      '</div>' +
     '</div>' +
     '<p id="cfMsg"></p>' +
     '<div class="cfHistoryWrap">' +
@@ -62,7 +71,6 @@
   let active = false;
   let gameOver = false;
   let state = null;
-  let selectedWager = 1;
 
   let lobbyScreen;
   let placementScreen;
@@ -91,10 +99,14 @@
   let cfOutcomeLabel;
   let cfTurnIndicator;
   let cfControls;
-  let cfWagerRange;
-  let cfWagerPickVal;
   let cfHeadsBtn;
   let cfTailsBtn;
+  let cfItems;
+  let cfRoundEnd;
+  let cfRoundSummary;
+  let cfRoundWagerPrompt;
+  let cfKeepWagerBtn;
+  let cfRaiseWagerBtn;
   let cfMsg;
   let cfHistory;
   let cfEndButtons;
@@ -136,10 +148,14 @@
     cfOutcomeLabel = $("cfOutcomeLabel");
     cfTurnIndicator = $("cfTurnIndicator");
     cfControls = $("cfControls");
-    cfWagerRange = $("cfWagerRange");
-    cfWagerPickVal = $("cfWagerPickVal");
     cfHeadsBtn = $("cfHeadsBtn");
     cfTailsBtn = $("cfTailsBtn");
+    cfItems = $("cfItems");
+    cfRoundEnd = $("cfRoundEnd");
+    cfRoundSummary = $("cfRoundSummary");
+    cfRoundWagerPrompt = $("cfRoundWagerPrompt");
+    cfKeepWagerBtn = $("cfKeepWagerBtn");
+    cfRaiseWagerBtn = $("cfRaiseWagerBtn");
     cfMsg = $("cfMsg");
     cfHistory = $("cfHistory");
     cfEndButtons = $("cfEndButtons");
@@ -215,7 +231,7 @@
     if (!cfPreview) return;
     cfPreview.innerHTML = "";
     const revealed = (state && state.revealedInGroup) || [];
-    const total = (state && state.rules && state.rules.queueSize) || 5;
+    const total = (state && state.throwsThisRound) || 5;
     for (let i = 0; i < total; i++) {
       const cell = document.createElement("div");
       if (i < revealed.length) {
@@ -260,19 +276,74 @@
     cfCoin.dataset.face = face || "idle";
   }
 
-  function syncWagerControls() {
-    if (!cfWagerRange || !state) return;
-    const maxW = Math.max(0, state.maxWager || 0);
-    const minW = maxW > 0 ? 1 : 0;
-    cfWagerRange.min = String(minW);
-    cfWagerRange.max = String(Math.max(minW, maxW));
-    if (selectedWager > maxW) selectedWager = maxW;
-    if (selectedWager < minW) selectedWager = minW;
-    if (maxW > 0 && selectedWager < 1) selectedWager = maxW;
-    cfWagerRange.value = String(selectedWager || minW);
-    if (cfWagerPickVal) cfWagerPickVal.textContent = String(selectedWager || 0);
-    const can = !!state.canAct && !gameOver && maxW > 0;
-    cfWagerRange.disabled = !can;
+  function renderItems() {
+    if (!cfItems || !state) return;
+    cfItems.innerHTML = "";
+    const inventory = state.inventory || {};
+    const availability = state.itemAvailability || {};
+    const catalog = {};
+    (state.itemsCatalog || []).forEach((item) => {
+      catalog[item.id] = item;
+    });
+    const ids = Object.keys(inventory).filter((id) => inventory[id] > 0);
+    if (!ids.length) {
+      cfItems.innerHTML = '<span class="cfNoItems">Complete a round to earn an item.</span>';
+      return;
+    }
+    ids.forEach((id) => {
+      const item = catalog[id] || { id, name: id, description: "" };
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "cfItemBtn";
+      button.disabled = !availability[id];
+      button.innerHTML =
+        "<strong>" + item.name + " ×" + inventory[id] + "</strong>" +
+        "<span>" + item.description + "</span>";
+      button.onclick = () => {
+        if (!currentRoom || !availability[id]) return;
+        socket.emit("coinFlipUseItem", { roomCode: currentRoom, itemId: id });
+      };
+      cfItems.appendChild(button);
+    });
+  }
+
+  function renderRoundEnd() {
+    if (!cfRoundEnd || !state) return;
+    const atRoundEnd = state.phase === "round-end" && !gameOver;
+    cfRoundEnd.classList.toggle("hidden", !atRoundEnd);
+    if (!atRoundEnd) return;
+    const summary = state.roundSummary || {};
+    if (cfRoundSummary) {
+      cfRoundSummary.textContent =
+        "Round " + (summary.round || state.round) + " · " +
+        (summary.throws || state.throwsThisRound) + " / " +
+        (summary.throws || state.throwsThisRound) + " throws · +" +
+        (summary.itemsPerPlayer || 1) + " item each";
+    }
+    const mine = state.canSetWager;
+    if (cfRoundWagerPrompt) {
+      cfRoundWagerPrompt.textContent = mine
+        ? "Choose the shared wager for the next round."
+        : "Opponent is choosing the next round's wager.";
+    }
+    const min = state.nextWagerMin || state.roundWager;
+    const max = state.nextWagerMax || min;
+    if (cfKeepWagerBtn) {
+      cfKeepWagerBtn.textContent = "Keep " + min + " ♥";
+      cfKeepWagerBtn.disabled = !mine;
+      cfKeepWagerBtn.dataset.wager = String(min);
+    }
+    if (cfRaiseWagerBtn) {
+      cfRaiseWagerBtn.textContent = "Increase to " + max + " ♥";
+      cfRaiseWagerBtn.disabled = !mine || max === min;
+      cfRaiseWagerBtn.classList.toggle("hidden", max === min);
+      cfRaiseWagerBtn.dataset.wager = String(max);
+    }
+  }
+
+  function syncControls() {
+    if (!state) return;
+    const can = !!state.canAct && !gameOver && state.wagerAtRisk > 0;
     if (cfHeadsBtn) cfHeadsBtn.disabled = !can;
     if (cfTailsBtn) cfTailsBtn.disabled = !can;
   }
@@ -283,7 +354,11 @@
     const opp = oppPlayer();
     const maxH = state.startingHearts || 10;
 
-    if (cfMeta) cfMeta.textContent = "Round " + (state.round || 1);
+    if (cfMeta) {
+      cfMeta.textContent =
+        "Round " + (state.round || 1) + " · " +
+        (state.throwsThisRound || 5) + " throws";
+    }
     if (cfOppName) cfOppName.textContent = opp ? opp.name : "Opponent";
     if (cfMyName) cfMyName.textContent = me ? me.name : "You";
     renderHearts(cfOppHearts, opp ? opp.hearts : maxH, maxH);
@@ -297,7 +372,7 @@
     }
 
     if (cfWagerValue) {
-      cfWagerValue.textContent = (state.roundWager || 1) + " ♥";
+      cfWagerValue.textContent = (state.wagerAtRisk || state.roundWager || 1) + " ♥";
     }
     if (cfHeadsRemaining) cfHeadsRemaining.textContent = String(state.headsRemaining || 0);
     if (cfTailsRemaining) cfTailsRemaining.textContent = String(state.tailsRemaining || 0);
@@ -305,7 +380,9 @@
 
     renderPreview();
     renderHistory();
-    syncWagerControls();
+    renderItems();
+    renderRoundEnd();
+    syncControls();
 
     if (gameOver || state.phase === "over") {
       if (cfTurnIndicator) cfTurnIndicator.textContent = "Match Over";
@@ -315,6 +392,13 @@
       if (cfControls) cfControls.classList.add("hidden");
     } else if (state.phase === "between") {
       if (cfTurnIndicator) cfTurnIndicator.textContent = "Resolving…";
+      if (cfControls) cfControls.classList.add("hidden");
+    } else if (state.phase === "round-end") {
+      if (cfTurnIndicator) {
+        cfTurnIndicator.textContent = state.canSetWager
+          ? "Choose next wager"
+          : "Round complete";
+      }
       if (cfControls) cfControls.classList.add("hidden");
     } else if (state.yourTurn) {
       if (cfTurnIndicator) cfTurnIndicator.textContent = "Your turn";
@@ -329,19 +413,22 @@
     state = data || state;
     if (data && data.room) currentRoom = data.room;
     if (data && data.over) gameOver = true;
-    if (data && data.maxWager > 0 && (!selectedWager || selectedWager > data.maxWager)) {
-      selectedWager = data.maxWager;
-    }
     renderState();
   }
 
   function playFlip(choice) {
     if (!currentRoom || !state || !state.canAct || gameOver) return;
-    const wager = Number(cfWagerRange ? cfWagerRange.value : selectedWager);
     socket.emit("coinFlipPlay", {
       roomCode: currentRoom,
-      wager: wager,
       choice: choice
+    });
+  }
+
+  function setNextWager(button) {
+    if (!currentRoom || !state || !state.canSetWager || !button) return;
+    socket.emit("coinFlipSetNextWager", {
+      roomCode: currentRoom,
+      wager: Number(button.dataset.wager)
     });
   }
 
@@ -350,12 +437,8 @@
     cfHeadsBtn.dataset.wired = "1";
     cfHeadsBtn.onclick = () => playFlip("heads");
     cfTailsBtn.onclick = () => playFlip("tails");
-    if (cfWagerRange) {
-      cfWagerRange.addEventListener("input", () => {
-        selectedWager = Number(cfWagerRange.value) || 1;
-        if (cfWagerPickVal) cfWagerPickVal.textContent = String(selectedWager);
-      });
-    }
+    cfKeepWagerBtn.onclick = () => setNextWager(cfKeepWagerBtn);
+    cfRaiseWagerBtn.onclick = () => setNextWager(cfRaiseWagerBtn);
     if (cfPlayAgainBtn) {
       cfPlayAgainBtn.onclick = () => {
         if (!currentRoom || !gameOver) return;
@@ -373,7 +456,6 @@
     }
     wireControls();
     gameOver = false;
-    selectedWager = data.maxWager || data.roundWager || 1;
     hideEndButtons();
     applyState(data);
     showCoinFlipScreen();
@@ -413,13 +495,19 @@
         cfOutcomeLabel.className = "cfOutcomeLabel " + (r.actorWins ? "won" : "lost");
       }
       if (r.actorWins) {
+        const doubleText = r.doubled ? " (Double)" : "";
         cfMsg.textContent = youActed
-          ? "Your " + String(r.choice).toUpperCase() + " bet matched. Opponent loses " + r.damage + " ♥"
-          : "Opponent's bet matched. You lose " + r.damage + " ♥";
+          ? "Your " + String(r.choice).toUpperCase() + " bet matched" + doubleText +
+            ". Opponent loses " + r.damage + " ♥"
+          : "Opponent's bet matched" + doubleText + ". You lose " + r.damage + " ♥";
       } else {
+        const protectionText = r.protection
+          ? " (" + (r.protection === "shield" ? "Shield" : "Safe Bet") + ")"
+          : "";
         cfMsg.textContent = youActed
-          ? "Your " + String(r.choice).toUpperCase() + " bet missed. You lose " + r.damage + " ♥"
-          : "Opponent's bet missed. They lose " + r.damage + " ♥";
+          ? "Your " + String(r.choice).toUpperCase() + " bet missed" + protectionText +
+            ". You lose " + r.damage + " ♥"
+          : "Opponent's bet missed" + protectionText + ". They lose " + r.damage + " ♥";
       }
     }
   }
@@ -447,6 +535,51 @@
     });
     socket.on("coinFlipSuspense", onSuspense);
     socket.on("coinFlipReveal", onReveal);
+    socket.on("coinFlipChoiceSwapped", (data) => {
+      if (!active) return;
+      if (cfCoinLabel) {
+        cfCoinLabel.textContent =
+          "CHOICE LOCKED: " + String(data.choice || "").toUpperCase();
+      }
+    });
+    socket.on("coinFlipItemInfo", (data) => {
+      if (!active || !data || !data.info) return;
+      if (cfMsg) {
+        cfMsg.textContent =
+          "Private Peek: throw " + data.info.position + " will be " +
+          String(data.info.result || "").toUpperCase() + ".";
+      }
+    });
+    socket.on("coinFlipItemUsed", (data) => {
+      if (!active || !data || data.itemId === "peek") return;
+      if (cfMsg) cfMsg.textContent = (data.name || "Item") + " activated.";
+    });
+    socket.on("coinFlipItemReward", (data) => {
+      if (!active || !data) return;
+      const names = (data.items || []).map((item) => item.name).join(", ");
+      if (cfMsg) cfMsg.textContent = "Round reward: " + names + ".";
+    });
+    socket.on("coinFlipRoundComplete", (data) => {
+      if (!active || !data || !data.summary) return;
+      if (cfOutcomeLabel) {
+        cfOutcomeLabel.textContent = "ROUND COMPLETE";
+        cfOutcomeLabel.className = "cfOutcomeLabel";
+      }
+    });
+    socket.on("coinFlipRoundStarted", (data) => {
+      if (!active || !data) return;
+      setCoinFace("idle", false);
+      if (cfCoinLabel) cfCoinLabel.textContent = "Awaiting bet";
+      if (cfOutcomeLabel) {
+        cfOutcomeLabel.textContent = "";
+        cfOutcomeLabel.className = "cfOutcomeLabel";
+      }
+      if (cfMsg) {
+        cfMsg.textContent =
+          "Round " + data.round + ": " + data.throws +
+          " hidden flips, wager " + data.roundWager + " ♥.";
+      }
+    });
     socket.on("coinFlipOver", onGameOver);
     socket.on("coinFlipPlayAgainWait", () => {
       if (!active || !cfPlayAgainBtn) return;
@@ -456,7 +589,10 @@
       if (!active) return;
       gameOver = false;
       hideEndButtons();
-      if (cfOutcomeLabel) cfOutcomeLabel.textContent = "";
+      if (cfOutcomeLabel) {
+        cfOutcomeLabel.textContent = "";
+        cfOutcomeLabel.className = "cfOutcomeLabel";
+      }
       if (cfMsg) cfMsg.textContent = "New match — use the known counts to manage your risk.";
     });
     socket.on("playerLeft", () => {
