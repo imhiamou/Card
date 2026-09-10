@@ -255,7 +255,6 @@ const game=selectedGame==="word-chain"?"word-chain"
 :selectedGame==="dominoes"?"dominoes"
 :selectedGame==="uno"?"uno"
 :selectedGame==="dodge-ball"?"dodge-ball"
-:selectedGame==="obol"?"obol"
 :selectedGame==="coin-flip"?"coin-flip"
 :"hidden-hunt";
 const payload={name,room,game};
@@ -358,8 +357,6 @@ if(window.Dominoes&&Dominoes.isActive()&&Dominoes.showError(msg))return;
 if(window.Uno&&Uno.isActive()&&Uno.showError(msg))return;
 // Dodge Ball handles its own messages when active.
 if(window.DodgeBall&&DodgeBall.isActive()&&DodgeBall.showError(msg))return;
-// O.B.O.L. handles its own messages when active.
-if(window.Obol&&Obol.isActive()&&Obol.showError(msg))return;
 // Coin Flip handles its own messages when active.
 if(window.CoinFlip&&CoinFlip.isActive()&&CoinFlip.showError(msg))return;
 // During the game, a rejected play (e.g. an invalid Dash target) must
@@ -1389,7 +1386,5 @@ if(window.Dominoes)Dominoes.init(socket);
 if(window.Uno)Uno.init(socket);
 // Wire Dodge Ball to the shared lobby socket (isolated from other games).
 if(window.DodgeBall)DodgeBall.init(socket);
-// Wire O.B.O.L. to the shared lobby socket (isolated from other games).
-if(window.Obol)Obol.init(socket);
 // Wire Coin Flip to the shared lobby socket (isolated from other games).
 if(window.CoinFlip)CoinFlip.init(socket);
