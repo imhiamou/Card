@@ -346,7 +346,6 @@ function buildStateFor(room, playerId, roomCode) {
     cf.currentTurnId === playerId
   );
   const maxWager = maxAllowedWager(room);
-  const seeUpcoming = canSeeUpcoming(room, playerId);
   return {
     room: roomCode,
     game: "coin-flip",
@@ -364,11 +363,12 @@ function buildStateFor(room, playerId, roomCode) {
     yourId: playerId,
     yourTurn,
     canAct: yourTurn && maxWager >= MIN_WAGER,
-    upcomingHidden: !seeUpcoming,
-    upcomingResults: seeUpcoming ? group.hiddenOrder.slice() : null,
-    headsRemaining: seeUpcoming ? group.headsRemaining : null,
-    tailsRemaining: seeUpcoming ? group.tailsRemaining : null,
+    upcomingHidden: true,
+    upcomingResults: null,
+    headsRemaining: group.headsRemaining,
+    tailsRemaining: group.tailsRemaining,
     flipsRemaining: group.hiddenOrder.length,
+    revealedInGroup: group.revealed.slice(),
     lockedChoice: cf.pending ? cf.pending.choice : null,
     lastResult: cf.lastResult,
     roundSummary: cf.roundSummary,
