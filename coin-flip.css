@@ -89,10 +89,10 @@ text-overflow:ellipsis;
 
 .cfHearts{
 display:flex;
-flex-wrap:nowrap;
+flex-wrap:wrap;
 align-items:center;
 gap:1px;
-font-size:calc(var(--cf-font) * 1.15);
+font-size:calc(var(--cf-font) * 1.05);
 line-height:1;
 }
 
@@ -202,6 +202,13 @@ color:#eef3ff;
 
 .cfThrow.revealed.heads{background:#2f5c8f;}
 .cfThrow.revealed.tails{background:#6b4a8f;}
+
+.cfThrow.upcoming{
+background:#243044;
+color:#eef3ff;
+}
+.cfThrow.upcoming.heads{background:#2a4a72;}
+.cfThrow.upcoming.tails{background:#4d3a72;}
 
 /* ---- Middle: coin arena + betting action ---- */
 

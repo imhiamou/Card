@@ -14,12 +14,12 @@
         '</div>' +
         '<div class="cfTitleBlock">' +
           '<h2>COIN FLIP</h2>' +
-          '<div class="cfMeta" id="cfMeta">Round 1 · 5 throws</div>' +
+          '<div class="cfMeta" id="cfMeta">Round 1 · THROWS: 0 / 10</div>' +
         '</div>' +
         '<div class="cfCounts">' +
-          '<div><strong id="cfHeadsRemaining">0</strong><span>Heads left</span></div>' +
-          '<div><strong id="cfTailsRemaining">0</strong><span>Tails left</span></div>' +
-          '<div><strong id="cfFlipsRemaining">5</strong><span>Throws left</span></div>' +
+          '<div><strong id="cfThrowsProgress">0 / 10</strong><span>Throws</span></div>' +
+          '<div><strong id="cfHeadsRemaining">?</strong><span>Heads left</span></div>' +
+          '<div><strong id="cfTailsRemaining">?</strong><span>Tails left</span></div>' +
         '</div>' +
       '</div>' +
       '<div class="cfPreview" id="cfPreview"></div>' +
@@ -109,7 +109,7 @@
   let cfPreview;
   let cfHeadsRemaining;
   let cfTailsRemaining;
-  let cfFlipsRemaining;
+  let cfThrowsProgress;
   let cfCoin;
   let cfCoinLabel;
   let cfOutcomeLabel;
@@ -161,7 +161,7 @@
     cfPreview = $("cfPreview");
     cfHeadsRemaining = $("cfHeadsRemaining");
     cfTailsRemaining = $("cfTailsRemaining");
-    cfFlipsRemaining = $("cfFlipsRemaining");
+    cfThrowsProgress = $("cfThrowsProgress");
     cfCoin = $("cfCoin");
     cfCoinLabel = $("cfCoinLabel");
     cfOutcomeLabel = $("cfOutcomeLabel");
@@ -238,7 +238,7 @@
   function renderHearts(el, count, max) {
     if (!el) return;
     const n = Math.max(0, count || 0);
-    const cap = max || 10;
+    const cap = max || 20;
     let html = "";
     for (let i = 0; i < cap; i++) {
       html += '<span class="cfHeart' + (i < n ? " on" : " off") + '">♥</span>';
@@ -254,19 +254,24 @@
     if (!cfPreview) return;
     cfPreview.innerHTML = "";
     const revealed = (state && state.revealedInGroup) || [];
-    const total = (state && state.throwsThisRound) || 5;
+    const upcoming = (state && !state.upcomingHidden && state.upcomingResults) || null;
+    const total = (state && state.throwsThisRound) || 10;
     cfPreview.dataset.count = String(total);
     for (let i = 0; i < total; i++) {
       const cell = document.createElement("div");
       if (i < revealed.length) {
         cell.className = "cfThrow revealed " + revealed[i];
         cell.textContent = sideLetter(revealed[i]);
-        cell.title = "Revealed: " + revealed[i];
       } else {
-        cell.className = "cfThrow hiddenResult" +
-          (i === revealed.length ? " current" : "");
-        cell.textContent = "?";
-        cell.title = i === revealed.length ? "Current hidden throw" : "Hidden throw";
+        const future = upcoming ? upcoming[i - revealed.length] : null;
+        const isCurrent = i === revealed.length;
+        if (future === "heads" || future === "tails") {
+          cell.className = "cfThrow upcoming " + future + (isCurrent ? " current" : "");
+          cell.textContent = sideLetter(future);
+        } else {
+          cell.className = "cfThrow hiddenResult" + (isCurrent ? " current" : "");
+          cell.textContent = "?";
+        }
       }
       cfPreview.appendChild(cell);
     }
@@ -358,7 +363,7 @@
     }
     cfItems.innerHTML = "";
     if (!ids.length) {
-      cfItems.innerHTML = '<span class="cfNoItems">Finish a round to earn an item.</span>';
+      cfItems.innerHTML = '<span class="cfNoItems">No items.</span>';
       if (cfItemInfo) cfItemInfo.classList.add("hidden");
       return;
     }
@@ -457,7 +462,7 @@
     if (!state) return;
     const me = mePlayer();
     const opp = oppPlayer();
-    const maxH = state.startingHearts || 10;
+    const maxH = state.startingHearts || 20;
 
     const key = turnKey();
     if (key !== lastTurnKey) {
@@ -466,10 +471,13 @@
       selectedSide = null;
     }
 
+    const throwsDone = state.throwsCompleted != null
+      ? state.throwsCompleted
+      : ((state.revealedInGroup || []).length);
+    const throwsTotal = state.throwsThisRound || 10;
     if (cfMeta) {
       cfMeta.textContent =
-        "Round " + (state.round || 1) + " · " +
-        (state.throwsThisRound || 5) + " throws";
+        "Round " + (state.round || 1) + " · THROWS: " + throwsDone + " / " + throwsTotal;
     }
     if (cfOppName) cfOppName.textContent = opp ? opp.name : "Opponent";
     if (cfMyName) cfMyName.textContent = me ? me.name : "You";
@@ -483,9 +491,20 @@
       cfMyStatus.textContent = me && me.isTurn ? "Your bet" : "";
     }
 
-    if (cfHeadsRemaining) cfHeadsRemaining.textContent = String(state.headsRemaining || 0);
-    if (cfTailsRemaining) cfTailsRemaining.textContent = String(state.tailsRemaining || 0);
-    if (cfFlipsRemaining) cfFlipsRemaining.textContent = String(state.flipsRemaining || 0);
+    if (cfThrowsProgress) {
+      cfThrowsProgress.textContent = throwsDone + " / " + throwsTotal;
+    }
+    const hideCounts = !!state.upcomingHidden;
+    if (cfHeadsRemaining) {
+      cfHeadsRemaining.textContent = hideCounts || state.headsRemaining == null
+        ? "?"
+        : String(state.headsRemaining);
+    }
+    if (cfTailsRemaining) {
+      cfTailsRemaining.textContent = hideCounts || state.tailsRemaining == null
+        ? "?"
+        : String(state.tailsRemaining);
+    }
 
     renderPreview();
     renderHistory();
@@ -631,11 +650,12 @@
       if (!cfMsg) return;
       if (r.actorWins) {
         const doubleText = r.doubled ? " (Double)" : "";
+        const healText = r.healed ? " Winner +" + r.healed + " ♥." : "";
         cfMsg.textContent = youActed
           ? "Your " + r.wager + "♥ bet on " + String(r.choice).toUpperCase() +
-            " hit" + doubleText + ". Opponent loses " + r.damage + " ♥."
+            " hit" + doubleText + ". Opponent loses " + r.damage + " ♥." + healText
           : "Opponent's " + r.wager + "♥ bet hit" + doubleText +
-            ". You lose " + r.damage + " ♥.";
+            ". You lose " + r.damage + " ♥." + healText;
       } else {
         const protectionText = r.protection
           ? " (" + (r.protection === "shield" ? "Shield" : "Safe Bet") + ")"
@@ -674,13 +694,6 @@
     });
     socket.on("coinFlipSuspense", onSuspense);
     socket.on("coinFlipReveal", onReveal);
-    socket.on("coinFlipChoiceSwapped", (data) => {
-      if (!active) return;
-      if (cfCoinLabel) {
-        cfCoinLabel.textContent =
-          "CHOICE LOCKED: " + String(data.choice || "").toUpperCase();
-      }
-    });
     socket.on("coinFlipItemInfo", (data) => {
       if (!active || !data || !data.info) return;
       if (cfMsg) {

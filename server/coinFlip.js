@@ -2,15 +2,17 @@
  * Coin Flip — isolated 1v1 turn-based wagering and item game.
  *
  * The existing lobby owns rooms and players. This module owns only room.cf
- * and Coin Flip events. Future flip order never leaves this server module.
+ * and Coin Flip events. Upcoming flip sides are sent only to viewers who
+ * are allowed to see them.
  */
 
 const { randomInt } = require("crypto");
 
-const STARTING_HEARTS = 10;
-const STARTING_THROWS = 5;
-const THROWS_PER_ROUND_INCREMENT = 1;
-const ITEMS_PER_ROUND = 1;
+const STARTING_HEARTS = 20;
+const STARTING_THROWS = 10;
+const THROWS_PER_ROUND_INCREMENT = 0;
+const ITEMS_PER_ROUND = 3;
+const HEAL_ON_WIN = 1;
 const MIN_WAGER = 1;
 const SHIELD_REDUCTION = 2;
 const SAFE_BET_REDUCTION = 1;
@@ -21,8 +23,8 @@ const SIDES = ["heads", "tails"];
 
 /* ---- Round composition and hidden ordering (server-only) ---- */
 
-function throwsForRound(round) {
-  return STARTING_THROWS + Math.max(0, round - 1) * THROWS_PER_ROUND_INCREMENT;
+function throwsForRound() {
+  return STARTING_THROWS;
 }
 
 function generateComposition(count) {
@@ -77,7 +79,7 @@ const ITEM_DEFS = {
   peek: {
     id: "peek",
     name: "Peek",
-    description: "Privately reveal the next hidden flip.",
+    description: "Privately reveal the next upcoming flip, even if the sequence is hidden from you.",
     phase: "turn"
   },
   shield: {
@@ -92,16 +94,56 @@ const ITEM_DEFS = {
     description: "Your next won wager deals double damage; a loss stays normal.",
     phase: "turn"
   },
-  swap: {
-    id: "swap",
-    name: "Swap",
-    description: "Swap your locked Heads/Tails choice during suspense.",
-    phase: "resolving"
-  },
   "safe-bet": {
     id: "safe-bet",
     name: "Safe Bet",
     description: "Reduce your next lost wager by " + SAFE_BET_REDUCTION + " heart.",
+    phase: "turn"
+  },
+  "flip-swap": {
+    id: "flip-swap",
+    name: "Flip Swap",
+    description: "Swap the next two upcoming coin results. Does not change who is betting.",
+    phase: "turn",
+    needsUpcoming: 2
+  },
+  reverse: {
+    id: "reverse",
+    name: "Reverse",
+    description: "Reverse the order of remaining upcoming coin results this round.",
+    phase: "turn",
+    needsUpcoming: 2
+  },
+  randomize: {
+    id: "randomize",
+    name: "Randomize",
+    description: "Shuffle the remaining upcoming coin results this round. The new order is chosen on the server.",
+    phase: "turn",
+    needsUpcoming: 2
+  },
+  "swap-next": {
+    id: "swap-next",
+    name: "Swap Next",
+    description: "Swap the next upcoming result with another remaining result chosen at random.",
+    phase: "turn",
+    needsUpcoming: 2
+  },
+  "blind-round": {
+    id: "blind-round",
+    name: "Blind Round",
+    description: "Hide upcoming Heads/Tails from both players for the rest of this round. Revealed throws stay visible.",
+    phase: "turn"
+  },
+  "hide-opponent": {
+    id: "hide-opponent",
+    name: "Hide Opponent",
+    description: "Hide upcoming Heads/Tails from your opponent for the rest of this round. You still see them.",
+    phase: "turn"
+  },
+  "hidden-future": {
+    id: "hidden-future",
+    name: "Hidden Future",
+    description: "Hide upcoming Heads/Tails from yourself for the rest of this round. Already revealed throws stay visible.",
     phase: "turn"
   }
 };
@@ -126,7 +168,9 @@ function createPlayerState() {
     effects: {
       shield: 0,
       safeBet: 0,
-      doubleNext: false
+      doubleNext: false,
+      hideOpponent: false,
+      hiddenFuture: false
     },
     itemUsedThisTurn: false,
     peekInfo: null,
@@ -134,16 +178,25 @@ function createPlayerState() {
   };
 }
 
+function pickRoundItems() {
+  const pool = ITEM_IDS.slice();
+  const picks = [];
+  const count = Math.min(ITEMS_PER_ROUND, pool.length);
+  for (let i = 0; i < count; i++) {
+    const idx = randomInt(pool.length);
+    picks.push(pool.splice(idx, 1)[0]);
+  }
+  return picks;
+}
+
 function grantRoundItems(room, io) {
   const cf = room.cf;
   room.players.forEach((player) => {
     const slot = cf.playerState[player.id];
-    const rewards = [];
-    for (let i = 0; i < ITEMS_PER_ROUND; i++) {
-      const itemId = ITEM_IDS[randomInt(ITEM_IDS.length)];
+    const rewards = pickRoundItems();
+    rewards.forEach((itemId) => {
       slot.inventory[itemId] = (slot.inventory[itemId] || 0) + 1;
-      rewards.push(itemId);
-    }
+    });
     slot.lastReward = rewards.slice();
     io.to(player.id).emit("coinFlipItemReward", {
       round: cf.round,
@@ -153,6 +206,32 @@ function grantRoundItems(room, io) {
       })
     });
   });
+}
+
+function resetRoundVisibility(cf) {
+  cf.blindRound = false;
+  Object.keys(cf.playerState).forEach((id) => {
+    const slot = cf.playerState[id];
+    slot.effects.hideOpponent = false;
+    slot.effects.hiddenFuture = false;
+    slot.peekInfo = null;
+  });
+}
+
+function canSeeUpcoming(room, viewerId) {
+  const cf = room.cf;
+  if (!cf || cf.blindRound) return false;
+  const slot = cf.playerState[viewerId];
+  if (slot && slot.effects.hiddenFuture) return false;
+  const oppId = opponentId(room, viewerId);
+  if (oppId && cf.playerState[oppId] && cf.playerState[oppId].effects.hideOpponent) {
+    return false;
+  }
+  return true;
+}
+
+function upcomingCount(cf) {
+  return cf && cf.group && cf.group.hiddenOrder ? cf.group.hiddenOrder.length : 0;
 }
 
 /* ---- Turn, wager, and timer helpers ---- */
@@ -214,6 +293,7 @@ function initRoomState(room) {
     nextRoundStarterId: null,
     phase: "turn", // turn | resolving | between | round-end | over
     group: generateFlipGroup(throwsForRound(1)),
+    blindRound: false,
     lastResult: null,
     roundSummary: null,
     pending: null,
@@ -245,13 +325,13 @@ function itemAvailability(room, playerId) {
       availability[id] = false;
       return;
     }
-    if (id === "swap") {
-      availability[id] = cf.phase === "resolving" &&
-        !!cf.pending &&
-        cf.pending.actorId === playerId;
+    const onTurn = cf.phase === "turn" && cf.currentTurnId === playerId;
+    if (!onTurn) {
+      availability[id] = false;
       return;
     }
-    availability[id] = cf.phase === "turn" && cf.currentTurnId === playerId;
+    const need = ITEM_DEFS[id].needsUpcoming || 0;
+    availability[id] = upcomingCount(cf) >= need;
   });
   return availability;
 }
@@ -266,11 +346,13 @@ function buildStateFor(room, playerId, roomCode) {
     cf.currentTurnId === playerId
   );
   const maxWager = maxAllowedWager(room);
+  const seeUpcoming = canSeeUpcoming(room, playerId);
   return {
     room: roomCode,
     game: "coin-flip",
     round: cf.round,
     throwsThisRound: group.totalThrows,
+    throwsCompleted: group.revealed.length,
     wagerAtRisk: wagerAtRisk(room),
     minWager: MIN_WAGER,
     maxWager,
@@ -282,10 +364,11 @@ function buildStateFor(room, playerId, roomCode) {
     yourId: playerId,
     yourTurn,
     canAct: yourTurn && maxWager >= MIN_WAGER,
-    headsRemaining: group.headsRemaining,
-    tailsRemaining: group.tailsRemaining,
+    upcomingHidden: !seeUpcoming,
+    upcomingResults: seeUpcoming ? group.hiddenOrder.slice() : null,
+    headsRemaining: seeUpcoming ? group.headsRemaining : null,
+    tailsRemaining: seeUpcoming ? group.tailsRemaining : null,
     flipsRemaining: group.hiddenOrder.length,
-    revealedInGroup: group.revealed.slice(),
     lockedChoice: cf.pending ? cf.pending.choice : null,
     lastResult: cf.lastResult,
     roundSummary: cf.roundSummary,
@@ -319,6 +402,12 @@ function applyDamage(cf, targetId, amount) {
   const damage = Math.max(0, Math.min(amount, cf.hearts[targetId] || 0));
   cf.hearts[targetId] = Math.max(0, (cf.hearts[targetId] || 0) - damage);
   return damage;
+}
+
+function applyHeal(cf, targetId, amount) {
+  const before = cf.hearts[targetId] || 0;
+  cf.hearts[targetId] = Math.min(STARTING_HEARTS, before + Math.max(0, amount));
+  return cf.hearts[targetId] - before;
 }
 
 function reduceLostWager(slot, amount) {
@@ -407,7 +496,6 @@ function completeRound(room, io, roomCode, lastActorId) {
     itemsPerPlayer: ITEMS_PER_ROUND,
     pauseMs: ROUND_END_MS
   };
-  grantRoundItems(room, io);
   io.to(roomCode).emit("coinFlipRoundComplete", {
     room: roomCode,
     summary: cf.roundSummary,
@@ -428,6 +516,7 @@ function startNextRound(room, io, roomCode) {
   cf.currentTurnId = cf.nextRoundStarterId || opponentId(room, cf.currentTurnId);
   cf.nextRoundStarterId = null;
   cf.phase = "turn";
+  resetRoundVisibility(cf);
   cf.group = generateFlipGroup(throwsForRound(cf.round));
   cf.lastResult = null;
   cf.roundSummary = null;
@@ -438,6 +527,7 @@ function startNextRound(room, io, roomCode) {
     slot.peekInfo = null;
     slot.lastReward = null;
   });
+  grantRoundItems(room, io);
   io.to(roomCode).emit("coinFlipRoundStarted", {
     room: roomCode,
     round: cf.round,
@@ -463,6 +553,7 @@ function finishResolve(room, io, roomCode) {
   let damageAmount = wager;
   let protection = null;
   let doubled = false;
+  let healed = 0;
   if (actorWins) {
     winnerId = actorId;
     loserId = opponentId(room, actorId);
@@ -470,6 +561,7 @@ function finishResolve(room, io, roomCode) {
       damageAmount *= 2;
       doubled = true;
     }
+    healed = applyHeal(cf, actorId, HEAL_ON_WIN);
   } else {
     winnerId = opponentId(room, actorId);
     loserId = actorId;
@@ -503,6 +595,7 @@ function finishResolve(room, io, roomCode) {
     winnerId,
     loserId,
     damage: dealt,
+    healed,
     protection,
     doubled
   };
@@ -514,8 +607,6 @@ function finishResolve(room, io, roomCode) {
   io.to(roomCode).emit("coinFlipReveal", {
     room: roomCode,
     result: entry,
-    headsRemaining: cf.group.headsRemaining,
-    tailsRemaining: cf.group.tailsRemaining,
     flipsRemaining: cf.group.hiddenOrder.length,
     revealedInGroup: cf.group.revealed.slice(),
     players: publicPlayers(room)
@@ -573,13 +664,52 @@ function consumeItem(slot, itemId) {
   slot.itemUsedThisTurn = true;
 }
 
+function applySequenceItem(cf, itemId) {
+  const seq = cf.group.hiddenOrder;
+  if (itemId === "flip-swap") {
+    if (seq.length < 2) return { ok: false, error: "Need two upcoming flips to use Flip Swap." };
+    const tmp = seq[0];
+    seq[0] = seq[1];
+    seq[1] = tmp;
+    return { ok: true };
+  }
+  if (itemId === "reverse") {
+    if (seq.length < 2) return { ok: false, error: "Need two upcoming flips to use Reverse." };
+    seq.reverse();
+    return { ok: true };
+  }
+  if (itemId === "randomize") {
+    if (seq.length < 2) return { ok: false, error: "Need two upcoming flips to use Randomize." };
+    cf.group.hiddenOrder = shuffleResults(seq);
+    return { ok: true };
+  }
+  if (itemId === "swap-next") {
+    if (seq.length < 2) return { ok: false, error: "Need two upcoming flips to use Swap Next." };
+    const other = randomInt(1, seq.length);
+    const tmp = seq[0];
+    seq[0] = seq[other];
+    seq[other] = tmp;
+    return { ok: true };
+  }
+  return { ok: true };
+}
+
 function useItem(room, io, roomCode, playerId, itemId) {
   const cf = room.cf;
   const slot = cf.playerState[playerId];
+  const def = ITEM_DEFS[itemId];
   const available = itemAvailability(room, playerId);
-  if (!ITEM_DEFS[itemId]) return { ok: false, error: "Unknown item." };
+  if (!def) return { ok: false, error: "Unknown item." };
   if (!slot.inventory[itemId]) return { ok: false, error: "You do not own that item." };
-  if (!available[itemId]) return { ok: false, error: "That item cannot be used right now." };
+  if (!available[itemId]) {
+    if (def.needsUpcoming && upcomingCount(cf) < def.needsUpcoming) {
+      return { ok: false, error: def.name + " needs at least two upcoming flips." };
+    }
+    return { ok: false, error: "That item cannot be used right now." };
+  }
+
+  const prepared = applySequenceItem(cf, itemId);
+  if (!prepared.ok) return prepared;
 
   consumeItem(slot, itemId);
   if (itemId === "peek") {
@@ -590,7 +720,7 @@ function useItem(room, io, roomCode, playerId, itemId) {
     };
     io.to(playerId).emit("coinFlipItemInfo", {
       itemId,
-      name: ITEM_DEFS[itemId].name,
+      name: def.name,
       info: slot.peekInfo
     });
   } else if (itemId === "shield") {
@@ -599,16 +729,16 @@ function useItem(room, io, roomCode, playerId, itemId) {
     slot.effects.doubleNext = true;
   } else if (itemId === "safe-bet") {
     slot.effects.safeBet += 1;
-  } else if (itemId === "swap") {
-    cf.pending.choice = cf.pending.choice === "heads" ? "tails" : "heads";
-    io.to(roomCode).emit("coinFlipChoiceSwapped", {
-      actorId: playerId,
-      choice: cf.pending.choice
-    });
+  } else if (itemId === "blind-round") {
+    cf.blindRound = true;
+  } else if (itemId === "hide-opponent") {
+    slot.effects.hideOpponent = true;
+  } else if (itemId === "hidden-future") {
+    slot.effects.hiddenFuture = true;
   }
   io.to(playerId).emit("coinFlipItemUsed", {
     itemId,
-    name: ITEM_DEFS[itemId].name
+    name: def.name
   });
   emitStates(room, io, roomCode);
   return { ok: true };
@@ -618,6 +748,7 @@ function useItem(room, io, roomCode, playerId, itemId) {
 
 function onBothPlayersJoined(room, io, roomCode) {
   initRoomState(room);
+  grantRoundItems(room, io);
   room.players.forEach((player) => {
     io.to(player.id).emit("coinFlipStarted", buildStateFor(room, player.id, roomCode));
   });
