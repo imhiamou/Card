@@ -166,6 +166,14 @@ text-overflow:ellipsis;
 
 /* ---- Throw slots (compact, scale with count) ---- */
 
+.cfPreviewNote{
+text-align:center;
+font-size:calc(var(--cf-font) * .85);
+color:#9db2d0;
+letter-spacing:.04em;
+flex:0 0 auto;
+}
+
 .cfPreview{
 display:flex;
 flex-wrap:nowrap;

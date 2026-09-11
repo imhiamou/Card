@@ -14,14 +14,15 @@
         '</div>' +
         '<div class="cfTitleBlock">' +
           '<h2>COIN FLIP</h2>' +
-          '<div class="cfMeta" id="cfMeta">Round 1 · THROWS: 0 / 10</div>' +
+          '<div class="cfMeta" id="cfMeta">Round 1 · Next 10 Throws: 0 Heads / 0 Tails</div>' +
         '</div>' +
         '<div class="cfCounts">' +
           '<div><strong id="cfThrowsProgress">0 / 10</strong><span>Throws</span></div>' +
-          '<div><strong id="cfHeadsRemaining">?</strong><span>Heads left</span></div>' +
-          '<div><strong id="cfTailsRemaining">?</strong><span>Tails left</span></div>' +
+          '<div><strong id="cfHeadsRemaining">0</strong><span>Heads left</span></div>' +
+          '<div><strong id="cfTailsRemaining">0</strong><span>Tails left</span></div>' +
         '</div>' +
       '</div>' +
+      '<div class="cfPreviewNote" id="cfPreviewNote">Order hidden</div>' +
       '<div class="cfPreview" id="cfPreview"></div>' +
       '<div class="cfMid">' +
         '<div class="cfArena">' +
@@ -107,6 +108,7 @@
   let cfMyHearts;
   let cfMyStatus;
   let cfPreview;
+  let cfPreviewNote;
   let cfHeadsRemaining;
   let cfTailsRemaining;
   let cfThrowsProgress;
@@ -159,6 +161,7 @@
     cfMyHearts = $("cfMyHearts");
     cfMyStatus = $("cfMyStatus");
     cfPreview = $("cfPreview");
+    cfPreviewNote = $("cfPreviewNote");
     cfHeadsRemaining = $("cfHeadsRemaining");
     cfTailsRemaining = $("cfTailsRemaining");
     cfThrowsProgress = $("cfThrowsProgress");
@@ -468,9 +471,23 @@
       ? state.throwsCompleted
       : ((state.revealedInGroup || []).length);
     const throwsTotal = state.throwsThisRound || 10;
+    const headsRound = state.headsThisRound != null
+      ? state.headsThisRound
+      : state.headsRemaining;
+    const tailsRound = state.tailsThisRound != null
+      ? state.tailsThisRound
+      : state.tailsRemaining;
     if (cfMeta) {
       cfMeta.textContent =
-        "Round " + (state.round || 1) + " · THROWS: " + throwsDone + " / " + throwsTotal;
+        "Round " + (state.round || 1) +
+        " · Next " + throwsTotal + " Throws: " +
+        (headsRound != null ? headsRound : "?") + " Heads / " +
+        (tailsRound != null ? tailsRound : "?") + " Tails";
+    }
+    if (cfPreviewNote) {
+      cfPreviewNote.textContent = "Order hidden — remaining " +
+        (state.headsRemaining != null ? state.headsRemaining : "?") + " Heads / " +
+        (state.tailsRemaining != null ? state.tailsRemaining : "?") + " Tails";
     }
     if (cfOppName) cfOppName.textContent = opp ? opp.name : "Opponent";
     if (cfMyName) cfMyName.textContent = me ? me.name : "You";
