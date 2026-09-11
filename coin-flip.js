@@ -59,6 +59,7 @@
         '<div class="cfItemsSection">' +
           '<div class="cfItemsHead">ITEMS</div>' +
           '<div class="cfItems" id="cfItems"></div>' +
+          '<div class="cfItemInfo hidden" id="cfItemInfo"></div>' +
         '</div>' +
         '<details class="cfHistoryWrap">' +
           '<summary>History</summary>' +
@@ -85,6 +86,7 @@
   // previous wager is never carried over automatically.
   let selectedWager = 1;
   let selectedSide = null;
+  let selectedItemId = null;
   let lastTurnKey = null;
 
   let lobbyScreen;
@@ -121,6 +123,7 @@
   let cfConfirmBtn;
   let cfWaitBox;
   let cfItems;
+  let cfItemInfo;
   let cfRoundEnd;
   let cfRoundSummary;
   let cfRoundNext;
@@ -172,6 +175,7 @@
     cfConfirmBtn = $("cfConfirmBtn");
     cfWaitBox = $("cfWaitBox");
     cfItems = $("cfItems");
+    cfItemInfo = $("cfItemInfo");
     cfRoundEnd = $("cfRoundEnd");
     cfRoundSummary = $("cfRoundSummary");
     cfRoundNext = $("cfRoundNext");
@@ -294,36 +298,96 @@
     cfCoin.dataset.face = face || "idle";
   }
 
-  function renderItems() {
-    if (!cfItems || !state) return;
-    cfItems.innerHTML = "";
-    const inventory = state.inventory || {};
-    const availability = state.itemAvailability || {};
+  function catalogById() {
     const catalog = {};
-    (state.itemsCatalog || []).forEach((item) => {
+    ((state && state.itemsCatalog) || []).forEach((item) => {
       catalog[item.id] = item;
     });
+    return catalog;
+  }
+
+  function clearItemSelection() {
+    selectedItemId = null;
+    if (cfItemInfo) {
+      cfItemInfo.classList.add("hidden");
+      cfItemInfo.innerHTML = "";
+    }
+  }
+
+  function showItemInfo(item, canUse) {
+    if (!cfItemInfo || !item) return;
+    const hint = canUse
+      ? "SELECTED · Click again to use"
+      : "SELECTED · Can't use right now";
+    cfItemInfo.innerHTML =
+      "<strong>" + item.name + "</strong>" +
+      "<span class=\"cfItemHint\">" + hint + "</span>" +
+      "<p>" + (item.description || "") + "</p>";
+    cfItemInfo.classList.remove("hidden");
+  }
+
+  function onItemActivate(id) {
+    if (!currentRoom || !state) return;
+    const availability = state.itemAvailability || {};
+    if (!availability[id]) return;
+    socket.emit("coinFlipUseItem", { roomCode: currentRoom, itemId: id });
+    clearItemSelection();
+    renderItems();
+  }
+
+  function onItemClick(id) {
+    if (!state) return;
+    const inventory = state.inventory || {};
+    if (!(inventory[id] > 0)) return;
+    if (selectedItemId === id) {
+      onItemActivate(id);
+      return;
+    }
+    selectedItemId = id;
+    renderItems();
+  }
+
+  function renderItems() {
+    if (!cfItems || !state) return;
+    const inventory = state.inventory || {};
+    const availability = state.itemAvailability || {};
+    const catalog = catalogById();
     const ids = Object.keys(inventory).filter((id) => inventory[id] > 0);
+    if (selectedItemId && ids.indexOf(selectedItemId) === -1) {
+      clearItemSelection();
+    }
+    cfItems.innerHTML = "";
     if (!ids.length) {
       cfItems.innerHTML = '<span class="cfNoItems">Finish a round to earn an item.</span>';
+      if (cfItemInfo) cfItemInfo.classList.add("hidden");
       return;
     }
     ids.forEach((id) => {
       const item = catalog[id] || { id, name: id, description: "" };
+      const selected = selectedItemId === id;
+      const canUse = !!availability[id];
       const button = document.createElement("button");
       button.type = "button";
-      button.className = "cfItemBtn";
-      button.disabled = !availability[id];
-      button.title = item.description || item.name;
+      button.className = "cfItemBtn" +
+        (selected ? " selected" : "") +
+        (canUse ? "" : " unavailable");
+      button.setAttribute("aria-pressed", selected ? "true" : "false");
+      button.setAttribute("aria-expanded", selected ? "true" : "false");
       button.innerHTML =
         "<strong>" + item.name + "</strong>" +
         '<span class="cfItemCount">×' + inventory[id] + "</span>";
-      button.onclick = () => {
-        if (!currentRoom || !availability[id]) return;
-        socket.emit("coinFlipUseItem", { roomCode: currentRoom, itemId: id });
+      button.onclick = function (event) {
+        event.preventDefault();
+        onItemClick(id);
       };
       cfItems.appendChild(button);
     });
+    if (selectedItemId) {
+      const selected = catalog[selectedItemId] || { id: selectedItemId, name: selectedItemId, description: "" };
+      showItemInfo(selected, !!availability[selectedItemId]);
+    } else if (cfItemInfo) {
+      cfItemInfo.classList.add("hidden");
+    }
   }
 
   function renderRoundEnd() {
@@ -524,6 +588,7 @@
     lastTurnKey = null;
     selectedWager = 1;
     selectedSide = null;
+    clearItemSelection();
     hideEndButtons();
     applyState(data);
     showCoinFlipScreen();
@@ -625,7 +690,9 @@
       }
     });
     socket.on("coinFlipItemUsed", (data) => {
-      if (!active || !data || data.itemId === "peek") return;
+      if (!active || !data) return;
+      clearItemSelection();
+      if (data.itemId === "peek") return;
       if (cfMsg) cfMsg.textContent = (data.name || "Item") + " activated.";
     });
     socket.on("coinFlipItemReward", (data) => {
@@ -659,6 +726,7 @@
       lastTurnKey = null;
       selectedWager = 1;
       selectedSide = null;
+      clearItemSelection();
       hideEndButtons();
       resetArena("Awaiting bet");
       if (cfMsg) cfMsg.textContent = "New match — wager before every throw.";
@@ -670,6 +738,7 @@
       gameOver = false;
       state = null;
       lastTurnKey = null;
+      clearItemSelection();
     });
 
     if (bindDom()) wireControls();
