@@ -16,10 +16,10 @@ permissions:
   pages: write
   id-token: write
 
-# One Pages deployment per workflow/ref. A newer push cancels an outdated
-# run so the live site always matches the latest commit on this branch.
+# One GitHub Pages deployment at a time. A newer push cancels any older
+# queued or in-progress run so the live site matches the latest commit.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: github-pages-deployment
   cancel-in-progress: true
 
 jobs:
