@@ -254,7 +254,6 @@
     if (!cfPreview) return;
     cfPreview.innerHTML = "";
     const revealed = (state && state.revealedInGroup) || [];
-    const upcoming = (state && !state.upcomingHidden && state.upcomingResults) || null;
     const total = (state && state.throwsThisRound) || 10;
     cfPreview.dataset.count = String(total);
     for (let i = 0; i < total; i++) {
@@ -263,15 +262,9 @@
         cell.className = "cfThrow revealed " + revealed[i];
         cell.textContent = sideLetter(revealed[i]);
       } else {
-        const future = upcoming ? upcoming[i - revealed.length] : null;
-        const isCurrent = i === revealed.length;
-        if (future === "heads" || future === "tails") {
-          cell.className = "cfThrow upcoming " + future + (isCurrent ? " current" : "");
-          cell.textContent = sideLetter(future);
-        } else {
-          cell.className = "cfThrow hiddenResult" + (isCurrent ? " current" : "");
-          cell.textContent = "?";
-        }
+        cell.className = "cfThrow hiddenResult" +
+          (i === revealed.length ? " current" : "");
+        cell.textContent = "?";
       }
       cfPreview.appendChild(cell);
     }
@@ -494,14 +487,13 @@
     if (cfThrowsProgress) {
       cfThrowsProgress.textContent = throwsDone + " / " + throwsTotal;
     }
-    const hideCounts = !!state.upcomingHidden;
     if (cfHeadsRemaining) {
-      cfHeadsRemaining.textContent = hideCounts || state.headsRemaining == null
+      cfHeadsRemaining.textContent = state.headsRemaining == null
         ? "?"
         : String(state.headsRemaining);
     }
     if (cfTailsRemaining) {
-      cfTailsRemaining.textContent = hideCounts || state.tailsRemaining == null
+      cfTailsRemaining.textContent = state.tailsRemaining == null
         ? "?"
         : String(state.tailsRemaining);
     }
