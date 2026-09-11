@@ -417,6 +417,7 @@ display:-webkit-box;
 /* ---- Bottom bar: me · items · history ---- */
 
 .cfItemsSection{
+position:relative;
 background:#1e2430;
 border-radius:10px;
 padding:calc(var(--cf-gap) * .6) var(--cf-gap);
@@ -452,9 +453,60 @@ border-radius:8px;
 background:#2f3a52;
 color:#eef3ff;
 font-size:calc(var(--cf-font) * .9);
+touch-action:manipulation;
+-webkit-tap-highlight-color:transparent;
+outline:2px solid transparent;
+}
+
+.cfItemBtn.unavailable{opacity:.55;}
+
+.cfItemBtn.selected{
+background:#4f9cff;
+color:#0b1220;
+outline-color:#ffd866;
+box-shadow:0 0 0 2px rgba(255,216,102,.35);
 }
 
 .cfItemCount{color:#ffd866;}
+.cfItemBtn.selected .cfItemCount{color:#3a2e0a;}
+
+.cfItemInfo{
+position:absolute;
+left:0;
+right:0;
+bottom:calc(100% + 4px);
+z-index:5;
+background:#1e2430;
+border:1px solid rgba(255,216,102,.55);
+border-radius:10px;
+padding:8px 10px;
+box-shadow:0 8px 24px rgba(0,0,0,.45);
+color:#eef3ff;
+}
+
+.cfItemInfo.hidden{display:none;}
+
+.cfItemInfo strong{
+display:block;
+font-size:calc(var(--cf-font) * 1.05);
+letter-spacing:.06em;
+text-transform:uppercase;
+}
+
+.cfItemHint{
+display:block;
+margin-top:2px;
+font-size:calc(var(--cf-font) * .8);
+font-weight:bold;
+color:#ffd866;
+letter-spacing:.04em;
+}
+
+.cfItemInfo p{
+margin:4px 0 0;
+font-size:calc(var(--cf-font) * .9);
+color:#c5d2e8;
+}
 
 .cfNoItems{
 font-size:calc(var(--cf-font) * .85);
@@ -572,6 +624,8 @@ to{transform:rotateY(360deg);}
 .cfCoinLabel{font-size:11px;}
 .cfArena{padding:4px;}
 .cfItemsHead{display:none;}
+.cfItemInfo{padding:5px 8px;}
+.cfItemInfo p{margin:2px 0 0;}
 }
 
 /* ---- Portrait phones: show the rotate notice instead of the HUD ---- */
