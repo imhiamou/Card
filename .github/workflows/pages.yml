@@ -16,11 +16,11 @@ permissions:
   pages: write
   id-token: write
 
-# Only one Pages deployment at a time; newer pushes wait rather than
-# racing an in-flight deployment.
+# One Pages deployment per workflow/ref. A newer push cancels an outdated
+# run so the live site always matches the latest commit on this branch.
 concurrency:
-  group: pages
-  cancel-in-progress: false
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   deploy:
