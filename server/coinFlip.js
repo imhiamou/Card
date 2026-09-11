@@ -162,10 +162,10 @@ function opponentId(room, playerId) {
   return opponent ? opponent.id : null;
 }
 
-// Every individual throw is a fresh wager decision, capped by current health.
-function maxAllowedWager(room, actorId) {
+// Every individual throw is a fresh wager decision. Max wager is the round number.
+function maxAllowedWager(room) {
   const cf = room.cf;
-  return Math.max(0, cf.hearts[actorId] || 0);
+  return Math.max(0, cf.round || 0);
 }
 
 function wagerAtRisk(room) {
@@ -265,7 +265,7 @@ function buildStateFor(room, playerId, roomCode) {
     cf.phase === "turn" &&
     cf.currentTurnId === playerId
   );
-  const maxWager = maxAllowedWager(room, playerId);
+  const maxWager = maxAllowedWager(room);
   return {
     room: roomCode,
     game: "coin-flip",
@@ -661,7 +661,7 @@ function registerSocket(socket, io, rooms) {
       socket.emit("errorMessage", "Choose Heads or Tails.");
       return;
     }
-    const maxW = maxAllowedWager(room, socket.id);
+    const maxW = maxAllowedWager(room);
     if (maxW < MIN_WAGER) {
       socket.emit("errorMessage", "No valid wager remains.");
       return;

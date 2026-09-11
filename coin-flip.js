@@ -350,9 +350,16 @@
     return state.round + ":" + state.currentTurnId + ":" + state.flipsRemaining;
   }
 
+  function wagerMax() {
+    const min = (state && state.minWager) || 1;
+    const roundMax = (state && state.round) || min;
+    const serverMax = (state && state.maxWager) || min;
+    return Math.max(min, Math.min(roundMax, serverMax));
+  }
+
   function clampWager() {
     const min = (state && state.minWager) || 1;
-    const max = Math.max(min, (state && state.maxWager) || min);
+    const max = wagerMax();
     if (selectedWager < min) selectedWager = min;
     if (selectedWager > max) selectedWager = max;
   }
@@ -361,7 +368,7 @@
     if (!state) return;
     const can = !!state.canAct && !gameOver;
     const min = state.minWager || 1;
-    const max = Math.max(min, state.maxWager || min);
+    const max = wagerMax();
     clampWager();
     if (cfWagerPickVal) cfWagerPickVal.textContent = String(selectedWager);
     if (cfWagerMinus) cfWagerMinus.disabled = !can || selectedWager <= min;
