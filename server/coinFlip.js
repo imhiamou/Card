@@ -53,6 +53,8 @@ function generateFlipGroup(count) {
   return {
     totalThrows: results.length,
     hiddenOrder: shuffleResults(results),
+    headsTotal: composition.heads,
+    tailsTotal: composition.tails,
     headsRemaining: composition.heads,
     tailsRemaining: composition.tails,
     revealed: []
@@ -365,6 +367,8 @@ function buildStateFor(room, playerId, roomCode) {
     canAct: yourTurn && maxWager >= MIN_WAGER,
     upcomingHidden: true,
     upcomingResults: null,
+    headsThisRound: group.headsTotal,
+    tailsThisRound: group.tailsTotal,
     headsRemaining: group.headsRemaining,
     tailsRemaining: group.tailsRemaining,
     flipsRemaining: group.hiddenOrder.length,
