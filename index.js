@@ -161,6 +161,8 @@ if(dominoMaxPlayersWrap)dominoMaxPlayersWrap.classList.toggle("hidden",game!=="d
 if(unoMaxPlayersWrap)unoMaxPlayersWrap.classList.toggle("hidden",game!=="uno");
 // Bots exist only for Dominoes and UNO.
 if(botFillWrap)botFillWrap.classList.toggle("hidden",game!=="dominoes"&&game!=="uno");
+const hhHint=document.getElementById("hiddenHunterHint");
+if(hhHint)hhHint.classList.toggle("hidden",game!=="hidden-hunter");
 // Team pick: shown for Dominoes so creators (4p) and joiners can choose.
 // 2–3 player lobbies ignore the pick on the server.
 const showTeam=game==="dominoes";
@@ -256,6 +258,7 @@ const game=selectedGame==="word-chain"?"word-chain"
 :selectedGame==="uno"?"uno"
 :selectedGame==="dodge-ball"?"dodge-ball"
 :selectedGame==="coin-flip"?"coin-flip"
+:selectedGame==="hidden-hunter"?"hidden-hunter"
 :"hidden-hunt";
 const payload={name,room,game};
 if(game==="dominoes"){
@@ -297,6 +300,8 @@ code.textContent="Lobby Code: "+data.room;
 if(data.game==="dominoes"||data.game==="uno"){
 const max=data.maxPlayers||2;
 status.textContent="Waiting for players (1/"+max+")...";
+}else if(data.game==="hidden-hunter"){
+status.textContent="Waiting for another player...";
 }else{
 status.textContent="Waiting for Player 2...";
 }
@@ -336,9 +341,14 @@ setTimeout(showPlacementScreen,1500);
 });
 
 socket.on("playerLeft",()=>{
+if(window.HiddenHunter&&HiddenHunter.isActive()&&HiddenHunter.partnerDisconnected()){
+return;
+}
 // Return to the lobby screen no matter which phase we were in.
 placementScreen.classList.add("hidden");
 gameScreen.classList.add("hidden");
+const hhScreen=document.getElementById("hiddenHunterScreen");
+if(hhScreen)hhScreen.classList.add("hidden");
 lobbyScreen.classList.remove("hidden");
 code.textContent="";
 status.textContent="Other player disconnected.";
@@ -357,6 +367,7 @@ if(window.Dominoes&&Dominoes.isActive()&&Dominoes.showError(msg))return;
 if(window.Uno&&Uno.isActive()&&Uno.showError(msg))return;
 // Dodge Ball handles its own messages when active.
 if(window.DodgeBall&&DodgeBall.isActive()&&DodgeBall.showError(msg))return;
+if(window.HiddenHunter&&HiddenHunter.isActive()&&HiddenHunter.showError(msg))return;
 // Coin Flip handles its own messages when active.
 if(window.CoinFlip&&CoinFlip.isActive()&&CoinFlip.showError(msg))return;
 // During the game, a rejected play (e.g. an invalid Dash target) must
@@ -1388,3 +1399,4 @@ if(window.Uno)Uno.init(socket);
 if(window.DodgeBall)DodgeBall.init(socket);
 // Wire Coin Flip to the shared lobby socket (isolated from other games).
 if(window.CoinFlip)CoinFlip.init(socket);
+if(window.HiddenHunter)HiddenHunter.init(socket);

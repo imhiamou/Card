@@ -1,0 +1,137 @@
+/* Hidden Hunter — styles only. Does not alter other game layouts. */
+
+#hiddenHunterScreen{
+--hh-pad:10px;
+box-sizing:border-box;
+width:min(1100px,100vw);
+height:100dvh;
+max-height:100dvh;
+margin:0;
+padding:var(--hh-pad);
+border-radius:0;
+overflow:hidden;
+display:flex;
+flex-direction:column;
+background:#141018;
+}
+#hiddenHunterScreen.hidden{display:none;}
+
+.hhRotate{
+display:none;
+flex:1;
+align-items:center;
+justify-content:center;
+text-align:center;
+color:#ffd866;
+font-weight:bold;
+letter-spacing:.08em;
+padding:24px;
+}
+
+.hhHud{
+flex:1;
+min-height:0;
+display:flex;
+flex-direction:column;
+gap:8px;
+}
+
+.hhTop{
+display:grid;
+grid-template-columns:1fr 1fr auto auto;
+gap:8px;
+align-items:center;
+font-size:13px;
+}
+.hhRole{font-weight:bold;letter-spacing:.08em;color:#ffd866;}
+.hhPartner{color:#c5d2e8;}
+.hhTimer{font-weight:bold;color:#eef3ff;}
+.hhFsBtn{
+width:auto;margin:0;padding:6px 10px;
+background:#3a4256;color:#eef3ff;border:0;border-radius:6px;font-weight:bold;
+}
+
+.hhStage{
+position:relative;
+flex:1;
+min-height:0;
+background:#100e0c;
+border-radius:10px;
+overflow:hidden;
+}
+#hhCanvas{display:block;width:100%;height:100%;}
+
+.hhCrosshair{
+position:absolute;left:50%;top:50%;width:18px;height:18px;
+margin:-9px 0 0 -9px;pointer-events:none;
+border:2px solid rgba(255,216,102,.85);border-radius:50%;
+}
+.hhCrosshair.hidden{display:none;}
+
+.hhOverlay{
+position:absolute;left:0;right:0;top:18%;
+text-align:center;font-weight:bold;letter-spacing:.08em;
+color:#ffd866;font-size:22px;pointer-events:none;
+text-shadow:0 2px 12px #000;
+}
+
+.hhBottom{display:flex;justify-content:space-between;align-items:center;gap:10px;}
+.hhAmmo{font-weight:bold;color:#ffd866;}
+.hhMsg{margin:0;font-size:13px;color:#c5d2e8;}
+
+.hhMobile{
+display:none;
+justify-content:space-between;
+align-items:flex-end;
+gap:12px;
+padding-top:4px;
+}
+#hiddenHunterScreen.hh-touch .hhMobile{display:flex;}
+
+.hhJoy{
+position:relative;width:96px;height:96px;border-radius:50%;
+background:rgba(255,255,255,.08);border:2px solid rgba(255,255,255,.18);
+touch-action:none;
+}
+.hhKnob{
+position:absolute;left:50%;top:50%;width:34px;height:34px;margin:-17px;
+border-radius:50%;background:#4f9cff;
+}
+.hhJoy span{
+position:absolute;left:0;right:0;bottom:-16px;text-align:center;
+font-size:10px;color:#9db2d0;
+}
+.hhShootBtn{
+width:88px;height:88px;margin:0;border:0;border-radius:50%;
+background:#c43c3c;color:#fff;font-weight:bold;
+}
+
+.hhEnd{
+position:absolute;left:50%;top:58%;transform:translate(-50%,-50%);
+z-index:4;display:flex;flex-direction:column;gap:8px;align-items:center;
+}
+.hhEnd.hidden{display:none;}
+.hhEnd button{width:auto;padding:10px 16px;border:0;border-radius:8px;background:#4f9cff;color:#0b1220;font-weight:bold;}
+.hhEnd #hhLobbyBtn{background:#3a4256;color:#eef3ff;}
+
+@media (orientation:portrait) and (max-width:700px){
+#hiddenHunterScreen .hhRotate{display:flex;}
+#hiddenHunterScreen .hhHud{display:none;}
+}
+
+#hiddenHunterHint.hhLobbyCard{
+background:#1a1510;
+border:1px solid #3d2f22;
+border-radius:8px;
+padding:10px 12px;
+margin:8px 0 0;
+color:#c5d2e8;
+font-size:13px;
+}
+#hiddenHunterHint.hhLobbyCard strong{
+display:block;
+color:#ffd866;
+letter-spacing:.08em;
+margin-bottom:4px;
+}
+#hiddenHunterHint.hhLobbyCard p{margin:4px 0 0;}

@@ -11,6 +11,7 @@
 <link rel="stylesheet" href="uno.css">
 <link rel="stylesheet" href="dodge-ball.css">
 <link rel="stylesheet" href="coin-flip.css">
+<link rel="stylesheet" href="hidden-hunter.css">
 <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
 </head>
 <body>
@@ -31,7 +32,13 @@
 <option value="uno">UNO</option>
 <option value="dodge-ball">Dodge Ball</option>
 <option value="coin-flip">Coin Flip</option>
+<option value="hidden-hunter">Hidden Hunter</option>
 </select>
+<div id="hiddenHunterHint" class="hidden hhLobbyCard">
+<strong>HIDDEN HUNTER</strong>
+<p>2 players required</p>
+<p>One player can see the monster. The other has the gun. Communicate and hunt it down.</p>
+</div>
 
 <!-- Dominoes only: lobby creator picks 2–4 seats -->
 <div id="dominoMaxPlayersWrap" class="hidden">
@@ -197,6 +204,9 @@
 <!-- Coin Flip screen (mounted by coin-flip.js; unused for other games) -->
 <div class="box hidden" id="coinFlipScreen"></div>
 
+<!-- Hidden Hunter screen (mounted by hidden-hunter.js; unused for other games) -->
+<div class="box hidden" id="hiddenHunterScreen"></div>
+
 <script src="game-sfx.js"></script>
 <script src="wordchain.js"></script>
 <script src="codebreaker.js"></script>
@@ -204,6 +214,7 @@
 <script src="uno.js"></script>
 <script src="dodge-ball.js"></script>
 <script src="coin-flip.js"></script>
+<script src="hidden-hunter.js"></script>
 <script src="index.js"></script>
 </body>
 </html>
