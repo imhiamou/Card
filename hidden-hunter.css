@@ -75,8 +75,19 @@ color:#ffd866;font-size:22px;pointer-events:none;
 text-shadow:0 2px 12px #000;
 }
 
-.hhBottom{display:flex;justify-content:space-between;align-items:center;gap:10px;}
+.hhBottom{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;}
 .hhAmmo{font-weight:bold;color:#ffd866;}
+.hhTaser{font-weight:bold;color:#7cf0ff;min-width:92px;}
+.hhTaser.hidden{display:none;}
+.hhHealthWrap{min-width:110px;}
+.hhHealthLabel{font-size:11px;color:#eef3ff;margin-bottom:3px;}
+.hhHealthBar{height:8px;background:#3a2430;border-radius:5px;overflow:hidden;}
+.hhHealthFill{height:100%;width:100%;background:#e35d6a;}
+.hhFlash{
+position:absolute;inset:0;pointer-events:none;opacity:0;
+background:rgba(180,20,30,.28);transition:opacity .12s;z-index:3;
+}
+.hhFlash.show{opacity:1;}
 .hhMsg{margin:0;font-size:13px;color:#c5d2e8;}
 
 .hhMobile{
@@ -104,6 +115,10 @@ font-size:10px;color:#9db2d0;
 .hhShootBtn{
 width:88px;height:88px;margin:0;border:0;border-radius:50%;
 background:#c43c3c;color:#fff;font-weight:bold;
+}
+.hhTaserBtn{
+width:88px;height:88px;margin:0;border:0;border-radius:50%;
+background:#1e6f7a;color:#e9ffff;font-weight:bold;
 }
 
 .hhEnd{

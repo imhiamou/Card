@@ -13,14 +13,18 @@
         '<canvas id="hhCanvas"></canvas>' +
         '<div class="hhCrosshair" id="hhCrosshair"></div>' +
         '<div class="hhOverlay" id="hhBanner"></div>' +
+        '<div class="hhFlash" id="hhFlash"></div>' +
       '</div>' +
       '<div class="hhBottom">' +
+        '<div class="hhHealthWrap"><div class="hhHealthLabel" id="hhHealthLabel">HP 100</div><div class="hhHealthBar"><div class="hhHealthFill" id="hhHealthFill"></div></div></div>' +
         '<div class="hhAmmo" id="hhAmmo"></div>' +
+        '<div class="hhTaser hidden" id="hhTaser">TASER READY</div>' +
         '<p class="hhMsg" id="hhMsg">Talk outside the game — there is no chat.</p>' +
       '</div>' +
       '<div class="hhMobile" id="hhMobile">' +
         '<div class="hhJoy" id="hhJoyMove"><div class="hhKnob" id="hhJoyMoveKnob"></div><span>MOVE</span></div>' +
         '<button type="button" class="hhShootBtn hidden" id="hhShootBtn">SHOOT</button>' +
+        '<button type="button" class="hhTaserBtn hidden" id="hhTaserBtn">TASER</button>' +
         '<div class="hhJoy hidden" id="hhJoyAim"><div class="hhKnob" id="hhJoyAimKnob"></div><span>AIM</span></div>' +
       '</div>' +
       '<div id="hhEndButtons" class="hhEnd hidden">' +
@@ -48,7 +52,8 @@
   let lobbyScreen, placementScreen, gameScreen, wordChainScreen, codeBreakerScreen;
   let dominoScreen, unoScreen, dodgeBallScreen, coinFlipScreen, hiddenHunterScreen;
   let hhCanvas, hhRole, hhPartner, hhTimer, hhAmmo, hhMsg, hhBanner, hhCrosshair;
-  let hhShootBtn, hhJoyAim, hhEndButtons, hhPlayAgainBtn, hhLobbyBtn, hhFsBtn, hhStage;
+  let hhShootBtn, hhTaserBtn, hhTaser, hhHealthFill, hhHealthLabel, hhFlash;
+  let hhJoyAim, hhEndButtons, hhPlayAgainBtn, hhLobbyBtn, hhFsBtn, hhStage;
 
   function $(id) { return document.getElementById(id); }
 
@@ -77,6 +82,11 @@
     hhBanner = $("hhBanner");
     hhCrosshair = $("hhCrosshair");
     hhShootBtn = $("hhShootBtn");
+    hhTaserBtn = $("hhTaserBtn");
+    hhTaser = $("hhTaser");
+    hhHealthFill = $("hhHealthFill");
+    hhHealthLabel = $("hhHealthLabel");
+    hhFlash = $("hhFlash");
     hhJoyAim = $("hhJoyAim");
     hhEndButtons = $("hhEndButtons");
     hhPlayAgainBtn = $("hhPlayAgainBtn");
@@ -162,11 +172,13 @@
 
   function applyState(data) {
     if (!data) return;
-    // Defense in depth: Hunter client must never keep monster state.
+    // Defense in depth: Hunter client must never keep monster or taser-aim state.
     if (!data.you || data.you.role !== "tracker") {
-      if (data.monster) {
+      if (data.monster || data.taser || data.taserBeams) {
         data = Object.assign({}, data);
         delete data.monster;
+        delete data.taser;
+        delete data.taserBeams;
       }
     }
     if (state) prev = state;
@@ -185,19 +197,36 @@
       hhPartner.textContent = "PARTNER: " + (state.partnerRole || "").toUpperCase();
     }
     if (hhTimer) hhTimer.textContent = formatTime(state.remainingMs || 0);
-    if (hhCrosshair) hhCrosshair.classList.toggle("hidden", !hunter || state.phase === "over");
+    if (hhCrosshair) hhCrosshair.classList.toggle("hidden", state.phase === "over");
     if (hhShootBtn) hhShootBtn.classList.toggle("hidden", !hunter || !touchMode);
-    if (hhJoyAim) hhJoyAim.classList.toggle("hidden", !hunter || !touchMode);
+    if (hhTaserBtn) hhTaserBtn.classList.toggle("hidden", hunter || !touchMode);
+    if (hhJoyAim) hhJoyAim.classList.toggle("hidden", !touchMode);
     const me = meFrom(state);
+    if (hhHealthFill && me) {
+      const maxHp = me.maxHp || 100;
+      const hp = me.hp == null ? maxHp : me.hp;
+      hhHealthFill.style.width = Math.max(0, Math.min(100, (hp / maxHp) * 100)) + "%";
+    }
+    if (hhHealthLabel && me) {
+      hhHealthLabel.textContent = "HP " + (me.hp == null ? 100 : me.hp);
+    }
     if (hhAmmo) {
       if (!hunter || !me) hhAmmo.textContent = "";
       else if (me.reloadingUntil && Date.now() < me.reloadingUntil) hhAmmo.textContent = "RELOADING…";
       else hhAmmo.textContent = "AMMO " + (me.ammo == null ? 0 : me.ammo) + " / " + (me.magazine || 6);
     }
+    if (hhTaser) {
+      hhTaser.classList.toggle("hidden", hunter);
+      if (!hunter && state.taser) {
+        const left = Math.max(0, (state.taser.remainingMs || 0) - (Date.now() - (state._recvAt || Date.now())));
+        hhTaser.textContent = left <= 0 ? "TASER READY" : ("TASER " + (left / 1000).toFixed(1) + "s");
+      }
+    }
     if (hhBanner) {
       if (state.disconnected) hhBanner.textContent = "YOUR PARTNER DISCONNECTED";
       else if (state.phase === "countdown") hhBanner.textContent = "PLAYER FOUND · " + state.countdown;
-      else if (state.phase === "over" && state.result === "win") hhBanner.textContent = "MONSTER ELIMINATED — TEAM VICTORY";
+      else if (state.phase === "over" && state.result === "win") hhBanner.textContent = "TEAM VICTORY — MONSTER ELIMINATED";
+      else if (state.phase === "over" && state.result === "caught") hhBanner.textContent = "TEAM DEFEAT — YOU WERE CAUGHT";
       else if (state.phase === "over") hhBanner.textContent = "TIME'S UP — THE MONSTER ESCAPED";
       else hhBanner.textContent = "";
     }
@@ -217,7 +246,7 @@
   function sendInput() {
     if (!active || !currentRoom || !state || state.phase === "over") return;
     const move = touchMode ? moveJoy : keyVec();
-    const aim = myRole === "hunter" ? (touchMode ? aimJoy : mouseAim) : { x: 0, y: 0 };
+    const aim = touchMode ? aimJoy : mouseAim;
     socket.emit("hiddenHunterInput", {
       roomCode: currentRoom,
       mx: move.x,
@@ -227,13 +256,17 @@
     });
   }
 
-  function shoot() {
-    if (!currentRoom || myRole !== "hunter" || !state || state.phase !== "playing") return;
+  function fireWeapon() {
+    if (!currentRoom || !state || state.phase !== "playing") return;
     const now = Date.now();
     if (now - lastShot < 120) return;
     lastShot = now;
     const aim = touchMode ? aimJoy : mouseAim;
-    socket.emit("hiddenHunterShoot", { roomCode: currentRoom, aimX: aim.x, aimY: aim.y });
+    if (myRole === "hunter") {
+      socket.emit("hiddenHunterShoot", { roomCode: currentRoom, aimX: aim.x, aimY: aim.y });
+    } else if (myRole === "tracker") {
+      socket.emit("hiddenHunterTaser", { roomCode: currentRoom, aimX: aim.x, aimY: aim.y });
+    }
   }
 
   function lerp(a, b, t) {
@@ -356,6 +389,16 @@
       ctx.lineTo(8 + p.aimX * 28, p.aimY * 28);
       ctx.stroke();
     }
+    if (p.role === "tracker") {
+      const showAim = isMe && myRole === "tracker";
+      ctx.strokeStyle = "#7cf0ff";
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(6, 2);
+      if (showAim) ctx.lineTo(6 + p.aimX * 22, 2 + p.aimY * 22);
+      else ctx.lineTo(22, 6);
+      ctx.stroke();
+    }
     ctx.fillStyle = "#fff";
     ctx.font = "11px Arial";
     ctx.textAlign = "center";
@@ -367,15 +410,35 @@
     const s = worldToScreen(ctx, m.x, m.y);
     ctx.save();
     ctx.translate(s.x, s.y);
-    ctx.shadowColor = m.hit ? "#ff6b6b" : "#7cf0ff";
+    if (m.stunned) {
+      ctx.shadowColor = "#ffe066";
+      ctx.shadowBlur = 28;
+      ctx.strokeStyle = "rgba(255,240,80,.9)";
+      ctx.lineWidth = 3;
+      for (let i = 0; i < 6; i++) {
+        const ang = (i / 6) * Math.PI * 2 + Date.now() / 80;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(ang) * 18, Math.sin(ang) * 22);
+        ctx.lineTo(Math.cos(ang) * 34, Math.sin(ang) * 38);
+        ctx.stroke();
+      }
+    }
+    ctx.shadowColor = m.hit ? "#ff6b6b" : (m.stunned ? "#ffe066" : "#7cf0ff");
     ctx.shadowBlur = 22;
-    ctx.fillStyle = m.hit ? "rgba(255,80,80,.85)" : "rgba(90,230,255,.75)";
+    ctx.fillStyle = m.hit ? "rgba(255,80,80,.85)" : (m.stunned ? "rgba(255,230,90,.8)" : "rgba(90,230,255,.75)");
     ctx.beginPath();
     ctx.ellipse(0, 0, 22, 28, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = "#e9ffff";
     ctx.lineWidth = 2;
     ctx.stroke();
+    if (m.stunned) {
+      ctx.fillStyle = "#ffe066";
+      ctx.font = "bold 12px Arial";
+      ctx.textAlign = "center";
+      ctx.shadowBlur = 0;
+      ctx.fillText("STUNNED", 0, -40);
+    }
     ctx.restore();
   }
 
@@ -431,6 +494,18 @@
       ctx.fillStyle = "#ffd866";
       ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI * 2); ctx.fill();
     });
+    if (myRole === "tracker") {
+      (state.taserBeams || []).forEach((b) => {
+        const a = worldToScreen(ctx, b.x0, b.y0);
+        const c = worldToScreen(ctx, b.x1, b.y1);
+        ctx.strokeStyle = b.hit ? "rgba(255,240,80,.95)" : "rgba(120,230,255,.85)";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(c.x, c.y);
+        ctx.stroke();
+      });
+    }
     if (myRole === "tracker" && state.monster) {
       const oldM = prev && prev.monster;
       drawMonster(ctx, interpPos(oldM, state.monster, t) || state.monster);
@@ -448,6 +523,10 @@
         ctx.textAlign = "left";
         ctx.fillText("MONSTER HP " + state.monster.hp + "/" + state.monster.maxHp, 16, 22);
       }
+    }
+    if (hhTaser && myRole === "tracker" && state.taser) {
+      const left = Math.max(0, (state.taser.remainingMs || 0) - (Date.now() - (state._recvAt || Date.now())));
+      hhTaser.textContent = left <= 0 ? "TASER READY" : ("TASER " + (left / 1000).toFixed(1) + "s");
     }
   }
 
@@ -514,13 +593,14 @@
     window.addEventListener("keyup", (e) => { keys[e.code] = false; });
     hhCanvas.addEventListener("mousemove", canvasAim);
     hhCanvas.addEventListener("mousedown", (e) => {
-      if (e.button === 0) { canvasAim(e); shoot(); }
+      if (e.button === 0) { canvasAim(e); fireWeapon(); }
     });
     bindJoystick($("hhJoyMove"), $("hhJoyMoveKnob"), (x, y) => { moveJoy = { x, y }; });
     bindJoystick($("hhJoyAim"), $("hhJoyAimKnob"), (x, y) => {
       if (Math.abs(x) + Math.abs(y) > 0.2) aimJoy = { x, y };
     });
-    if (hhShootBtn) hhShootBtn.onclick = shoot;
+    if (hhShootBtn) hhShootBtn.onclick = fireWeapon;
+    if (hhTaserBtn) hhTaserBtn.onclick = fireWeapon;
     if (hhPlayAgainBtn) {
       hhPlayAgainBtn.onclick = () => {
         socket.emit("hiddenHunterPlayAgain", { roomCode: currentRoom });
@@ -565,6 +645,16 @@
     socket.on("hiddenHunterOver", (data) => {
       if (!active) return;
       if (hhMsg) hhMsg.textContent = data.message || "Match over.";
+    });
+    socket.on("hiddenHunterHurt", () => {
+      if (!active || !hhFlash) return;
+      hhFlash.classList.add("show");
+      setTimeout(() => { if (hhFlash) hhFlash.classList.remove("show"); }, 180);
+    });
+    socket.on("hiddenHunterTaserFired", (data) => {
+      if (!active || myRole !== "tracker" || !hhTaser || !data) return;
+      const left = Math.max(0, data.remainingMs || 0);
+      hhTaser.textContent = left <= 0 ? "TASER READY" : ("TASER " + (left / 1000).toFixed(1) + "s");
     });
     socket.on("hiddenHunterPlayAgainWait", () => {
       if (hhPlayAgainBtn) hhPlayAgainBtn.textContent = "Waiting for partner...";
