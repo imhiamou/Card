@@ -25,6 +25,18 @@ const FIRE_COOLDOWN_MS = 500;
 const RELOAD_MS = 1500;
 const INPUT_STALE_MS = 350;
 const COUNTDOWN_SEC = 3;
+const TASER_COOLDOWN = 10000;
+const TASER_RANGE = 500;
+const STUN_MS = 2000;
+const PLAYER_MAX_HEALTH = 100;
+const MONSTER_ATTACK_RANGE = 75;
+const MONSTER_DAMAGE = 10;
+const MONSTER_ATTACK_COOLDOWN = 1000;
+const STUCK_MS = 900;
+const STUCK_DIST = 5;
+const RETARGET_MS = 3800;
+const PAUSE_MIN_MS = 280;
+const PAUSE_MAX_MS = 720;
 
 const OBSTACLES = [
   { id: "shelves", kind: "shelves", label: "SHELVES", x: 70, y: 70, w: 200, h: 64 },
@@ -79,20 +91,72 @@ function blocked(cx, cy, r) {
 }
 
 function tryMove(ent, dx, dy, r) {
+  const ox = ent.x;
+  const oy = ent.y;
   const nx = ent.x + dx;
   const ny = ent.y + dy;
   if (!blocked(nx, ny, r)) {
     ent.x = nx;
     ent.y = ny;
-    return;
+    return true;
   }
   if (!blocked(nx, ent.y, r)) {
     ent.x = nx;
-    return;
+    return true;
   }
   if (!blocked(ent.x, ny, r)) {
     ent.y = ny;
+    return true;
   }
+  const speed = len(dx, dy);
+  if (speed > 0.01) {
+    const px = -dy / speed;
+    const py = dx / speed;
+    if (!blocked(ent.x + px * speed, ent.y + py * speed, r)) {
+      ent.x += px * speed;
+      ent.y += py * speed;
+      return true;
+    }
+    if (!blocked(ent.x - px * speed, ent.y - py * speed, r)) {
+      ent.x -= px * speed;
+      ent.y -= py * speed;
+      return true;
+    }
+  }
+  return ent.x !== ox || ent.y !== oy;
+}
+
+function unstick(ent, r) {
+  if (!blocked(ent.x, ent.y, r)) return false;
+  const dists = [8, 16, 28, 44, 64];
+  for (let d = 0; d < dists.length; d++) {
+    for (let i = 0; i < 8; i++) {
+      const ang = (i * Math.PI) / 4;
+      const x = ent.x + Math.cos(ang) * dists[d];
+      const y = ent.y + Math.sin(ang) * dists[d];
+      if (!blocked(x, y, r)) {
+        ent.x = x;
+        ent.y = y;
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function walkableLine(x0, y0, x1, y1, r) {
+  const d = len(x1 - x0, y1 - y0);
+  const steps = Math.max(2, Math.ceil(d / 14));
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps;
+    if (blocked(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, r)) return false;
+  }
+  return true;
+}
+
+function sameSpot(a, b, tol) {
+  if (!a || !b) return false;
+  return len(a.x - b.x, a.y - b.y) < (tol || 40);
 }
 
 function randomWalkable(r) {
@@ -102,6 +166,32 @@ function randomWalkable(r) {
     if (!blocked(x, y, r)) return { x, y };
   }
   return { x: MAP_W * 0.5, y: MAP_H * 0.5 };
+}
+
+function pickMonsterTarget(m) {
+  const failed = m.failedTargets || [];
+  for (let i = 0; i < 28; i++) {
+    const t = randomWalkable(MONSTER_R);
+    if (sameSpot(t, m.target, 50)) continue;
+    if (failed.some((f) => sameSpot(t, f, 55))) continue;
+    if (walkableLine(m.x, m.y, t.x, t.y, MONSTER_R)) return t;
+  }
+  for (let i = 0; i < 20; i++) {
+    const ang = (randomInt(360) * Math.PI) / 180;
+    const dist = 90 + randomInt(200);
+    const t = { x: m.x + Math.cos(ang) * dist, y: m.y + Math.sin(ang) * dist };
+    if (blocked(t.x, t.y, MONSTER_R)) continue;
+    if (failed.some((f) => sameSpot(t, f, 55))) continue;
+    if (walkableLine(m.x, m.y, t.x, t.y, MONSTER_R)) return t;
+  }
+  return randomWalkable(MONSTER_R);
+}
+
+function rememberFailedTarget(m, target) {
+  if (!target) return;
+  m.failedTargets = m.failedTargets || [];
+  m.failedTargets.push({ x: target.x, y: target.y });
+  if (m.failedTargets.length > 8) m.failedTargets = m.failedTargets.slice(-8);
 }
 
 function stopLoop(room) {
@@ -138,20 +228,33 @@ function makePlayer(id, name, role) {
     ammo: MAGAZINE_SIZE,
     reloadingUntil: 0,
     cooldownUntil: 0,
+    taserUntil: 0,
+    hp: PLAYER_MAX_HEALTH,
+    dead: false,
     input: { mx: 0, my: 0, aimX: 1, aimY: 0, at: 0 }
   };
 }
 
 function makeMonster() {
   const spawn = randomWalkable(MONSTER_R);
-  return {
+  const m = {
     x: spawn.x,
     y: spawn.y,
     hp: MONSTER_HP,
-    target: randomWalkable(MONSTER_R),
+    target: null,
     pauseUntil: 0,
-    hitUntil: 0
+    hitUntil: 0,
+    stunned: false,
+    stunEndTime: 0,
+    lastX: spawn.x,
+    lastY: spawn.y,
+    lastMovedAt: Date.now(),
+    nextRetargetAt: Date.now() + RETARGET_MS,
+    attackUntil: 0,
+    failedTargets: []
   };
+  m.target = pickMonsterTarget(m);
+  return m;
 }
 
 function initRoomState(room, swapRoles) {
@@ -184,6 +287,7 @@ function initRoomState(room, swapRoles) {
     monster: makeMonster(),
     projectiles: [],
     impacts: [],
+    taserBeams: [],
     nextShotId: 1,
     endsAt: 0,
     result: null,
@@ -194,19 +298,23 @@ function initRoomState(room, swapRoles) {
   room.hhRematch = {};
 }
 
-function publicPlayer(p) {
+function publicPlayer(p, viewerRole) {
+  const hideAim = p.role === "tracker" && viewerRole !== "tracker";
   return {
     id: p.id,
     name: p.name,
     role: p.role,
     x: Math.round(p.x * 10) / 10,
     y: Math.round(p.y * 10) / 10,
-    aimX: Math.round(p.aimX * 1000) / 1000,
-    aimY: Math.round(p.aimY * 1000) / 1000,
+    aimX: hideAim ? 0 : Math.round(p.aimX * 1000) / 1000,
+    aimY: hideAim ? 0 : Math.round(p.aimY * 1000) / 1000,
     ammo: p.role === "hunter" ? p.ammo : null,
     magazine: p.role === "hunter" ? MAGAZINE_SIZE : null,
     reloadingUntil: p.role === "hunter" ? p.reloadingUntil : 0,
-    cooldownUntil: p.role === "hunter" ? p.cooldownUntil : 0
+    cooldownUntil: p.role === "hunter" ? p.cooldownUntil : 0,
+    hp: p.hp,
+    maxHp: PLAYER_MAX_HEALTH,
+    dead: !!p.dead
   };
 }
 
@@ -233,13 +341,28 @@ function publicImpacts(hh, now, role) {
 }
 
 function publicMonster(m) {
+  const now = Date.now();
   return {
     x: Math.round(m.x * 10) / 10,
     y: Math.round(m.y * 10) / 10,
     hp: m.hp,
     maxHp: MONSTER_HP,
-    hit: m.hitUntil > Date.now()
+    hit: m.hitUntil > now,
+    stunned: !!m.stunned && now < m.stunEndTime
   };
+}
+
+function publicTaserBeams(hh, now) {
+  return (hh.taserBeams || [])
+    .filter((b) => b.until > now)
+    .map((b) => ({
+      id: b.id,
+      x0: Math.round(b.x0 * 10) / 10,
+      y0: Math.round(b.y0 * 10) / 10,
+      x1: Math.round(b.x1 * 10) / 10,
+      y1: Math.round(b.y1 * 10) / 10,
+      hit: !!b.hit
+    }));
 }
 
 function remainingMs(hh) {
@@ -264,10 +387,11 @@ function buildStateFor(room, viewerId, roomCode) {
       ? { id: me.id, name: me.name, role: me.role }
       : { id: viewerId, name: "", role: null },
     partnerRole: role === "hunter" ? "tracker" : role === "tracker" ? "hunter" : null,
-    players: Object.values(hh.players).map(publicPlayer),
+    players: Object.values(hh.players).map((p) => publicPlayer(p, role)),
     projectiles: publicProjectiles(hh),
     impacts: publicImpacts(hh, Date.now(), role),
     result: hh.result,
+    teamDead: !!(hh.result && hh.result !== "win"),
     weapon: {
       damage: DAMAGE,
       magazine: MAGAZINE_SIZE,
@@ -276,7 +400,15 @@ function buildStateFor(room, viewerId, roomCode) {
     }
   };
   if (role === "tracker") {
+    const tracker = hh.players[hh.trackerId];
     payload.monster = publicMonster(hh.monster);
+    payload.taser = {
+      cooldownMs: TASER_COOLDOWN,
+      remainingMs: tracker ? Math.max(0, tracker.taserUntil - Date.now()) : 0,
+      ready: tracker ? Date.now() >= tracker.taserUntil : false,
+      range: TASER_RANGE
+    };
+    payload.taserBeams = publicTaserBeams(hh, Date.now());
   }
   return payload;
 }
@@ -301,40 +433,141 @@ function addImpact(hh, x, y, kind) {
   if (hh.impacts.length > 20) hh.impacts = hh.impacts.slice(-12);
 }
 
+function overMessage(result) {
+  if (result === "win") return "MONSTER ELIMINATED — TEAM VICTORY";
+  if (result === "caught") return "YOU WERE CAUGHT — TEAM DEFEAT";
+  return "TIME'S UP — THE MONSTER ESCAPED";
+}
+
+function markTeamDead(hh) {
+  Object.values(hh.players).forEach((p) => {
+    p.hp = 0;
+    p.dead = true;
+  });
+}
+
 function endMatch(room, io, roomCode, result) {
   const hh = room.hh;
   if (!hh || hh.phase === "over") return;
   hh.phase = "over";
   hh.result = result;
   hh.projectiles = [];
+  hh.taserBeams = [];
+  if (result === "caught") markTeamDead(hh);
+  if (hh.monster) {
+    hh.monster.stunned = false;
+    hh.monster.attackUntil = Number.MAX_SAFE_INTEGER;
+  }
   stopRoom(room);
   io.to(roomCode).emit("hiddenHunterOver", {
     room: roomCode,
     result: result,
-    message: result === "win" ? "MONSTER ELIMINATED — TEAM VICTORY" : "TIME'S UP — THE MONSTER ESCAPED"
+    message: overMessage(result)
   });
   emitStates(room, io, roomCode);
+}
+
+function teamDefeat(room, io, roomCode) {
+  const hh = room.hh;
+  if (!hh || hh.phase === "over") return;
+  markTeamDead(hh);
+  endMatch(room, io, roomCode, "caught");
 }
 
 function stepMonster(hh, dt) {
   const m = hh.monster;
   if (!m || m.hp <= 0) return;
   const now = Date.now();
-  if (now < m.pauseUntil) return;
-  if (!m.target || len(m.x - m.target.x, m.y - m.target.y) < 18) {
-    if (randomInt(100) < 28) {
-      m.pauseUntil = now + 400 + randomInt(900);
+  if (m.stunned) {
+    if (now < m.stunEndTime) {
+      m.lastX = m.x;
+      m.lastY = m.y;
+      m.lastMovedAt = now;
       return;
     }
-    m.target = randomWalkable(MONSTER_R);
+    m.stunned = false;
+    m.stunEndTime = 0;
+    m.pauseUntil = 0;
+    m.failedTargets = [];
+    m.target = pickMonsterTarget(m);
+    m.nextRetargetAt = now + RETARGET_MS;
+    m.lastMovedAt = now;
+  }
+  unstick(m, MONSTER_R);
+  if (now < m.pauseUntil) {
+    m.lastX = m.x;
+    m.lastY = m.y;
+    m.lastMovedAt = now;
+    return;
+  }
+  const movedDist = len(m.x - m.lastX, m.y - m.lastY);
+  if (movedDist >= STUCK_DIST) {
+    m.lastX = m.x;
+    m.lastY = m.y;
+    m.lastMovedAt = now;
+  }
+  const stuck = now - m.lastMovedAt >= STUCK_MS;
+  const targetBad = !m.target
+    || blocked(m.target.x, m.target.y, MONSTER_R)
+    || !walkableLine(m.x, m.y, m.target.x, m.target.y, MONSTER_R);
+  const arrived = m.target && len(m.x - m.target.x, m.y - m.target.y) < 18;
+  const retargetDue = now >= (m.nextRetargetAt || 0);
+  if (stuck || targetBad || arrived || retargetDue) {
+    if (stuck || targetBad) rememberFailedTarget(m, m.target);
+    if (arrived && !stuck && randomInt(100) < 22) {
+      m.pauseUntil = now + PAUSE_MIN_MS + randomInt(Math.max(1, PAUSE_MAX_MS - PAUSE_MIN_MS));
+      m.lastMovedAt = now;
+      m.nextRetargetAt = m.pauseUntil + RETARGET_MS;
+      return;
+    }
+    m.target = pickMonsterTarget(m);
+    m.nextRetargetAt = now + RETARGET_MS + randomInt(900);
+    m.lastMovedAt = now;
+    m.lastX = m.x;
+    m.lastY = m.y;
   }
   const n = norm(m.target.x - m.x, m.target.y - m.y);
-  tryMove(m, n.x * MONSTER_SPEED * dt, n.y * MONSTER_SPEED * dt, MONSTER_R);
+  const moved = tryMove(m, n.x * MONSTER_SPEED * dt, n.y * MONSTER_SPEED * dt, MONSTER_R);
+  if (moved) {
+    m.lastX = m.x;
+    m.lastY = m.y;
+    m.lastMovedAt = now;
+  }
+}
+
+function stepMonsterAttack(room, io, roomCode) {
+  const hh = room.hh;
+  const m = hh.monster;
+  if (!m || m.hp <= 0 || hh.phase !== "playing") return;
+  const now = Date.now();
+  if (m.stunned && now < m.stunEndTime) return;
+  if (now < m.attackUntil) return;
+  let closest = null;
+  let closestDist = Infinity;
+  Object.values(hh.players).forEach((p) => {
+    if (p.dead) return;
+    const d = len(p.x - m.x, p.y - m.y);
+    if (d <= MONSTER_ATTACK_RANGE && d < closestDist) {
+      closest = p;
+      closestDist = d;
+    }
+  });
+  if (!closest) return;
+  closest.hp = Math.max(0, closest.hp - MONSTER_DAMAGE);
+  m.attackUntil = now + MONSTER_ATTACK_COOLDOWN;
+  io.to(closest.id).emit("hiddenHunterHurt", {
+    hp: closest.hp,
+    maxHp: PLAYER_MAX_HEALTH
+  });
+  if (closest.hp <= 0) {
+    teamDefeat(room, io, roomCode);
+  }
 }
 
 function stepPlayers(hh, dt) {
   const now = Date.now();
   Object.values(hh.players).forEach((p) => {
+    if (p.dead || hh.phase === "over") return;
     if (now - p.input.at > INPUT_STALE_MS) {
       p.input.mx = 0;
       p.input.my = 0;
@@ -399,7 +632,10 @@ function tick(room, io, roomCode) {
     }
     stepPlayers(hh, dt);
     stepMonster(hh, dt);
+    stepMonsterAttack(room, io, roomCode);
+    if (hh.phase === "over") return;
     stepProjectiles(room, io, roomCode, dt);
+    if (hh.phase === "over") return;
   } else if (hh.phase === "countdown") {
     stepPlayers(hh, dt);
   }
@@ -460,7 +696,7 @@ function registerSocket(socket, io, rooms) {
     const found = findRoom(socket, rooms, data);
     if (!found || !found.room.hh) return;
     const p = found.room.hh.players[socket.id];
-    if (!p) return;
+    if (!p || p.dead || found.room.hh.phase === "over") return;
     p.input = {
       mx: clamp(Number(data.mx) || 0, -1, 1),
       my: clamp(Number(data.my) || 0, -1, 1),
@@ -484,7 +720,8 @@ function registerSocket(socket, io, rooms) {
     const hh = room.hh;
     if (!hh || hh.phase !== "playing") return;
     const p = hh.players[socket.id];
-    if (!p || p.role !== "hunter") {
+    if (!p || p.dead) return;
+    if (p.role !== "hunter") {
       socket.emit("errorMessage", "Only the Hunter can shoot.");
       return;
     }
@@ -521,12 +758,81 @@ function registerSocket(socket, io, rooms) {
     const found = findRoom(socket, rooms, data);
     if (!found || !found.room.hh) return;
     const p = found.room.hh.players[socket.id];
-    if (!p || p.role !== "hunter") return;
+    if (!p || p.role !== "hunter" || p.dead || found.room.hh.phase === "over") return;
     const now = Date.now();
     if (p.ammo >= MAGAZINE_SIZE) return;
     if (p.reloadingUntil && now < p.reloadingUntil) return;
     p.reloadingUntil = now + RELOAD_MS;
     p.ammo = 0;
+  });
+
+  socket.on("hiddenHunterTaser", (data) => {
+    const found = findRoom(socket, rooms, data);
+    if (!found) return;
+    const { room, roomCode } = found;
+    const hh = room.hh;
+    if (!hh || hh.phase !== "playing") return;
+    const p = hh.players[socket.id];
+    if (!p || p.dead) return;
+    if (p.role !== "tracker") {
+      socket.emit("errorMessage", "Only the Tracker can use the taser.");
+      return;
+    }
+    const now = Date.now();
+    if (now < p.taserUntil) return;
+    let ax = typeof data.aimX === "number" ? data.aimX : p.aimX;
+    let ay = typeof data.aimY === "number" ? data.aimY : p.aimY;
+    const a = norm(ax, ay);
+    if (len(a.x, a.y) < 0.01) return;
+    p.aimX = a.x;
+    p.aimY = a.y;
+    p.taserUntil = now + TASER_COOLDOWN;
+    const origin = { x: p.x + a.x * (PLAYER_R + 6), y: p.y + a.y * (PLAYER_R + 6) };
+    const steps = Math.max(8, Math.ceil(TASER_RANGE / 8));
+    let endX = origin.x + a.x * TASER_RANGE;
+    let endY = origin.y + a.y * TASER_RANGE;
+    let hit = false;
+    const m = hh.monster;
+    for (let i = 1; i <= steps; i++) {
+      const x = origin.x + a.x * (TASER_RANGE * i / steps);
+      const y = origin.y + a.y * (TASER_RANGE * i / steps);
+      if (blocked(x, y, 3)) {
+        endX = x;
+        endY = y;
+        break;
+      }
+      if (m && m.hp > 0 && len(x - m.x, y - m.y) <= MONSTER_R + 10) {
+        endX = m.x;
+        endY = m.y;
+        hit = true;
+        m.stunned = true;
+        m.stunEndTime = now + STUN_MS;
+        m.pauseUntil = 0;
+        m.lastMovedAt = now;
+        m.lastX = m.x;
+        m.lastY = m.y;
+        break;
+      }
+      endX = x;
+      endY = y;
+    }
+    hh.taserBeams = hh.taserBeams || [];
+    hh.taserBeams.push({
+      id: hh.nextShotId++,
+      x0: origin.x,
+      y0: origin.y,
+      x1: endX,
+      y1: endY,
+      hit,
+      until: now + 220
+    });
+    if (hh.taserBeams.length > 8) hh.taserBeams = hh.taserBeams.slice(-4);
+    // Tracker-only: hunter must never see the beam or aim.
+    io.to(hh.trackerId).emit("hiddenHunterTaserFired", {
+      remainingMs: TASER_COOLDOWN,
+      hit
+    });
+    emitStates(room, io, roomCode);
   });
 
   socket.on("hiddenHunterPlayAgain", (data) => {
@@ -560,5 +866,13 @@ module.exports = {
   DAMAGE,
   MAGAZINE_SIZE,
   MATCH_MS,
-  OBSTACLES
+  OBSTACLES,
+  TASER_COOLDOWN,
+  TASER_RANGE,
+  STUN_MS,
+  PLAYER_MAX_HEALTH,
+  MONSTER_ATTACK_RANGE,
+  MONSTER_DAMAGE,
+  MONSTER_ATTACK_COOLDOWN,
+  STUCK_MS
 };
