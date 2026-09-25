@@ -304,8 +304,7 @@ function intentMoving(p) {
   return len(p.input.mx, p.input.my) > 0.12;
 }
 
-function publicPlayer(p, viewerRole) {
-  const hideAim = p.role === "tracker" && viewerRole !== "tracker";
+function publicPlayer(p) {
   return {
     id: p.id,
     name: p.name,
@@ -313,8 +312,10 @@ function publicPlayer(p, viewerRole) {
     x: Math.round(p.x * 10) / 10,
     y: Math.round(p.y * 10) / 10,
     moving: intentMoving(p),
-    aimX: hideAim ? 0 : Math.round(p.aimX * 1000) / 1000,
-    aimY: hideAim ? 0 : Math.round(p.aimY * 1000) / 1000,
+    // Both clients need aim so the sprite faces the weapon, not the walk direction.
+    // Taser beams and monster coordinates stay tracker-only.
+    aimX: Math.round(p.aimX * 1000) / 1000,
+    aimY: Math.round(p.aimY * 1000) / 1000,
     ammo: p.role === "hunter" ? p.ammo : null,
     magazine: p.role === "hunter" ? MAGAZINE_SIZE : null,
     reloadingUntil: p.role === "hunter" ? p.reloadingUntil : 0,
