@@ -8,8 +8,8 @@
 
 const { randomInt } = require("crypto");
 
-const MAP_W = 4200;
-const MAP_H = 2700;
+const MAP_W = 1400;
+const MAP_H = 900;
 const PLAYER_R = 22;
 const MONSTER_R = 26;
 const BULLET_R = 5;
@@ -46,7 +46,9 @@ const RETARGET_MS = 3800;
 const PAUSE_MIN_MS = 280;
 const PAUSE_MAX_MS = 720;
 
-const OBSTACLES = require("./hiddenHunterLayout");
+const OBSTACLES = require("./hiddenHunterLayout").filter((o) =>
+  o.x >= 0 && o.y >= 0 && o.x + o.w <= MAP_W && o.y + o.h <= MAP_H
+);
 const SOLID_OBSTACLES = OBSTACLES.filter((o) => o.solid !== false);
 const COLLISION_CELL = 256;
 const COLLISION_GRID = new Map();
@@ -270,7 +272,7 @@ function makeMonster(players) {
       break;
     }
   }
-  if (!spawn) spawn = { x: 1980, y: 460 };
+  if (!spawn) spawn = { x: SPAWNS.monster.x, y: SPAWNS.monster.y };
   const m = {
     x: spawn.x,
     y: spawn.y,
