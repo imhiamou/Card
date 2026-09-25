@@ -8,15 +8,21 @@ repo. They are not hotlinked at runtime.
 
 | Asset | Author | Source | License | URL |
 | --- | --- | --- | --- | --- |
-| Hunter (Soldier 1 stand/hold/gun/machine/reload/silencer) | Kenney | Top-down Shooter pack | CC0 1.0 | https://kenney.nl/assets/top-down-shooter · https://opengameart.org/content/topdown-shooter |
-| Tracker (Survivor 1 stand/hold/gun/machine/reload/silencer) | Kenney | Top-down Shooter pack | CC0 1.0 | https://kenney.nl/assets/top-down-shooter · https://opengameart.org/content/topdown-shooter |
-| Weapon gun / silencer overlays | Kenney | Top-down Shooter pack | CC0 1.0 | https://kenney.nl/assets/top-down-shooter |
-| Monster (8-direction idle, jump used as walk/attack, death FX). Left-facing frames are horizontal mirrors of the pack's right-facing frames. | Raphael Gonçalves (RGS Dev) | Hand-Drawn Square Characters Animated 8 Directions Top Down | CC0 1.0 | https://opengameart.org/content/hand-drawn-square-characters-animated-8-directions-top-down-free-cc0 · https://rgsdev.itch.io/hand-drawn-square-characters-animated-8-directions-top-down-free-cc0 |
-| Tracker goggles glow, muzzle flash, stun bolts, vignette | Project original | `hidden-hunter.js` canvas | Original | n/a |
+| Hunter and Tracker body (`player/idle_*`, `player/walk_*`) | ghpaetzold | Hunter full spritesheet (`hunter_allsprites.png`) | CC0 1.0 | https://opengameart.org/content/hunter-full-spritesheet |
+| Monster (`monster/zombie_idle_*`, `zombie_move_*`, `zombie_attack_*`) | Riley Gombart (ChessMasterRiley) | Animated Top Down Zombie (`tds_zombie.zip`, files exported as `skeleton-*`) | CC0 1.0 | https://opengameart.org/content/animated-top-down-zombie |
+| Muzzle flash, tracker tint, stun bolts, vignette | Project original | `hidden-hunter.js` canvas | Original | n/a |
 | HUD / joysticks / crosshair | Project original | `hidden-hunter.css` | Original | n/a |
 
 No League of Legends, Riot, Dead by Daylight, Resident Evil, or other commercial-game assets are used.
 
-The monster frames were checked visually before naming directions. `idle_down` faces down, `idle_up` faces up, `idle_right` faces right, `idle_down_right` faces down-right, and `idle_up_right` faces up-right. The pack has no separate walk sheet, so movement uses the directional jump cycle. Death uses the pack's death effect and is not rotated.
+The hunter sheet is 192×1680 and divides into 24×30 frames (8 columns). Those frames were inspected before naming:
 
-Kenney hunter and tracker poses are single-direction art, not an 8-direction sheet. Each pose's head-to-feet angle was measured. The gun poses lean about 20 degrees off vertical, so facing subtracts that measured angle and then uses the live aim angle. The sprite is not snapped to 8 directions.
+- Row 0 faces down (face and eyes, feet at the bottom).
+- Row 1 faces up (back of the head, no face).
+- Row 2 faces left (profile, face toward the left).
+- Row 3 faces right (mirror of row 2).
+- Rows 4–7 are the walk cycles for down, up, left, and right.
+
+There is no diagonal body in the sheet, so aim snaps to the nearest of those four. Sprites are not rotated. Column 0 of each idle row is the standing frame. Walk uses the eight frames of the matching walk row, and only while the player is actually moving.
+
+The zombie pack is one right-facing pose per animation (the head is on the right of the frame). Idle, move, and attack are the pack's own clips. There is no death clip. The sprite is turned so that right-facing forward follows movement, or the attack target while attacking. It is not spun at random, and it is not the previous red monster.
