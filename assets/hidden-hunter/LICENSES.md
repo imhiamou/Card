@@ -1,8 +1,7 @@
 # Hidden Hunter assets
 
-The ground, border, and obstacle labels are original procedural canvas drawing.
-The prop sprites inside the existing obstacle boxes are Kenney CC0 top-down art.
-See `ASSET_CREDITS.md`.
+The ground and border are the original procedural canvas drawing, tiled across the larger map.
+Prop sprites are Kenney CC0 top-down art. See `ASSET_CREDITS.md`.
 
 Character and monster sprites are third-party assets copied into this
 repo. They are not hotlinked at runtime.
@@ -12,7 +11,7 @@ repo. They are not hotlinked at runtime.
 | Hunter body and feet (`player/hunter/`) | Riley Gombart | Animated Top Down Survivor (`Top_Down_Survivor`, rifle idle/move and feet idle/walk) | CC-BY 3.0 | https://opengameart.org/content/animated-top-down-survivor-player |
 | Tracker body (`player/tracker/`) | Riley Gombart | Animated Top Down Survivor (`Top_Down_Survivor`, handgun idle/move/shoot) | CC-BY 3.0 | https://opengameart.org/content/animated-top-down-survivor-player |
 | Monster (`monster/zombie_idle_*`, `zombie_move_*`, `zombie_attack_*`) | Riley Gombart (ChessMasterRiley) | Animated Top Down Zombie (`tds_zombie.zip`, files exported as `skeleton-*`) | CC0 1.0 | https://opengameart.org/content/animated-top-down-zombie |
-| Barrels, crates, tank, metal barricade (`environment/props/`) | Kenney Vleugels | Top-down Tanks Redux (`barrelRed_top`, `barrelRust_top`, `crateWood`, `crateMetal`, `tank_sand`, `barricadeMetal`) | CC0 1.0 | https://opengameart.org/content/top-down-tanks-redux |
+| Barrels, crates, tanks, barricades, sandbags (`environment/props/`) | Kenney Vleugels | Top-down Tanks Redux (`barrelRed_top`, `barrelRust_top`, `barrelGreen_top`, `barrelBlack_top`, `crateWood`, `crateMetal`, `tank_sand`, `tank_dark`, `tank_green`, `barricadeMetal`, `barricadeWood`, `sandbagBrown`) | CC0 1.0 | https://opengameart.org/content/top-down-tanks-redux |
 | Table, shelves, machine, door, window (`environment/props/`) | Kenney Vleugels | Top-down Shooter (tiles 180, 166, 342, 436, 433) | CC0 1.0 | https://kenney.nl/assets/top-down-shooter |
 | Muzzle flash, stun bolts, vignette | Project original | `hidden-hunter.js` canvas | Original | n/a |
 | HUD / joysticks / crosshair | Project original | `hidden-hunter.css` | Original | n/a |

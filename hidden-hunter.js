@@ -98,6 +98,12 @@
     machine: "assets/hidden-hunter/environment/props/industrial/machine-panel.png",
     pillar: "assets/hidden-hunter/environment/props/industrial/barricade-metal.png",
     tank: "assets/hidden-hunter/environment/props/industrial/tank-sand.png",
+    tankDark: "assets/hidden-hunter/environment/props/industrial/tank-dark.png",
+    tankGreen: "assets/hidden-hunter/environment/props/industrial/tank-green.png",
+    barrelGreen: "assets/hidden-hunter/environment/props/barrels/barrel-green-top.png",
+    barrelBlack: "assets/hidden-hunter/environment/props/barrels/barrel-black-top.png",
+    pillarWood: "assets/hidden-hunter/environment/props/industrial/barricade-wood.png",
+    sandbag: "assets/hidden-hunter/environment/props/industrial/sandbag.png",
     door: "assets/hidden-hunter/environment/props/industrial/door-slab.png",
     window: "assets/hidden-hunter/environment/props/industrial/window-frame.png"
   };
@@ -151,7 +157,43 @@
       ["tank", 0.22, 0.02, 0.4, 0.96],
       ["crateMetal", 0.6, 0.12, 0.22, 0.76],
       ["barrelRust", 0.8, 0.16, 0.2, 0.7]
-    ]
+    ],
+    vehicleDark: [
+      ["tankDark", 0.02, 0.04, 0.62, 0.92],
+      ["crateMetal", 0.62, 0.16, 0.36, 0.7]
+    ],
+    vehicleGreen: [
+      ["tankGreen", 0.04, 0.04, 0.7, 0.92],
+      ["barrelGreen", 0.68, 0.2, 0.3, 0.62]
+    ],
+    pillarWood: [["pillarWood", 0, 0, 1, 1]],
+    barrelsGreen: [
+      ["barrelGreen", 0, 0.06, 0.58, 0.88],
+      ["barrelGreen", 0.42, 0.06, 0.58, 0.88]
+    ],
+    barrelsBlack: [
+      ["barrelBlack", 0, 0.06, 0.58, 0.88],
+      ["barrelRust", 0.42, 0.06, 0.58, 0.88]
+    ],
+    pallet: [
+      ["crateWood", 0, 0, 0.52, 0.52],
+      ["crateMetal", 0.48, 0, 0.52, 0.52],
+      ["crateWood", 0.08, 0.46, 0.52, 0.52],
+      ["crateMetal", 0.46, 0.46, 0.52, 0.52]
+    ],
+    generator: [
+      ["machine", 0, 0, 0.52, 0.62],
+      ["machine", 0.48, 0, 0.52, 0.62],
+      ["barrelRed", 0.62, 0.55, 0.34, 0.42]
+    ],
+    conveyor: [
+      ["shelf", 0, 0, 0.22, 1],
+      ["shelf", 0.2, 0, 0.22, 1],
+      ["shelf", 0.4, 0, 0.22, 1],
+      ["shelf", 0.6, 0, 0.22, 1],
+      ["shelf", 0.78, 0, 0.22, 1]
+    ],
+    sandbag: [["sandbag", 0, 0, 1, 1]]
   };
 
   const SPRITE = {
@@ -171,6 +213,8 @@
     muzzleUntil: 0,
     monsterAttackUntil: 0,
     monsterDeathAt: 0,
+    scareUntil: 0,
+    telegraphUntil: 0,
     monsterFace: { x: 1, y: 0 },
     face: Object.create(null),
     lastHp: Object.create(null),
@@ -525,6 +569,8 @@
   }
 
   function drawObstacle(ctx, o) {
+    if (o.x + o.w < cam.x - 40 || o.y + o.h < cam.y - 40) return;
+    if (o.x > cam.x + cam.viewW + 40 || o.y > cam.y + cam.viewH + 40) return;
     const p = worldToScreen(ctx, o.x, o.y);
     if (drawPropLayout(ctx, o)) {
       if (o.label) {
@@ -749,7 +795,10 @@
     const dead = auth.hp <= 0 || !!vis.monsterDeathAt;
     const stunned = !!auth.stunned && !dead;
     const moving = !dead && !stunned && auth.moving === true;
-    const attacking = !dead && !stunned && now < vis.monsterAttackUntil;
+    const attacking = !dead && !stunned && (auth.windup || now < vis.monsterAttackUntil);
+    if ((auth.windup || auth.rushing) && typeof auth.faceX === "number") {
+      vis.monsterFace = { x: auth.faceX, y: auth.faceY };
+    }
     const old = prev && prev.monster;
     if (attacking) {
       const toward = nearestPlayerVec(auth);
@@ -804,7 +853,7 @@
   function draw() {
     if (!hhCanvas || !state) return;
     const ctx = hhCanvas.getContext("2d");
-    const map = state.map || { w: 1400, h: 900, obstacles: [] };
+    const map = state.map || { w: 4200, h: 2700, obstacles: [] };
     const t = interpT();
     const livePlayers = (state.players || []).map((p) => {
       const old = prev && (prev.players || []).find((o) => o.id === p.id);
@@ -814,9 +863,14 @@
     const viewW = hhCanvas.width;
     const viewH = hhCanvas.height;
     const scale = Math.min(viewW / 900, viewH / 520);
-    ctx.setTransform(scale, 0, 0, scale, 0, 0);
+    const scareK = vis.scareUntil > Date.now() ? (vis.scareUntil - Date.now()) / 420 : 0;
+    const shakeX = scareK ? (Math.random() - 0.5) * 16 * scareK : 0;
+    const shakeY = scareK ? (Math.random() - 0.5) * 12 * scareK : 0;
+    ctx.setTransform(scale, 0, 0, scale, shakeX, shakeY);
     const vw = viewW / scale;
     const vh = viewH / scale;
+    cam.viewW = vw;
+    cam.viewH = vh;
     if (me) {
       cam.x = clamp(me.x - vw / 2, 0, Math.max(0, map.w - vw));
       cam.y = clamp(me.y - vh / 2, 0, Math.max(0, map.h - vh));
@@ -824,8 +878,12 @@
     ctx.fillStyle = "#1a1510";
     ctx.fillRect(0, 0, vw, vh);
     ctx.fillStyle = "#2a2218";
-    for (let x = 0; x < map.w; x += 70) {
-      for (let y = 0; y < map.h; y += 70) {
+    const tileX0 = Math.max(0, Math.floor(cam.x / 70) * 70);
+    const tileY0 = Math.max(0, Math.floor(cam.y / 70) * 70);
+    const tileX1 = Math.min(map.w, cam.x + vw + 70);
+    const tileY1 = Math.min(map.h, cam.y + vh + 70);
+    for (let x = tileX0; x < tileX1; x += 70) {
+      for (let y = tileY0; y < tileY1; y += 70) {
         const p = worldToScreen(ctx, x, y);
         ctx.fillRect(p.x, p.y, 68, 68);
       }
@@ -833,6 +891,7 @@
     ctx.strokeStyle = "rgba(196,160,60,.18)";
     ctx.lineWidth = 4;
     for (let x = 140; x < map.w; x += 280) {
+      if (x < cam.x - 20 || x > cam.x + vw + 20) continue;
       const a = worldToScreen(ctx, x, 40);
       ctx.strokeRect(a.x, a.y, 8, map.h - 80);
     }
@@ -887,6 +946,30 @@
         ctx.textAlign = "left";
         ctx.fillText("MONSTER HP " + state.monster.hp + "/" + state.monster.maxHp, 16, 22);
       }
+    }
+    if (vis.telegraphUntil > Date.now()) {
+      const pulse = (vis.telegraphUntil - Date.now()) / 650;
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      const edge = ctx.createRadialGradient(viewW / 2, viewH / 2, viewW * 0.28, viewW / 2, viewH / 2, viewW * 0.62);
+      edge.addColorStop(0, "rgba(0,0,0,0)");
+      edge.addColorStop(1, "rgba(160, 40, 20, " + (0.45 * pulse) + ")");
+      ctx.fillStyle = edge;
+      ctx.fillRect(0, 0, viewW, viewH);
+      ctx.restore();
+    }
+    if (scareK > 0) {
+      const face = loadImg(SPRITE.monster.idle[0]);
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.fillStyle = "rgba(80, 0, 6, " + (0.5 * scareK) + ")";
+      ctx.fillRect(0, 0, viewW, viewH);
+      if (spriteReady(face)) {
+        const size = viewH * (0.34 + 0.16 * scareK);
+        ctx.globalAlpha = Math.min(1, scareK * 1.25);
+        ctx.drawImage(face, (viewW - size) / 2, (viewH - size) * 0.42, size, size * (face.naturalHeight / face.naturalWidth));
+      }
+      ctx.restore();
     }
     if (hhTaser && myRole === "tracker" && state.taser) {
       const left = Math.max(0, (state.taser.remainingMs || 0) - (Date.now() - (state._recvAt || Date.now())));
@@ -1007,6 +1090,7 @@
       }
       if (hhMsg) hhMsg.textContent = "Talk outside the game — there is no chat.";
       vis.shootUntil = vis.taserUntil = vis.muzzleUntil = vis.monsterAttackUntil = vis.monsterDeathAt = 0;
+      vis.scareUntil = vis.telegraphUntil = 0;
       vis.monsterFace = { x: 0, y: 1 };
       vis.face = Object.create(null);
       vis.lastHp = Object.create(null);
@@ -1023,10 +1107,17 @@
       if (hhMsg) hhMsg.textContent = data.message || "Match over.";
     });
     socket.on("hiddenHunterHurt", () => {
-      if (!active || !hhFlash) return;
+      if (!active) return;
+      vis.scareUntil = Date.now() + 420;
       vis.monsterAttackUntil = Date.now() + 380;
-      hhFlash.classList.add("show");
-      setTimeout(() => { if (hhFlash) hhFlash.classList.remove("show"); }, 180);
+      if (hhFlash) {
+        hhFlash.classList.add("show");
+        setTimeout(() => { if (hhFlash) hhFlash.classList.remove("show"); }, 280);
+      }
+    });
+    socket.on("hiddenHunterRushTelegraph", () => {
+      if (!active) return;
+      vis.telegraphUntil = Date.now() + 650;
     });
     socket.on("hiddenHunterShot", () => {
       if (!active) return;
@@ -1046,6 +1137,7 @@
     });
     socket.on("hiddenHunterReset", () => {
       vis.shootUntil = vis.taserUntil = vis.muzzleUntil = vis.monsterAttackUntil = vis.monsterDeathAt = 0;
+      vis.scareUntil = vis.telegraphUntil = 0;
       vis.monsterFace = { x: 0, y: 1 };
       vis.face = Object.create(null);
       vis.lastHp = Object.create(null);

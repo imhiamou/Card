@@ -8,13 +8,21 @@
 
 const { randomInt } = require("crypto");
 
-const MAP_W = 1400;
-const MAP_H = 900;
+const MAP_W = 4200;
+const MAP_H = 2700;
 const PLAYER_R = 22;
 const MONSTER_R = 26;
 const BULLET_R = 5;
 const PLAYER_SPEED = 210;
-const MONSTER_SPEED = 92;
+const MONSTER_BASE_SPEED = 138;
+const MONSTER_SPEED = MONSTER_BASE_SPEED;
+const MONSTER_RUSH_RANGE = 320;
+const MONSTER_RUSH_SPEED = 276;
+const MONSTER_RUSH_DURATION = 1000;
+const MONSTER_RUSH_COOLDOWN = 10000;
+const MONSTER_RUSH_WINDUP = 650;
+const MONSTER_RUSH_RECOVER = 700;
+const MONSTER_RUSH_DAMAGE = 10;
 const BULLET_SPEED = 640;
 const TICK_MS = 50;
 const MATCH_MS = 5 * 60 * 1000;
@@ -38,20 +46,23 @@ const RETARGET_MS = 3800;
 const PAUSE_MIN_MS = 280;
 const PAUSE_MAX_MS = 720;
 
-const OBSTACLES = [
-  { id: "shelves", kind: "shelves", label: "SHELVES", x: 70, y: 70, w: 200, h: 64 },
-  { id: "container", kind: "container", label: "CONTAINER", x: 360, y: 90, w: 170, h: 78 },
-  { id: "door", kind: "door", label: "DOOR", x: 640, y: 18, w: 130, h: 32 },
-  { id: "window", kind: "window", label: "WINDOW", x: 18, y: 300, w: 22, h: 140 },
-  { id: "pillarA", kind: "pillar", label: "PILLAR", x: 490, y: 210, w: 46, h: 46 },
-  { id: "pillarB", kind: "pillar", label: "PILLAR", x: 900, y: 210, w: 46, h: 46 },
-  { id: "barrels", kind: "barrels", label: "RED BARRELS", x: 280, y: 390, w: 96, h: 72 },
-  { id: "table", kind: "table", label: "TABLE", x: 610, y: 410, w: 150, h: 68 },
-  { id: "crates", kind: "crates", label: "CRATES", x: 80, y: 690, w: 168, h: 118 },
-  { id: "machine", kind: "machine", label: "LARGE MACHINE", x: 1080, y: 260, w: 230, h: 190 },
-  { id: "boxes", kind: "boxes", label: "BOXES", x: 790, y: 640, w: 110, h: 86 },
-  { id: "vehicle", kind: "vehicle", label: "VEHICLE", x: 1070, y: 710, w: 230, h: 96 }
-];
+const OBSTACLES = require("./hiddenHunterLayout");
+const SOLID_OBSTACLES = OBSTACLES.filter((o) => o.solid !== false);
+const COLLISION_CELL = 256;
+const COLLISION_GRID = new Map();
+SOLID_OBSTACLES.forEach((o) => {
+  const x0 = Math.floor(o.x / COLLISION_CELL);
+  const y0 = Math.floor(o.y / COLLISION_CELL);
+  const x1 = Math.floor((o.x + o.w) / COLLISION_CELL);
+  const y1 = Math.floor((o.y + o.h) / COLLISION_CELL);
+  for (let gy = y0; gy <= y1; gy++) {
+    for (let gx = x0; gx <= x1; gx++) {
+      const key = gx + "," + gy;
+      if (!COLLISION_GRID.has(key)) COLLISION_GRID.set(key, []);
+      COLLISION_GRID.get(key).push(o);
+    }
+  }
+});
 
 const SPAWNS = {
   hunter: { x: 240, y: 520 },
@@ -87,7 +98,20 @@ function inBounds(cx, cy, r) {
 
 function blocked(cx, cy, r) {
   if (!inBounds(cx, cy, r)) return true;
-  return OBSTACLES.some((o) => circleHitsAabb(cx, cy, r, o));
+  const x0 = Math.floor((cx - r) / COLLISION_CELL);
+  const y0 = Math.floor((cy - r) / COLLISION_CELL);
+  const x1 = Math.floor((cx + r) / COLLISION_CELL);
+  const y1 = Math.floor((cy + r) / COLLISION_CELL);
+  for (let gy = y0; gy <= y1; gy++) {
+    for (let gx = x0; gx <= x1; gx++) {
+      const list = COLLISION_GRID.get(gx + "," + gy);
+      if (!list) continue;
+      for (let i = 0; i < list.length; i++) {
+        if (circleHitsAabb(cx, cy, r, list[i])) return true;
+      }
+    }
+  }
+  return false;
 }
 
 function tryMove(ent, dx, dy, r) {
@@ -235,8 +259,18 @@ function makePlayer(id, name, role) {
   };
 }
 
-function makeMonster() {
-  const spawn = randomWalkable(MONSTER_R);
+function makeMonster(players) {
+  const avoid = players ? Object.values(players) : [];
+  let spawn = null;
+  for (let i = 0; i < 50; i++) {
+    const spot = randomWalkable(MONSTER_R);
+    const clear = avoid.every((p) => len(p.x - spot.x, p.y - spot.y) > 380);
+    if (clear) {
+      spawn = spot;
+      break;
+    }
+  }
+  if (!spawn) spawn = { x: 1980, y: 460 };
   const m = {
     x: spawn.x,
     y: spawn.y,
@@ -251,7 +285,16 @@ function makeMonster() {
     lastMovedAt: Date.now(),
     nextRetargetAt: Date.now() + RETARGET_MS,
     attackUntil: 0,
-    failedTargets: []
+    failedTargets: [],
+    rushPhase: "idle",
+    rushDir: { x: 1, y: 0 },
+    rushTargetId: null,
+    windupUntil: 0,
+    rushUntil: 0,
+    rushRecoverUntil: 0,
+    rushCooldownUntil: 0,
+    faceX: 1,
+    faceY: 0
   };
   m.target = pickMonsterTarget(m);
   return m;
@@ -275,16 +318,17 @@ function initRoomState(room, swapRoles) {
   }
   const hunter = room.players.find((p) => p.id === hunterId);
   const tracker = room.players.find((p) => p.id === trackerId);
+  const players = {
+    [hunterId]: makePlayer(hunterId, hunter.name, "hunter"),
+    [trackerId]: makePlayer(trackerId, tracker.name, "tracker")
+  };
   room.hh = {
     phase: "countdown",
     countdown: COUNTDOWN_SEC,
     hunterId,
     trackerId,
-    players: {
-      [hunterId]: makePlayer(hunterId, hunter.name, "hunter"),
-      [trackerId]: makePlayer(trackerId, tracker.name, "tracker")
-    },
-    monster: makeMonster(),
+    players,
+    monster: makeMonster(players),
     projectiles: [],
     impacts: [],
     taserBeams: [],
@@ -358,7 +402,11 @@ function publicMonster(m) {
     maxHp: MONSTER_HP,
     hit: m.hitUntil > now,
     stunned: !!m.stunned && now < m.stunEndTime,
-    moving: !!m.moving && m.hp > 0 && !(m.stunned && now < m.stunEndTime)
+    moving: !!m.moving && m.hp > 0 && !(m.stunned && now < m.stunEndTime),
+    windup: m.rushPhase === "windup",
+    rushing: m.rushPhase === "rush",
+    faceX: m.faceX || 0,
+    faceY: m.faceY || 0
   };
 }
 
@@ -484,7 +532,28 @@ function teamDefeat(room, io, roomCode) {
   endMatch(room, io, roomCode, "caught");
 }
 
-function stepMonster(hh, dt) {
+function nearestLiving(hh, x, y, maxDist) {
+  let closest = null;
+  let closestDist = maxDist;
+  Object.values(hh.players).forEach((p) => {
+    if (p.dead) return;
+    const d = len(p.x - x, p.y - y);
+    if (d < closestDist) {
+      closest = p;
+      closestDist = d;
+    }
+  });
+  return closest;
+}
+
+function endRush(m, now) {
+  m.rushPhase = "recover";
+  m.rushRecoverUntil = now + MONSTER_RUSH_RECOVER;
+  m.moving = false;
+  m.rushTargetId = null;
+}
+
+function stepMonster(hh, dt, io) {
   const m = hh.monster;
   if (!m || m.hp <= 0) {
     if (m) m.moving = false;
@@ -494,6 +563,8 @@ function stepMonster(hh, dt) {
   if (m.stunned) {
     if (now < m.stunEndTime) {
       m.moving = false;
+      m.rushPhase = "idle";
+      m.rushTargetId = null;
       m.lastX = m.x;
       m.lastY = m.y;
       m.lastMovedAt = now;
@@ -508,6 +579,64 @@ function stepMonster(hh, dt) {
     m.lastMovedAt = now;
   }
   unstick(m, MONSTER_R);
+  if (m.rushPhase === "windup") {
+    m.moving = false;
+    const target = m.rushTargetId && hh.players[m.rushTargetId];
+    if (!target || target.dead) {
+      endRush(m, now);
+      return;
+    }
+    const aim = norm(target.x - m.x, target.y - m.y);
+    m.faceX = aim.x;
+    m.faceY = aim.y;
+    if (now < m.windupUntil) return;
+    m.rushDir = { x: aim.x, y: aim.y };
+    m.rushPhase = "rush";
+    m.rushUntil = now + MONSTER_RUSH_DURATION;
+    return;
+  }
+  if (m.rushPhase === "rush") {
+    if (now >= m.rushUntil) {
+      endRush(m, now);
+      return;
+    }
+    const step = MONSTER_RUSH_SPEED * dt;
+    const nx = m.x + m.rushDir.x * step;
+    const ny = m.y + m.rushDir.y * step;
+    if (blocked(nx, ny, MONSTER_R)) {
+      endRush(m, now);
+      return;
+    }
+    m.x = nx;
+    m.y = ny;
+    m.faceX = m.rushDir.x;
+    m.faceY = m.rushDir.y;
+    m.moving = true;
+    m.lastX = m.x;
+    m.lastY = m.y;
+    m.lastMovedAt = now;
+    return;
+  }
+  if (m.rushPhase === "recover") {
+    m.moving = false;
+    if (now < m.rushRecoverUntil) return;
+    m.rushPhase = "idle";
+  }
+  if (m.rushPhase === "idle" && now >= (m.rushCooldownUntil || 0)) {
+    const prey = nearestLiving(hh, m.x, m.y, MONSTER_RUSH_RANGE);
+    if (prey) {
+      m.rushPhase = "windup";
+      m.rushTargetId = prey.id;
+      m.windupUntil = now + MONSTER_RUSH_WINDUP;
+      m.rushCooldownUntil = now + MONSTER_RUSH_COOLDOWN;
+      m.moving = false;
+      const aim = norm(prey.x - m.x, prey.y - m.y);
+      m.faceX = aim.x;
+      m.faceY = aim.y;
+      if (io) io.to(prey.id).emit("hiddenHunterRushTelegraph");
+      return;
+    }
+  }
   if (now < m.pauseUntil) {
     m.moving = false;
     m.lastX = m.x;
@@ -545,13 +674,22 @@ function stepMonster(hh, dt) {
   const n = norm(m.target.x - m.x, m.target.y - m.y);
   const beforeX = m.x;
   const beforeY = m.y;
-  const moved = tryMove(m, n.x * MONSTER_SPEED * dt, n.y * MONSTER_SPEED * dt, MONSTER_R);
+  const moved = tryMove(m, n.x * MONSTER_BASE_SPEED * dt, n.y * MONSTER_BASE_SPEED * dt, MONSTER_R);
   m.moving = !!(moved && (m.x !== beforeX || m.y !== beforeY));
   if (moved) {
     m.lastX = m.x;
     m.lastY = m.y;
     m.lastMovedAt = now;
   }
+}
+
+function hurtPlayer(room, io, roomCode, player, amount) {
+  player.hp = Math.max(0, player.hp - amount);
+  io.to(player.id).emit("hiddenHunterHurt", {
+    hp: player.hp,
+    maxHp: PLAYER_MAX_HEALTH
+  });
+  if (player.hp <= 0) teamDefeat(room, io, roomCode);
 }
 
 function stepMonsterAttack(room, io, roomCode) {
@@ -561,26 +699,11 @@ function stepMonsterAttack(room, io, roomCode) {
   const now = Date.now();
   if (m.stunned && now < m.stunEndTime) return;
   if (now < m.attackUntil) return;
-  let closest = null;
-  let closestDist = Infinity;
-  Object.values(hh.players).forEach((p) => {
-    if (p.dead) return;
-    const d = len(p.x - m.x, p.y - m.y);
-    if (d <= MONSTER_ATTACK_RANGE && d < closestDist) {
-      closest = p;
-      closestDist = d;
-    }
-  });
+  const closest = nearestLiving(hh, m.x, m.y, MONSTER_ATTACK_RANGE + 0.001);
   if (!closest) return;
-  closest.hp = Math.max(0, closest.hp - MONSTER_DAMAGE);
+  const amount = m.rushPhase === "rush" ? MONSTER_RUSH_DAMAGE : MONSTER_DAMAGE;
   m.attackUntil = now + MONSTER_ATTACK_COOLDOWN;
-  io.to(closest.id).emit("hiddenHunterHurt", {
-    hp: closest.hp,
-    maxHp: PLAYER_MAX_HEALTH
-  });
-  if (closest.hp <= 0) {
-    teamDefeat(room, io, roomCode);
-  }
+  hurtPlayer(room, io, roomCode, closest, amount);
 }
 
 function stepPlayers(hh, dt) {
@@ -650,7 +773,7 @@ function tick(room, io, roomCode) {
       return;
     }
     stepPlayers(hh, dt);
-    stepMonster(hh, dt);
+    stepMonster(hh, dt, io);
     stepMonsterAttack(room, io, roomCode);
     if (hh.phase === "over") return;
     stepProjectiles(room, io, roomCode, dt);
@@ -893,5 +1016,13 @@ module.exports = {
   MONSTER_ATTACK_RANGE,
   MONSTER_DAMAGE,
   MONSTER_ATTACK_COOLDOWN,
-  STUCK_MS
+  MONSTER_BASE_SPEED,
+  MONSTER_RUSH_RANGE,
+  MONSTER_RUSH_SPEED,
+  MONSTER_RUSH_DURATION,
+  MONSTER_RUSH_COOLDOWN,
+  MONSTER_RUSH_WINDUP,
+  MONSTER_RUSH_DAMAGE,
+  STUCK_MS,
+  blocked
 };
