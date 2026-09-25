@@ -69,13 +69,39 @@
       taser: ["assets/hidden-hunter/tracker/survivor1_silencer.png"],
       death: ["assets/hidden-hunter/tracker/survivor1_reload.png"]
     },
-    monster: {
-      idle: [0, 1, 2, 3].map((i) => "assets/hidden-hunter/monster/monster_idle_" + i + ".png"),
-      walk: [0, 1, 2, 3].map((i) => "assets/hidden-hunter/monster/monster_walk_" + i + ".png"),
-      attack: [0, 1, 2, 3].map((i) => "assets/hidden-hunter/monster/monster_attack_" + i + ".png"),
-      stun: [0, 1, 2, 3].map((i) => "assets/hidden-hunter/monster/monster_stun_" + i + ".png"),
-      death: [0, 1, 2, 3].map((i) => "assets/hidden-hunter/monster/monster_death_" + i + ".png")
-    }
+    monster: null
+  };
+  const HEADINGS = ["right", "downRight", "down", "downLeft", "left", "upLeft", "up", "upRight"];
+  function dirFrames(kind, count) {
+    const out = {};
+    HEADINGS.forEach((dir) => {
+      out[dir] = [];
+      for (let i = 0; i < count; i++) out[dir].push("assets/hidden-hunter/monster/monster_" + kind + "_" + dir + "_" + i + ".png");
+    });
+    return out;
+  }
+  SPRITE.monster = {
+    idle: dirFrames("idle", 4),
+    walk: dirFrames("walk", 4),
+    attack: dirFrames("walk", 4),
+    death: [0, 1, 2, 3, 4, 5, 6].map((i) => "assets/hidden-hunter/monster/monster_death_" + i + ".png")
+  };
+  // Kenney poses are one facing, not an 8-direction sheet. native is the
+  // measured head-from-feet angle in image space (degrees, y down). -90 is straight up.
+  // Gun poses lean about 20 degrees; stand poses do not. Facing uses this, not movement.
+  const POSE = {
+    "assets/hidden-hunter/hunter/soldier1_stand.png": { native: -90.2, head: [15.4, 7.0], feet: [15.5, 35.1] },
+    "assets/hidden-hunter/hunter/soldier1_hold.png": { native: -92.3, head: [20.0, 6.3], feet: [21.2, 36.2] },
+    "assets/hidden-hunter/hunter/soldier1_gun.png": { native: -109.7, head: [14.8, 8.5], feet: [24.8, 36.4] },
+    "assets/hidden-hunter/hunter/soldier1_machine.png": { native: -108.6, head: [14.9, 8.3], feet: [24.3, 36.3] },
+    "assets/hidden-hunter/hunter/soldier1_reload.png": { native: -88.5, head: [21.5, 6.6], feet: [20.8, 35.7] },
+    "assets/hidden-hunter/hunter/soldier1_silencer.png": { native: -110.5, head: [14.8, 8.5], feet: [25.2, 36.3] },
+    "assets/hidden-hunter/tracker/survivor1_stand.png": { native: -91.5, head: [14.7, 7.2], feet: [15.4, 34.9] },
+    "assets/hidden-hunter/tracker/survivor1_hold.png": { native: -91.7, head: [19.8, 6.3], feet: [20.7, 36.2] },
+    "assets/hidden-hunter/tracker/survivor1_gun.png": { native: -109.0, head: [14.7, 8.6], feet: [24.3, 36.3] },
+    "assets/hidden-hunter/tracker/survivor1_machine.png": { native: -107.8, head: [14.7, 8.5], feet: [23.6, 36.3] },
+    "assets/hidden-hunter/tracker/survivor1_reload.png": { native: -88.7, head: [20.9, 6.5], feet: [20.3, 35.8] },
+    "assets/hidden-hunter/tracker/survivor1_silencer.png": { native: -109.5, head: [14.8, 8.7], feet: [24.6, 36.3] }
   };
   const vis = {
     shootUntil: 0,
@@ -97,10 +123,15 @@
     return im;
   }
 
+  function eachSrc(node, fn) {
+    if (!node) return;
+    if (typeof node === "string") fn(node);
+    else if (Array.isArray(node)) node.forEach((n) => eachSrc(n, fn));
+    else Object.keys(node).forEach((k) => eachSrc(node[k], fn));
+  }
+
   function preloadSprites() {
-    Object.keys(SPRITE).forEach((k) => {
-      Object.keys(SPRITE[k]).forEach((anim) => SPRITE[k][anim].forEach(loadImg));
-    });
+    eachSrc(SPRITE, loadImg);
     loadImg("assets/hidden-hunter/weapon/weapon_gun.png");
     loadImg("assets/hidden-hunter/weapon/weapon_silencer.png");
   }
@@ -125,6 +156,31 @@
     }
     if (o.moving) return "walk";
     return "idle";
+  }
+
+  function headingFromVector(x, y) {
+    if (Math.abs(x) + Math.abs(y) < 1e-6) return "down";
+    const i = Math.round(Math.atan2(y, x) / (Math.PI / 4));
+    return HEADINGS[((i % 8) + 8) % 8];
+  }
+
+  function liveAimVector() {
+    const a = touchMode ? aimJoy : mouseAim;
+    const d = Math.hypot(a.x, a.y);
+    if (d < 1e-4) return { x: 1, y: 0 };
+    return { x: a.x / d, y: a.y / d };
+  }
+
+  function aimVector(p, isMe) {
+    if (isMe) return liveAimVector();
+    const x = p && p.aimX || 0;
+    const y = p && p.aimY || 0;
+    const d = Math.hypot(x, y);
+    if (d > 0.05) {
+      vis.face[p.id] = { x: x / d, y: y / d };
+      return vis.face[p.id];
+    }
+    return (p && vis.face[p.id]) || { x: 1, y: 0 };
   }
 
   function spriteReady(im) {
@@ -335,7 +391,7 @@
   function sendInput() {
     if (!active || !currentRoom || !state || state.phase === "over") return;
     const move = touchMode ? moveJoy : keyVec();
-    const aim = touchMode ? aimJoy : mouseAim;
+    const aim = liveAimVector();
     socket.emit("hiddenHunterInput", {
       roomCode: currentRoom,
       mx: move.x,
@@ -350,7 +406,7 @@
     const now = Date.now();
     if (now - lastShot < 120) return;
     lastShot = now;
-    const aim = touchMode ? aimJoy : mouseAim;
+    const aim = liveAimVector();
     if (myRole === "hunter") {
       vis.shootUntil = Date.now() + 220;
       vis.muzzleUntil = Date.now() + 90;
@@ -468,16 +524,10 @@
     return p.moving === true;
   }
 
-  function faceFor(p, isMe) {
-    const hideTrackerAim = p.role === "tracker" && !(isMe && myRole === "tracker");
-    if (!hideTrackerAim && (p.aimX || p.aimY)) return { x: p.aimX, y: p.aimY };
-    if (playerMoving(p, isMe)) {
-      const old = prev && (prev.players || []).find((o) => o.id === p.id);
-      if (old && (Math.abs(p.x - old.x) + Math.abs(p.y - old.y) > 0.4)) {
-        vis.face[p.id] = { x: p.x - old.x, y: p.y - old.y };
-      }
-    }
-    return vis.face[p.id] || { x: 0, y: -1 };
+  function frameIndex(list, fps, onceSince) {
+    if (!list || list.length < 2) return 0;
+    if (onceSince) return Math.min(list.length - 1, Math.floor((Date.now() - onceSince) / (1000 / fps)));
+    return Math.floor(Date.now() / (1000 / fps)) % list.length;
   }
 
   function drawSprite(ctx, im, w) {
@@ -499,39 +549,50 @@
     const anim = pickAnim(role, { dead: dead, attacking: shooting || tasering, moving: moving });
     const frames = pack[anim] || pack.idle;
     const fps = anim === "walk" ? 6 : (anim === "shoot" || anim === "taser" ? 12 : 1);
-    const im = frameOf(frames, fps);
-    const face = faceFor(p, isMe);
-    const ang = Math.atan2(face.y, face.x) + Math.PI / 2;
+    const src = frames[frameIndex(frames, fps)];
+    const im = loadImg(src);
+    const aim = aimVector(p, isMe);
+    const pose = POSE[src] || { native: -90, head: [18, 8], feet: [18, 34] };
+    const native = pose.native * Math.PI / 180;
+    const bodyX = (pose.head[0] + pose.feet[0]) / 2;
+    const bodyY = (pose.head[1] + pose.feet[1]) / 2;
+    const scale = 46 / ((im && im.naturalHeight) || 43);
     ctx.save();
     ctx.translate(s.x, s.y);
-    ctx.rotate(ang);
-    if (anim === "walk") ctx.translate(0, Math.sin(now / 90) * 1.5);
-    if (role === "hunter" && now < vis.muzzleUntil) ctx.translate(0, 3);
+    ctx.rotate(Math.atan2(aim.y, aim.x));
+    if (anim === "walk") ctx.translate(0, Math.sin(now / 90) * 1.4);
+    if (role === "hunter" && now < vis.muzzleUntil) {
+      ctx.translate(-4, 0);
+      ctx.fillStyle = "rgba(255,220,90,.92)";
+      ctx.beginPath();
+      ctx.moveTo(24, 0);
+      ctx.lineTo(40, -7);
+      ctx.lineTo(40, 7);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.rotate(-native);
     ctx.imageSmoothingEnabled = true;
-    if (!drawSprite(ctx, im, 46)) {
+    if (spriteReady(im)) {
+      ctx.drawImage(im, -bodyX * scale, -bodyY * scale, im.naturalWidth * scale, im.naturalHeight * scale);
+    } else {
+      ctx.rotate(native);
       ctx.fillStyle = p.role === "hunter" ? "#4f9cff" : "#74df9b";
       ctx.beginPath(); ctx.arc(0, 0, 18, 0, Math.PI * 2); ctx.fill();
     }
-    if (p.role === "tracker") {
+    if (p.role === "tracker" && pose) {
       const pulse = 0.45 + Math.sin(now / 180) * 0.2;
+      const gx = (pose.head[0] - bodyX) * scale;
+      const gy = (pose.head[1] - bodyY) * scale;
       ctx.shadowColor = "#7cf0ff";
       ctx.shadowBlur = 10;
       ctx.fillStyle = "rgba(124,240,255," + pulse + ")";
-      ctx.beginPath(); ctx.ellipse(-5, -11, 4.2, 3.2, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.ellipse(5, -11, 4.2, 3.2, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(gx - 4, gy, 3.4, 2.4, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(gx + 4, gy, 3.4, 2.4, 0, 0, Math.PI * 2); ctx.fill();
       ctx.shadowBlur = 0;
       ctx.strokeStyle = "rgba(180,255,240,.85)";
       ctx.lineWidth = 1.4;
-      ctx.beginPath(); ctx.moveTo(-9, -11); ctx.lineTo(9, -11); ctx.stroke();
-    }
-    if (p.role === "hunter" && now < vis.muzzleUntil) {
-      ctx.fillStyle = "rgba(255,220,90,.92)";
-      ctx.beginPath();
-      ctx.moveTo(0, -28);
-      ctx.lineTo(-6, -42);
-      ctx.lineTo(6, -42);
-      ctx.closePath();
-      ctx.fill();
+      ctx.beginPath(); ctx.moveTo(gx - 7, gy); ctx.lineTo(gx + 7, gy); ctx.stroke();
     }
     ctx.restore();
     ctx.save();
@@ -542,62 +603,74 @@
     ctx.restore();
   }
 
+  function nearestPlayerVec(m) {
+    let best = null;
+    let bestD = Infinity;
+    (state.players || []).forEach((p) => {
+      if (p.dead) return;
+      const dx = p.x - m.x;
+      const dy = p.y - m.y;
+      const d = dx * dx + dy * dy;
+      if (d < bestD) { bestD = d; best = { x: dx, y: dy }; }
+    });
+    return best;
+  }
+
   function drawMonster(ctx, m) {
     const s = worldToScreen(ctx, m.x, m.y);
     const now = Date.now();
-    const dead = m.hp <= 0 || !!vis.monsterDeathAt;
-    const stunned = !!m.stunned && !dead;
-    const moving = !dead && !stunned && m.moving === true;
+    const auth = (state && state.monster) || m;
+    const dead = auth.hp <= 0 || !!vis.monsterDeathAt;
+    const stunned = !!auth.stunned && !dead;
+    const moving = !dead && !stunned && auth.moving === true;
     const attacking = !dead && !stunned && now < vis.monsterAttackUntil;
     const anim = pickAnim("monster", { dead: dead, stunned: stunned, attacking: attacking, moving: moving });
-    const frames = SPRITE.monster[anim] || SPRITE.monster.idle;
-    const fps = anim === "idle" ? 3 : anim === "walk" ? 8 : anim === "stun" ? 10 : 8;
-    const im = frameOf(frames, fps, anim === "death" ? (vis.monsterDeathAt || now) : 0);
     const old = prev && prev.monster;
-    if (moving && old && (Math.abs(m.x - old.x) + Math.abs(m.y - old.y) > 0.25)) {
-      vis.monsterFace = { x: m.x - old.x, y: m.y - old.y };
+    if (attacking) {
+      const toward = nearestPlayerVec(auth);
+      if (toward) vis.monsterFace = toward;
+    } else if (moving && old) {
+      const dx = auth.x - old.x;
+      const dy = auth.y - old.y;
+      if (Math.abs(dx) + Math.abs(dy) > 0.2) vis.monsterFace = { x: dx, y: dy };
     }
     const face = vis.monsterFace || { x: 0, y: 1 };
-    const ang = Math.atan2(face.y, face.x) + Math.PI / 2;
+    const dir = headingFromVector(face.x, face.y);
+    let frames = SPRITE.monster.idle[dir];
+    let fps = 4;
+    if (anim === "death") { frames = SPRITE.monster.death; fps = 10; }
+    else if (anim === "walk" || anim === "attack") { frames = SPRITE.monster.walk[dir]; fps = anim === "attack" ? 12 : 8; }
+    else if (anim === "stun") { frames = SPRITE.monster.idle[dir]; fps = 8; }
+    const im = frameOf(frames, fps, anim === "death" ? (vis.monsterDeathAt || now) : 0);
     const deathAge = vis.monsterDeathAt ? now - vis.monsterDeathAt : 0;
     ctx.save();
     ctx.translate(s.x, s.y);
-    if (anim === "stun") ctx.translate(Math.sin(now / 28) * 2.4, 0);
-    ctx.rotate(anim === "death" ? ang + Math.min(0.8, deathAge / 800) : ang);
+    if (anim === "stun") ctx.translate(Math.sin(now / 28) * 2.2, 0);
     ctx.imageSmoothingEnabled = true;
-    ctx.shadowColor = m.stunned ? "#ffe066" : (m.hit ? "#ff6b6b" : "#7cf0ff");
-    ctx.shadowBlur = 14;
-    const fade = dead ? Math.max(0.35, 1 - Math.max(0, deathAge - 640) / 1100) : 1;
+    ctx.shadowColor = stunned ? "#ffe066" : (auth.hit ? "#ff6b6b" : "#9ad7ff");
+    ctx.shadowBlur = 10;
+    const fade = dead ? Math.max(0.15, 1 - Math.max(0, deathAge - 720) / 800) : 1;
     ctx.globalAlpha = fade;
-    if (!drawSprite(ctx, im, 64)) {
+    if (!drawSprite(ctx, im, 112)) {
       ctx.fillStyle = "rgba(90,230,255,.75)";
       ctx.beginPath(); ctx.ellipse(0, 0, 22, 28, 0, 0, Math.PI * 2); ctx.fill();
     }
     ctx.shadowBlur = 0;
-    if (!dead) {
-      ctx.fillStyle = stunned ? "rgba(255,220,70,.95)" : "rgba(255,36,36,.9)";
-      ctx.shadowColor = ctx.fillStyle;
-      ctx.shadowBlur = 8;
-      ctx.beginPath(); ctx.arc(-5, -18, 1.7, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.arc(5, -18, 1.7, 0, Math.PI * 2); ctx.fill();
-      ctx.shadowBlur = 0;
-    }
     ctx.globalAlpha = 1;
-    if (m.stunned && !dead) {
+    if (stunned) {
       ctx.strokeStyle = "rgba(255,240,80,.9)";
       ctx.lineWidth = 2;
       for (let i = 0; i < 6; i++) {
         const a = (i / 6) * Math.PI * 2 + now / 80;
         ctx.beginPath();
-        ctx.moveTo(Math.cos(a) * 16, Math.sin(a) * 20);
-        ctx.lineTo(Math.cos(a) * 30, Math.sin(a) * 34);
+        ctx.moveTo(Math.cos(a) * 18, Math.sin(a) * 18);
+        ctx.lineTo(Math.cos(a) * 32, Math.sin(a) * 32);
         ctx.stroke();
       }
       ctx.fillStyle = "#ffe066";
       ctx.font = "bold 12px Arial";
       ctx.textAlign = "center";
-      ctx.rotate(-ang);
-      ctx.fillText("STUNNED", 0, -40);
+      ctx.fillText("STUNNED", 0, -48);
     }
     ctx.restore();
   }
@@ -697,9 +770,15 @@
 
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
+  function shownPlayer(p) {
+    if (!p) return null;
+    const old = prev && (prev.players || []).find((o) => o.id === p.id);
+    return interpPos(old, p, interpT()) || p;
+  }
+
   function canvasAim(ev) {
     if (!hhCanvas || !state) return;
-    const me = meFrom(state);
+    const me = shownPlayer(meFrom(state));
     if (!me) return;
     const rect = hhCanvas.getBoundingClientRect();
     const scaleX = hhCanvas.width / rect.width;
