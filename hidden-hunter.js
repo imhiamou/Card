@@ -69,23 +69,30 @@
     muzzleX: (271.63 - 110.44) / 313,
     muzzleY: (152.33 - 116.48) / 207
   };
-  // Bleed heroine, normalized so the published foot origin sits at the same
-  // point in every cell. Frame 6 faces left. The index increases with atan2
-  // (y grows downward): 14 right, 0 down-right, 2 down, 4 down-left, 6 left,
-  // 8 up-left, 10 up, 12 up-right, with the in-between frames on the diagonals.
-  const TRACKER_IDLE = numbered("assets/hidden-hunter/player/tracker/idle_", 16);
-  const TRACKER_WALK = [];
-  for (let d = 0; d < 16; d++) {
-    TRACKER_WALK.push(numbered("assets/hidden-hunter/player/tracker/walk_" + d + "_", 4));
-  }
-  const TRACKER_PIVOT = { x: 99 / 152, y: 112 / 143 };
+  // Kenney Woman Green, gun pose. The source cell faces UP: the pistol is a
+  // vertical tube (centerline x=17). These eight cells were rotated from that
+  // measured barrel onto the compass. Index 0 is RIGHT, then clockwise as y
+  // grows downward. The cell is not rotated again at draw time.
+  // The pack has one pose, so standing and moving both use the aim cell.
+  const TRACKER_DIRS = [
+    "assets/hidden-hunter/player/tracker/right.png",
+    "assets/hidden-hunter/player/tracker/down_right.png",
+    "assets/hidden-hunter/player/tracker/down.png",
+    "assets/hidden-hunter/player/tracker/down_left.png",
+    "assets/hidden-hunter/player/tracker/left.png",
+    "assets/hidden-hunter/player/tracker/up_left.png",
+    "assets/hidden-hunter/player/tracker/up.png",
+    "assets/hidden-hunter/player/tracker/up_right.png"
+  ];
+  // Right-facing opaque height matches the hunter body (about 60px).
+  const TRACKER_DRAW_H = 68;
   function zombieRow(kind, count) {
     const frames = [];
     for (let i = 0; i < count; i++) frames.push("assets/hidden-hunter/monster/zombie_" + kind + "_" + i + ".png");
     return frames;
   }
   const SPRITE = {
-    player: { hunter: HUNTER_DRAW, tracker: { idle: TRACKER_IDLE, walk: TRACKER_WALK } },
+    player: { hunter: HUNTER_DRAW, tracker: TRACKER_DIRS },
     // Riley Gombart CC0 zombie. One right-facing pose per animation (head on the right).
     // Idle 0,3,6,9,12,15 of 17; move the same; attack frames 0-8.
     monster: {
@@ -143,8 +150,8 @@
 
   function trackerDir(x, y) {
     const a = aimAngle(x, y);
-    const i = Math.round((a - Math.PI) / (Math.PI / 8) + 6);
-    return ((i % 16) + 16) % 16;
+    const i = Math.round(a / (Math.PI / 4));
+    return ((i % 8) + 8) % 8;
   }
 
   function liveAimVector() {
@@ -571,9 +578,8 @@
       }
     } else {
       const dir = trackerDir(aim.x, aim.y);
-      const frames = (!dead && moving) ? TRACKER_WALK[dir] : [TRACKER_IDLE[dir]];
-      const im = loadImg(frames[frameIndex(frames, moving ? 8 : 1)]);
-      if (!drawAnchored(ctx, im, 76, TRACKER_PIVOT.x, TRACKER_PIVOT.y, color)) {
+      const im = loadImg(TRACKER_DIRS[dir]);
+      if (!drawAnchored(ctx, im, TRACKER_DRAW_H, 0.5, 0.5, color)) {
         ctx.fillStyle = "#7ec8c4";
         ctx.fillRect(-12, -16, 24, 32);
       }
