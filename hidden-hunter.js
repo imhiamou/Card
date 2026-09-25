@@ -87,6 +87,73 @@
     for (let i = 0; i < count; i++) frames.push("assets/hidden-hunter/monster/zombie_" + kind + "_" + i + ".png");
     return frames;
   }
+  // Kenney CC0 top-down sprites. Drawn inside the existing obstacle boxes.
+  const PROP_SRC = {
+    barrelRed: "assets/hidden-hunter/environment/props/barrels/barrel-red-top.png",
+    barrelRust: "assets/hidden-hunter/environment/props/barrels/barrel-rust-top.png",
+    crateWood: "assets/hidden-hunter/environment/props/crates/crate-wood.png",
+    crateMetal: "assets/hidden-hunter/environment/props/crates/crate-metal.png",
+    tableTop: "assets/hidden-hunter/environment/props/furniture/table-top.png",
+    shelf: "assets/hidden-hunter/environment/props/furniture/shelf-panel.png",
+    machine: "assets/hidden-hunter/environment/props/industrial/machine-panel.png",
+    pillar: "assets/hidden-hunter/environment/props/industrial/barricade-metal.png",
+    tank: "assets/hidden-hunter/environment/props/industrial/tank-sand.png",
+    door: "assets/hidden-hunter/environment/props/industrial/door-slab.png",
+    window: "assets/hidden-hunter/environment/props/industrial/window-frame.png"
+  };
+  // x, y, w, h are fractions of the obstacle. Each sprite keeps its own aspect.
+  const PROP_LAYOUT = {
+    barrels: [
+      ["barrelRed", 0, 0.06, 0.58, 0.88],
+      ["barrelRust", 0.42, 0.06, 0.58, 0.88]
+    ],
+    crates: [
+      ["crateWood", 0, 0, 0.36, 0.52],
+      ["crateMetal", 0.32, 0, 0.36, 0.52],
+      ["crateWood", 0.64, 0, 0.36, 0.52],
+      ["crateMetal", 0, 0.48, 0.36, 0.52],
+      ["crateWood", 0.32, 0.48, 0.36, 0.52],
+      ["crateMetal", 0.64, 0.48, 0.36, 0.52]
+    ],
+    boxes: [
+      ["crateWood", 0, 0, 0.58, 0.72],
+      ["crateMetal", 0.4, 0.28, 0.58, 0.72]
+    ],
+    table: [
+      ["tableTop", 0, 0, 0.52, 1],
+      ["tableTop", 0.48, 0, 0.52, 1]
+    ],
+    shelves: [
+      ["shelf", 0, 0, 0.36, 1],
+      ["shelf", 0.32, 0, 0.36, 1],
+      ["shelf", 0.64, 0, 0.36, 1]
+    ],
+    machine: [
+      ["machine", 0, 0, 0.52, 0.55],
+      ["machine", 0.48, 0, 0.52, 0.55],
+      ["machine", 0, 0.48, 0.52, 0.52],
+      ["crateWood", 0.5, 0.42, 0.28, 0.36],
+      ["barrelRed", 0.72, 0.5, 0.26, 0.42]
+    ],
+    container: [
+      ["crateMetal", 0, 0.08, 0.36, 0.84],
+      ["crateMetal", 0.32, 0.08, 0.36, 0.84],
+      ["crateMetal", 0.64, 0.08, 0.36, 0.84]
+    ],
+    door: [["door", 0, 0, 1, 1]],
+    window: [
+      ["window", 0, 0, 1, 0.52],
+      ["window", 0, 0.48, 1, 0.52]
+    ],
+    pillar: [["pillar", 0, 0, 1, 1]],
+    vehicle: [
+      ["crateWood", 0, 0.12, 0.24, 0.76],
+      ["tank", 0.22, 0.02, 0.4, 0.96],
+      ["crateMetal", 0.6, 0.12, 0.22, 0.76],
+      ["barrelRust", 0.8, 0.16, 0.2, 0.7]
+    ]
+  };
+
   const SPRITE = {
     player: { hunter: HUNTER_DRAW, tracker: TRACKER_DRAW },
     // Riley Gombart CC0 zombie. One right-facing pose per animation (head on the right).
@@ -95,7 +162,8 @@
       idle: zombieRow("idle", 6),
       move: zombieRow("move", 6),
       attack: zombieRow("attack", 9)
-    }
+    },
+    props: PROP_SRC
   };
   const vis = {
     shootUntil: 0,
@@ -429,8 +497,44 @@
     return { x: x - cam.x, y: y - cam.y };
   }
 
+  function drawPropSprite(ctx, key, x, y, w, h) {
+    const im = loadImg(PROP_SRC[key]);
+    if (!spriteReady(im)) return false;
+    const scale = Math.min(w / im.naturalWidth, h / im.naturalHeight);
+    const dw = im.naturalWidth * scale;
+    const dh = im.naturalHeight * scale;
+    const prev = ctx.imageSmoothingEnabled;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(im, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
+    ctx.imageSmoothingEnabled = prev;
+    return true;
+  }
+
+  function drawPropLayout(ctx, o) {
+    const layout = PROP_LAYOUT[o.kind];
+    if (!layout) return false;
+    for (let i = 0; i < layout.length; i++) {
+      if (!spriteReady(loadImg(PROP_SRC[layout[i][0]]))) return false;
+    }
+    const p = worldToScreen(ctx, o.x, o.y);
+    for (let i = 0; i < layout.length; i++) {
+      const cell = layout[i];
+      drawPropSprite(ctx, cell[0], p.x + cell[1] * o.w, p.y + cell[2] * o.h, cell[3] * o.w, cell[4] * o.h);
+    }
+    return true;
+  }
+
   function drawObstacle(ctx, o) {
     const p = worldToScreen(ctx, o.x, o.y);
+    if (drawPropLayout(ctx, o)) {
+      if (o.label) {
+        ctx.fillStyle = "rgba(255,240,210,.88)";
+        ctx.font = "10px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText(o.label, p.x + o.w / 2, p.y - 6);
+      }
+      return;
+    }
     if (o.kind === "barrels") {
       ctx.fillStyle = "#9a2b2b";
       ctx.fillRect(p.x, p.y, o.w, o.h);
