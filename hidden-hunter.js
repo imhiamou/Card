@@ -95,27 +95,7 @@
       idle: zombieRow("idle", 6),
       move: zombieRow("move", 6),
       attack: zombieRow("attack", 9)
-    },
-    map: "assets/hidden-hunter/map/industrial.png"
-  };
-  // CC0 industrial tilesheet, 16px cells. col, row.
-  const MAP_TILES = {
-    floor: [4, 1],
-    floorWorn: [2, 0],
-    floorDark: [4, 0],
-    wall: [2, 0],
-    pillar: [2, 0],
-    barrels: [2, 1],
-    machine: [2, 2],
-    generator: [3, 0],
-    panel: [3, 0],
-    conveyor: [4, 4],
-    crate: [3, 2],
-    container: [4, 0],
-    door: [4, 4],
-    pallet: [3, 2],
-    debris: [3, 1],
-    hazard: [4, 2]
+    }
   };
   const vis = {
     shootUntil: 0,
@@ -449,28 +429,73 @@
     return { x: x - cam.x, y: y - cam.y };
   }
 
-  function mapTile(ctx, im, col, row, dx, dy, size) {
-    if (!spriteReady(im)) return;
-    ctx.drawImage(im, col * 16, row * 16, 16, 16, dx, dy, size, size);
-  }
-
-  function floorCell(tx, ty, shaded) {
-    const n = (tx * 13 + ty * 7) % 11;
-    if (shaded) return n % 3 === 0 ? MAP_TILES.floorDark : MAP_TILES.floorWorn;
-    if (n === 0) return MAP_TILES.floorWorn;
-    if (n === 1) return MAP_TILES.floorDark;
-    return MAP_TILES.floor;
-  }
-
-  function drawObstacle(ctx, o, tile) {
-    if (o.kind === "shade") return;
-    const cell = MAP_TILES[o.kind] || MAP_TILES.crate;
-    const im = loadImg(SPRITE.map);
+  function drawObstacle(ctx, o) {
     const p = worldToScreen(ctx, o.x, o.y);
-    for (let y = 0; y < o.h; y += tile) {
-      for (let x = 0; x < o.w; x += tile) {
-        mapTile(ctx, im, cell[0], cell[1], p.x + x, p.y + y, Math.min(tile, o.w - x));
-      }
+    if (o.kind === "barrels") {
+      ctx.fillStyle = "#9a2b2b";
+      ctx.fillRect(p.x, p.y, o.w, o.h);
+      ctx.fillStyle = "#c43c3c";
+      ctx.beginPath(); ctx.arc(p.x + 24, p.y + 36, 20, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(p.x + 70, p.y + 36, 20, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#e8e8e8";
+      ctx.fillRect(p.x + 10, p.y + 28, 28, 4);
+      ctx.fillRect(p.x + 56, p.y + 28, 28, 4);
+    } else if (o.kind === "crates") {
+      ctx.fillStyle = "#8a6232";
+      ctx.fillRect(p.x, p.y, o.w, o.h);
+      ctx.strokeStyle = "#5c3d18";
+      ctx.strokeRect(p.x + 6, p.y + 6, o.w / 2 - 10, o.h / 2 - 10);
+      ctx.strokeRect(p.x + o.w / 2, p.y + o.h / 2, o.w / 2 - 8, o.h / 2 - 8);
+    } else if (o.kind === "machine") {
+      ctx.fillStyle = "#3a4658";
+      ctx.fillRect(p.x, p.y, o.w, o.h);
+      ctx.fillStyle = "#6ad0ff";
+      ctx.fillRect(p.x + 20, p.y + 24, 50, 18);
+      ctx.fillStyle = "#222";
+      ctx.fillRect(p.x + 90, p.y + 50, 110, 80);
+    } else if (o.kind === "pillar") {
+      ctx.fillStyle = "#6b7280";
+      ctx.fillRect(p.x, p.y, o.w, o.h);
+    } else if (o.kind === "door") {
+      ctx.fillStyle = "#4a3020";
+      ctx.fillRect(p.x, p.y, o.w, o.h);
+      ctx.fillStyle = "#c9a227";
+      ctx.fillRect(p.x + o.w - 22, p.y + 10, 8, 8);
+    } else if (o.kind === "vehicle") {
+      ctx.fillStyle = "#c9a227";
+      ctx.fillRect(p.x, p.y + 20, o.w, o.h - 28);
+      ctx.fillStyle = "#222";
+      ctx.beginPath(); ctx.arc(p.x + 40, p.y + o.h - 8, 16, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(p.x + o.w - 40, p.y + o.h - 8, 16, 0, Math.PI * 2); ctx.fill();
+    } else if (o.kind === "shelves") {
+      ctx.fillStyle = "#5a4630";
+      ctx.fillRect(p.x, p.y, o.w, o.h);
+      ctx.fillStyle = "#2b2116";
+      ctx.fillRect(p.x + 8, p.y + 12, o.w - 16, 8);
+      ctx.fillRect(p.x + 8, p.y + 36, o.w - 16, 8);
+    } else if (o.kind === "table") {
+      ctx.fillStyle = "#6e4b2a";
+      ctx.fillRect(p.x, p.y, o.w, o.h);
+    } else if (o.kind === "container") {
+      ctx.fillStyle = "#2f6b4f";
+      ctx.fillRect(p.x, p.y, o.w, o.h);
+      ctx.strokeStyle = "#1c4030";
+      ctx.strokeRect(p.x + 8, p.y + 8, o.w - 16, o.h - 16);
+    } else if (o.kind === "window") {
+      ctx.fillStyle = "#2a3344";
+      ctx.fillRect(p.x, p.y, o.w, o.h);
+      ctx.fillStyle = "rgba(140,190,220,.35)";
+      ctx.fillRect(p.x + 4, p.y + 10, o.w - 8, 36);
+      ctx.fillRect(p.x + 4, p.y + 54, o.w - 8, 36);
+      ctx.fillRect(p.x + 4, p.y + 98, o.w - 8, 30);
+    } else if (o.kind === "boxes") {
+      ctx.fillStyle = "#7a5a2e";
+      ctx.fillRect(p.x, p.y, o.w, o.h);
+      ctx.fillStyle = "#c4a36a";
+      ctx.fillRect(p.x + 8, p.y + 8, o.w - 16, 18);
+    } else {
+      ctx.fillStyle = "#445";
+      ctx.fillRect(p.x, p.y, o.w, o.h);
     }
     if (o.label) {
       ctx.fillStyle = "rgba(255,240,210,.88)";
@@ -675,7 +700,7 @@
   function draw() {
     if (!hhCanvas || !state) return;
     const ctx = hhCanvas.getContext("2d");
-    const map = state.map || { w: 4032, h: 2688, tile: 32, obstacles: [] };
+    const map = state.map || { w: 4200, h: 2700, obstacles: [] };
     const t = interpT();
     const livePlayers = (state.players || []).map((p) => {
       const old = prev && (prev.players || []).find((o) => o.id === p.id);
@@ -692,43 +717,26 @@
       cam.x = clamp(me.x - vw / 2, 0, Math.max(0, map.w - vw));
       cam.y = clamp(me.y - vh / 2, 0, Math.max(0, map.h - vh));
     }
-    ctx.fillStyle = "#121418";
+    ctx.fillStyle = "#1a1510";
     ctx.fillRect(0, 0, vw, vh);
-    const tile = map.tile || 32;
-    const sheet = loadImg(SPRITE.map);
-    const shades = (map.obstacles || []).filter((o) => o.kind === "shade");
-    const cols = Math.floor(map.w / tile);
-    const rows = Math.floor(map.h / tile);
-    ctx.imageSmoothingEnabled = false;
-    const tx0 = Math.max(0, Math.floor(cam.x / tile) - 1);
-    const ty0 = Math.max(0, Math.floor(cam.y / tile) - 1);
-    const tx1 = Math.min(cols - 1, Math.ceil((cam.x + vw) / tile) + 1);
-    const ty1 = Math.min(rows - 1, Math.ceil((cam.y + vh) / tile) + 1);
-    for (let ty = ty0; ty <= ty1; ty++) {
-      for (let tx = tx0; tx <= tx1; tx++) {
-        const wx = tx * tile;
-        const wy = ty * tile;
-        const p = worldToScreen(ctx, wx, wy);
-        const border = tx === 0 || ty === 0 || tx === cols - 1 || ty === rows - 1;
-        if (border) {
-          mapTile(ctx, sheet, MAP_TILES.wall[0], MAP_TILES.wall[1], p.x, p.y, tile);
-          continue;
-        }
-        const shaded = shades.some((s) => wx >= s.x && wy >= s.y && wx < s.x + s.w && wy < s.y + s.h);
-        const cell = floorCell(tx, ty, shaded);
-        mapTile(ctx, sheet, cell[0], cell[1], p.x, p.y, tile);
-        if (shaded) {
-          ctx.fillStyle = "rgba(0,0,0,0.34)";
-          ctx.fillRect(p.x, p.y, tile, tile);
-        }
+    ctx.fillStyle = "#2a2218";
+    for (let x = 0; x < map.w; x += 70) {
+      for (let y = 0; y < map.h; y += 70) {
+        const p = worldToScreen(ctx, x, y);
+        ctx.fillRect(p.x, p.y, 68, 68);
       }
     }
-    (map.obstacles || []).forEach((o) => {
-      if (o.x + o.w < cam.x - tile || o.y + o.h < cam.y - tile) return;
-      if (o.x > cam.x + vw + tile || o.y > cam.y + vh + tile) return;
-      drawObstacle(ctx, o, tile);
-    });
-    ctx.imageSmoothingEnabled = true;
+    ctx.strokeStyle = "rgba(196,160,60,.18)";
+    ctx.lineWidth = 4;
+    for (let x = 140; x < map.w; x += 280) {
+      const a = worldToScreen(ctx, x, 40);
+      ctx.strokeRect(a.x, a.y, 8, map.h - 80);
+    }
+    ctx.strokeStyle = "#3d2f22";
+    ctx.lineWidth = 16;
+    const origin = worldToScreen(ctx, 8, 8);
+    ctx.strokeRect(origin.x, origin.y, map.w - 16, map.h - 16);
+    (map.obstacles || []).forEach((o) => drawObstacle(ctx, o));
     (state.impacts || []).forEach((i) => {
       const p = worldToScreen(ctx, i.x, i.y);
       ctx.fillStyle = i.kind === "hit" ? "rgba(255,200,80,.7)" : "rgba(200,200,200,.45)";

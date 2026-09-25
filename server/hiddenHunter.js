@@ -8,9 +8,8 @@
 
 const { randomInt } = require("crypto");
 
-const warehouse = require("./hiddenHunterMap");
-const MAP_W = warehouse.MAP_W;
-const MAP_H = warehouse.MAP_H;
+const MAP_W = 4200;
+const MAP_H = 2700;
 const PLAYER_R = 22;
 const MONSTER_R = 26;
 const BULLET_R = 5;
@@ -39,8 +38,26 @@ const RETARGET_MS = 3800;
 const PAUSE_MIN_MS = 280;
 const PAUSE_MAX_MS = 720;
 
-const OBSTACLES = warehouse.OBSTACLES;
-const SPAWNS = warehouse.SPAWNS;
+const OBSTACLES = [
+  { id: "shelves", kind: "shelves", label: "SHELVES", x: 70, y: 70, w: 200, h: 64 },
+  { id: "container", kind: "container", label: "CONTAINER", x: 360, y: 90, w: 170, h: 78 },
+  { id: "door", kind: "door", label: "DOOR", x: 640, y: 18, w: 130, h: 32 },
+  { id: "window", kind: "window", label: "WINDOW", x: 18, y: 300, w: 22, h: 140 },
+  { id: "pillarA", kind: "pillar", label: "PILLAR", x: 490, y: 210, w: 46, h: 46 },
+  { id: "pillarB", kind: "pillar", label: "PILLAR", x: 900, y: 210, w: 46, h: 46 },
+  { id: "barrels", kind: "barrels", label: "RED BARRELS", x: 280, y: 390, w: 96, h: 72 },
+  { id: "table", kind: "table", label: "TABLE", x: 610, y: 410, w: 150, h: 68 },
+  { id: "crates", kind: "crates", label: "CRATES", x: 80, y: 690, w: 168, h: 118 },
+  { id: "machine", kind: "machine", label: "LARGE MACHINE", x: 1080, y: 260, w: 230, h: 190 },
+  { id: "boxes", kind: "boxes", label: "BOXES", x: 790, y: 640, w: 110, h: 86 },
+  { id: "vehicle", kind: "vehicle", label: "VEHICLE", x: 1070, y: 710, w: 230, h: 96 }
+];
+
+const SPAWNS = {
+  hunter: { x: 240, y: 520 },
+  tracker: { x: 240, y: 280 },
+  monster: { x: 980, y: 480 }
+};
 
 function clamp(v, lo, hi) {
   return Math.max(lo, Math.min(hi, v));
@@ -65,18 +82,12 @@ function circleHitsAabb(cx, cy, r, o) {
 }
 
 function inBounds(cx, cy, r) {
-  const edge = warehouse.INSET;
-  return cx >= r + edge && cy >= r + edge && cx <= MAP_W - r - edge && cy <= MAP_H - r - edge;
+  return cx >= r + 18 && cy >= r + 18 && cx <= MAP_W - r - 18 && cy <= MAP_H - r - 18;
 }
 
 function blocked(cx, cy, r) {
   if (!inBounds(cx, cy, r)) return true;
-  for (let i = 0; i < OBSTACLES.length; i++) {
-    const o = OBSTACLES[i];
-    if (o.solid === false) continue;
-    if (circleHitsAabb(cx, cy, r, o)) return true;
-  }
-  return false;
+  return OBSTACLES.some((o) => circleHitsAabb(cx, cy, r, o));
 }
 
 function tryMove(ent, dx, dy, r) {
@@ -381,7 +392,7 @@ function buildStateFor(room, viewerId, roomCode) {
     countdown: hh.countdown,
     now: Date.now(),
     remainingMs: remainingMs(hh),
-    map: { w: MAP_W, h: MAP_H, tile: warehouse.TILE, obstacles: OBSTACLES },
+    map: { w: MAP_W, h: MAP_H, obstacles: OBSTACLES },
     you: me
       ? { id: me.id, name: me.name, role: me.role }
       : { id: viewerId, name: "", role: null },
@@ -875,7 +886,6 @@ module.exports = {
   MAGAZINE_SIZE,
   MATCH_MS,
   OBSTACLES,
-  INSET: warehouse.INSET,
   TASER_COOLDOWN,
   TASER_RANGE,
   STUN_MS,
