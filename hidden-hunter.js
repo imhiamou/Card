@@ -50,39 +50,42 @@
   let lastShot = 0;
   const IMG = Object.create(null);
   const MOVEMENT_THRESHOLD = 0.12;
-  // Hunter full spritesheet (ghpaetzold, CC0), 24x30 cells, 8 columns.
-  // Inspected rows, not guessed:
-  //   row 0 down  — face, eyes, both feet (front)
-  //   row 1 up    — back of the head, no face
-  //   row 2 left  — profile, face and eyes toward the left
-  //   row 3 right — mirror of row 2
-  //   rows 4-7    — walk cycles for down, up, left, right (8 frames)
-  // The sheet has no separate diagonal bodies. Aim snaps to the nearest of these four.
-  // Frames are drawn unrotated. The same sheet is the Hunter and the Tracker.
-  const PLAYER_DIRECTIONS = {
-    down: "assets/hidden-hunter/player/idle_down.png",
-    up: "assets/hidden-hunter/player/idle_up.png",
-    left: "assets/hidden-hunter/player/idle_left.png",
-    right: "assets/hidden-hunter/player/idle_right.png"
-  };
-  function walkRow(dir) {
+  function numbered(prefix, count) {
     const frames = [];
-    for (let i = 0; i < 8; i++) frames.push("assets/hidden-hunter/player/walk_" + dir + "_" + i + ".png");
+    for (let i = 0; i < count; i++) frames.push(prefix + i + ".png");
     return frames;
   }
-  const PLAYER_WALK = {
-    down: walkRow("down"),
-    up: walkRow("up"),
-    left: walkRow("left"),
-    right: walkRow("right")
+  // Riley Gombart rifle survivor. The barrel is a horizontal tube on the right
+  // of the cell (axis measured at -0.65 degrees, treated as +X). Feet are a
+  // separate sheet in that same pose. Rotation is atan2(aim), not an extra offset.
+  // Pivot and muzzle are fractions of the rifle frame (torso, then barrel tip).
+  const HUNTER_DRAW = {
+    idle: numbered("assets/hidden-hunter/player/hunter/idle_", 5),
+    move: numbered("assets/hidden-hunter/player/hunter/move_", 5),
+    feetIdle: "assets/hidden-hunter/player/hunter/feet_idle.png",
+    feetWalk: numbered("assets/hidden-hunter/player/hunter/feet_", 6),
+    pivotX: 110.44 / 313,
+    pivotY: 116.48 / 207,
+    muzzleX: (271.63 - 110.44) / 313,
+    muzzleY: (152.33 - 116.48) / 207
   };
+  // Bleed heroine, normalized so the published foot origin sits at the same
+  // point in every cell. Frame 6 faces left. The index increases with atan2
+  // (y grows downward): 14 right, 0 down-right, 2 down, 4 down-left, 6 left,
+  // 8 up-left, 10 up, 12 up-right, with the in-between frames on the diagonals.
+  const TRACKER_IDLE = numbered("assets/hidden-hunter/player/tracker/idle_", 16);
+  const TRACKER_WALK = [];
+  for (let d = 0; d < 16; d++) {
+    TRACKER_WALK.push(numbered("assets/hidden-hunter/player/tracker/walk_" + d + "_", 4));
+  }
+  const TRACKER_PIVOT = { x: 99 / 152, y: 112 / 143 };
   function zombieRow(kind, count) {
     const frames = [];
     for (let i = 0; i < count; i++) frames.push("assets/hidden-hunter/monster/zombie_" + kind + "_" + i + ".png");
     return frames;
   }
   const SPRITE = {
-    player: { idle: PLAYER_DIRECTIONS, walk: PLAYER_WALK },
+    player: { hunter: HUNTER_DRAW, tracker: { idle: TRACKER_IDLE, walk: TRACKER_WALK } },
     // Riley Gombart CC0 zombie. One right-facing pose per animation (head on the right).
     // Idle 0,3,6,9,12,15 of 17; move the same; attack frames 0-8.
     monster: {
@@ -133,12 +136,15 @@
   }
 
   // Canvas y grows downward. 0 is right, +PI/2 is down, -PI/2 is up.
-  // Sectors are 90 degrees wide and centered on each cardinal of the sheet.
-  function facing4(x, y) {
-    if (Math.abs(x) + Math.abs(y) < 1e-6) return "down";
-    const a = Math.atan2(y, x);
-    const i = Math.floor((a + Math.PI / 4) / (Math.PI / 2));
-    return ["right", "down", "left", "up"][((i % 4) + 4) % 4];
+  function aimAngle(x, y) {
+    if (Math.abs(x) + Math.abs(y) < 1e-6) return Math.PI / 2;
+    return Math.atan2(y, x);
+  }
+
+  function trackerDir(x, y) {
+    const a = aimAngle(x, y);
+    const i = Math.round((a - Math.PI) / (Math.PI / 8) + 6);
+    return ((i % 16) + 16) % 16;
   }
 
   function liveAimVector() {
@@ -525,6 +531,14 @@
     return true;
   }
 
+  function drawAnchored(ctx, im, height, pivotX, pivotY, color) {
+    if (!spriteReady(im)) return false;
+    const sheet = color ? tintSprite(im, color) : im;
+    const w = height * (im.naturalWidth / im.naturalHeight);
+    ctx.drawImage(sheet, -pivotX * w, -pivotY * height, w, height);
+    return true;
+  }
+
   function drawPlayer(ctx, p, isMe) {
     const s = worldToScreen(ctx, p.x, p.y);
     const now = Date.now();
@@ -532,36 +546,53 @@
     const dead = !!p.dead || (state && state.phase === "over" && state.result === "caught");
     const moving = playerMoving(p, isMe);
     const aim = aimVector(p, isMe);
-    const dir = facing4(aim.x, aim.y);
-    const frames = (!dead && moving) ? PLAYER_WALK[dir] : [PLAYER_DIRECTIONS[dir]];
-    const src = frames[frameIndex(frames, moving ? 8 : 1)];
-    const im = loadImg(src);
-    const height = 64;
+    const ang = aimAngle(aim.x, aim.y);
+    const color = dead ? "rgba(18, 14, 16, 0.5)" : null;
     ctx.save();
     ctx.translate(s.x, s.y);
-    ctx.imageSmoothingEnabled = false;
-    if (spriteReady(im)) {
-      const w = height * (im.naturalWidth / im.naturalHeight);
-      const color = dead
-        ? "rgba(18, 14, 16, 0.5)"
-        : (role === "tracker" ? "rgba(64, 168, 186, 0.42)" : null);
-      const sheet = color ? tintSprite(im, color) : im;
-      ctx.drawImage(sheet, -w / 2, -height / 2, w, height);
+    ctx.imageSmoothingEnabled = true;
+    if (role === "hunter") {
+      // One angle for the body, the gun, and the muzzle. Movement does not rotate this.
+      ctx.rotate(ang);
+      const bodyFrames = (!dead && moving) ? HUNTER_DRAW.move : HUNTER_DRAW.idle;
+      const feetList = (!dead && moving) ? HUNTER_DRAW.feetWalk : [HUNTER_DRAW.feetIdle];
+      const bodyIm = loadImg(bodyFrames[frameIndex(bodyFrames, moving ? 8 : 6)]);
+      const feetIm = loadImg(feetList[frameIndex(feetList, moving ? 10 : 1)]);
+      const bodyH = 82;
+      if (spriteReady(bodyIm)) {
+        const scale = bodyH / bodyIm.naturalHeight;
+        if (spriteReady(feetIm)) {
+          drawAnchored(ctx, feetIm, feetIm.naturalHeight * scale, 0.5, 0.5, color);
+        }
+        drawAnchored(ctx, bodyIm, bodyH, HUNTER_DRAW.pivotX, HUNTER_DRAW.pivotY, color);
+      } else {
+        ctx.fillStyle = "#d7c4a3";
+        ctx.fillRect(-12, -16, 24, 32);
+      }
     } else {
-      ctx.fillStyle = role === "hunter" ? "#d7c4a3" : "#7ec8c4";
-      ctx.fillRect(-12, -16, 24, 32);
+      const dir = trackerDir(aim.x, aim.y);
+      const frames = (!dead && moving) ? TRACKER_WALK[dir] : [TRACKER_IDLE[dir]];
+      const im = loadImg(frames[frameIndex(frames, moving ? 8 : 1)]);
+      if (!drawAnchored(ctx, im, 76, TRACKER_PIVOT.x, TRACKER_PIVOT.y, color)) {
+        ctx.fillStyle = "#7ec8c4";
+        ctx.fillRect(-12, -16, 24, 32);
+      }
     }
     ctx.restore();
     if (role === "hunter" && !dead && now < vis.muzzleUntil) {
-      const ang = Math.atan2(aim.y, aim.x);
+      const bodyH = 82;
+      const mx = HUNTER_DRAW.muzzleX * bodyH * (313 / 207);
+      const my = HUNTER_DRAW.muzzleY * bodyH;
+      const cs = Math.cos(ang);
+      const sn = Math.sin(ang);
       ctx.save();
-      ctx.translate(s.x, s.y);
+      ctx.translate(s.x + mx * cs - my * sn, s.y + mx * sn + my * cs);
       ctx.rotate(ang);
       ctx.fillStyle = "rgba(255,220,90,.92)";
       ctx.beginPath();
-      ctx.moveTo(18, 0);
-      ctx.lineTo(36, -6);
-      ctx.lineTo(36, 6);
+      ctx.moveTo(0, 0);
+      ctx.lineTo(16, -5);
+      ctx.lineTo(16, 5);
       ctx.closePath();
       ctx.fill();
       ctx.restore();
@@ -570,7 +601,7 @@
     ctx.fillStyle = "#fff";
     ctx.font = "11px Arial";
     ctx.textAlign = "center";
-    ctx.fillText(isMe ? "YOU" : (p.role === "hunter" ? "HUNTER" : "TRACKER"), s.x, s.y - 40);
+    ctx.fillText(isMe ? "YOU" : (p.role === "hunter" ? "HUNTER" : "TRACKER"), s.x, s.y - 48);
     ctx.restore();
   }
 
