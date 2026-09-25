@@ -10,10 +10,16 @@ Only files copied into this repository are used at runtime. Nothing is loaded fr
 - Files used:
   - `assets/hidden-hunter/environment/props/barrels/barrel-red-top.png` (`barrelRed_top`)
   - `assets/hidden-hunter/environment/props/barrels/barrel-rust-top.png` (`barrelRust_top`)
+  - `assets/hidden-hunter/environment/props/barrels/barrel-green-top.png` (`barrelGreen_top`)
+  - `assets/hidden-hunter/environment/props/barrels/barrel-black-top.png` (`barrelBlack_top`)
   - `assets/hidden-hunter/environment/props/crates/crate-wood.png` (`crateWood`)
   - `assets/hidden-hunter/environment/props/crates/crate-metal.png` (`crateMetal`)
   - `assets/hidden-hunter/environment/props/industrial/tank-sand.png` (`tank_sand`)
+  - `assets/hidden-hunter/environment/props/industrial/tank-dark.png` (`tank_dark`)
+  - `assets/hidden-hunter/environment/props/industrial/tank-green.png` (`tank_green`)
   - `assets/hidden-hunter/environment/props/industrial/barricade-metal.png` (`barricadeMetal`)
+  - `assets/hidden-hunter/environment/props/industrial/barricade-wood.png` (`barricadeWood`)
+  - `assets/hidden-hunter/environment/props/industrial/sandbag.png` (`sandbagBrown`)
 
 ## Kenney — Top-down Shooter
 
@@ -27,6 +33,6 @@ Only files copied into this repository are used at runtime. Nothing is loaded fr
   - `assets/hidden-hunter/environment/props/industrial/door-slab.png` (tile 436)
   - `assets/hidden-hunter/environment/props/industrial/window-frame.png` (tile 433)
 
-These sprites are drawn inside the existing obstacle rectangles. The ground drawing and obstacle positions are unchanged.
+The ground is still the original procedural floor. These sprites are placed on that floor inside the larger facility.
 
-Kenney's Furniture Kit and Factory Kit are 3D/isometric, and the industrial platformer packs are side-view, so they are not used. No other environmental packs were added.
+Kenney Furniture Kit only includes isometric renders, Factory Kit is 3D, and Pixel Platformer Industrial Expansion is side-view. Those do not match this top-down camera, so they are not used.
