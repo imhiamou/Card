@@ -69,30 +69,26 @@
     muzzleX: (271.63 - 110.44) / 313,
     muzzleY: (152.33 - 116.48) / 207
   };
-  // Kenney Woman Green gun cells. Filenames are not the facing direction.
-  // The pistol tip (measured from the body center) points 90 degrees clockwise
-  // of the name on the file. Keys below are the world direction she must face.
-  const TRACKER_DIRECTION_MAP = {
-    up: "assets/hidden-hunter/player/tracker/left.png",
-    upRight: "assets/hidden-hunter/player/tracker/up_left.png",
-    right: "assets/hidden-hunter/player/tracker/up.png",
-    downRight: "assets/hidden-hunter/player/tracker/up_right.png",
-    down: "assets/hidden-hunter/player/tracker/right.png",
-    downLeft: "assets/hidden-hunter/player/tracker/down_right.png",
-    left: "assets/hidden-hunter/player/tracker/down.png",
-    upLeft: "assets/hidden-hunter/player/tracker/down_left.png"
+  // Riley Gombart handgun survivor. Every cell faces right: the pistol is a
+  // horizontal tube (axis about -0.9 degrees, treated as +X). The same aim
+  // angle used by the hunter turns that tube onto the mouse. No extra offset.
+  // Idle 0,4,8,12,16 of 20; move the same; shoot is the three-frame recoil.
+  const TRACKER_DRAW = {
+    idle: numbered("assets/hidden-hunter/player/tracker/idle_", 5),
+    move: numbered("assets/hidden-hunter/player/tracker/move_", 5),
+    shoot: numbered("assets/hidden-hunter/player/tracker/shoot_", 3),
+    pivotX: 92 / 225,
+    pivotY: 87 / 170
   };
-  // atan2 sectors, y growing downward. Index 0 is world-right. Aim is not rotated.
-  const TRACKER_WORLD = ["right", "downRight", "down", "downLeft", "left", "upLeft", "up", "upRight"];
-  // Right-facing opaque height matches the hunter body (about 60px).
-  const TRACKER_DRAW_H = 68;
+  // Opaque height matches the hunter body (about 60px) without stretching.
+  const TRACKER_DRAW_H = 67;
   function zombieRow(kind, count) {
     const frames = [];
     for (let i = 0; i < count; i++) frames.push("assets/hidden-hunter/monster/zombie_" + kind + "_" + i + ".png");
     return frames;
   }
   const SPRITE = {
-    player: { hunter: HUNTER_DRAW, tracker: TRACKER_DIRECTION_MAP },
+    player: { hunter: HUNTER_DRAW, tracker: TRACKER_DRAW },
     // Riley Gombart CC0 zombie. One right-facing pose per animation (head on the right).
     // Idle 0,3,6,9,12,15 of 17; move the same; attack frames 0-8.
     monster: {
@@ -146,12 +142,6 @@
   function aimAngle(x, y) {
     if (Math.abs(x) + Math.abs(y) < 1e-6) return Math.PI / 2;
     return Math.atan2(y, x);
-  }
-
-  function trackerDir(x, y) {
-    const a = aimAngle(x, y);
-    const i = Math.round(a / (Math.PI / 4));
-    return TRACKER_WORLD[((i % 8) + 8) % 8];
   }
 
   function liveAimVector() {
@@ -577,9 +567,18 @@
         ctx.fillRect(-12, -16, 24, 32);
       }
     } else {
-      const dir = trackerDir(aim.x, aim.y);
-      const im = loadImg(TRACKER_DIRECTION_MAP[dir]);
-      if (!drawAnchored(ctx, im, TRACKER_DRAW_H, 0.5, 0.5, color)) {
+      // Native pose faces right. ang is the existing aim angle, not a new offset.
+      ctx.rotate(ang);
+      const shooting = isMe && !dead && now < vis.taserUntil;
+      const bodyFrames = shooting
+        ? TRACKER_DRAW.shoot
+        : ((!dead && moving) ? TRACKER_DRAW.move : TRACKER_DRAW.idle);
+      const im = loadImg(bodyFrames[frameIndex(
+        bodyFrames,
+        shooting ? 12 : (moving ? 8 : 6),
+        shooting ? vis.taserUntil - 260 : 0
+      )]);
+      if (!drawAnchored(ctx, im, TRACKER_DRAW_H, TRACKER_DRAW.pivotX, TRACKER_DRAW.pivotY, color)) {
         ctx.fillStyle = "#7ec8c4";
         ctx.fillRect(-12, -16, 24, 32);
       }
