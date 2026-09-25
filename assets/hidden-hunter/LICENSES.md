@@ -13,6 +13,11 @@ repo. They are not hotlinked at runtime.
 | Monster (`monster/zombie_idle_*`, `zombie_move_*`, `zombie_attack_*`) | Riley Gombart (ChessMasterRiley) | Animated Top Down Zombie (`tds_zombie.zip`, files exported as `skeleton-*`) | CC0 1.0 | https://opengameart.org/content/animated-top-down-zombie |
 | Barrels, crates, tanks, barricades, sandbags (`environment/props/`) | Kenney Vleugels | Top-down Tanks Redux (`barrelRed_top`, `barrelRust_top`, `barrelGreen_top`, `barrelBlack_top`, `crateWood`, `crateMetal`, `tank_sand`, `tank_dark`, `tank_green`, `barricadeMetal`, `barricadeWood`, `sandbagBrown`) | CC0 1.0 | https://opengameart.org/content/top-down-tanks-redux |
 | Table, shelves, machine, door, window (`environment/props/`) | Kenney Vleugels | Top-down Shooter (tiles 180, 166, 342, 436, 433) | CC0 1.0 | https://kenney.nl/assets/top-down-shooter |
+| Gunshot (`audio/weapons/gunshot`) | rubberduck | 25 CC0 bang / firework SFX (`shot_03.ogg`) | CC0 1.0 | https://opengameart.org/content/25-cc0-bang-firework-sfx |
+| Taser fire (`audio/taser/taser-fire`) | Kenney Vleugels | Sci-fi Sounds (`laserSmall_000.ogg`) | CC0 1.0 | https://kenney.nl/assets/sci-fi-sounds |
+| Taser hit (`audio/taser/taser-hit`) | Kenney Vleugels | Sci-fi Sounds (`laserSmall_002.ogg`) | CC0 1.0 | https://kenney.nl/assets/sci-fi-sounds |
+| Bullet impact (`audio/impacts/monster-shot`) | Kenney Vleugels | Sci-fi Sounds (`impactMetal_000.ogg`) | CC0 1.0 | https://kenney.nl/assets/sci-fi-sounds |
+| Monster attack (`audio/monster/monster-attack`) | Kenney Vleugels | Impact Sounds (`impactPunch_heavy_000.ogg`) | CC0 1.0 | https://kenney.nl/assets/impact-sounds |
 | Muzzle flash, stun bolts, vignette | Project original | `hidden-hunter.js` canvas | Original | n/a |
 | HUD / joysticks / crosshair | Project original | `hidden-hunter.css` | Original | n/a |
 

@@ -36,3 +36,42 @@ Only files copied into this repository are used at runtime. Nothing is loaded fr
 The ground is still the original procedural floor. These sprites are placed on that floor inside the larger facility.
 
 Kenney Furniture Kit only includes isometric renders, Factory Kit is 3D, and Pixel Platformer Industrial Expansion is side-view. Those do not match this top-down camera, so they are not used.
+
+## Combat audio
+
+Each clip is stored in the repo as the original `.ogg` plus an `.mp3` encode of that same file so Safari and iOS can play it. Nothing is streamed from a third-party site.
+
+### Gunshot — `assets/hidden-hunter/audio/weapons/gunshot.ogg`
+
+- Sound name: gunshot (`shot_03.ogg` in the source pack)
+- Creator: rubberduck
+- Source: https://opengameart.org/content/25-cc0-bang-firework-sfx
+- License: CC0 1.0. The OpenGameArt page lists the pack as CC0. The author describes the short bangs, including this clip, as usable for gun shots.
+
+### Taser fire — `assets/hidden-hunter/audio/taser/taser-fire.ogg`
+
+- Sound name: taser fire (`Audio/laserSmall_000.ogg`)
+- Creator: Kenney Vleugels (www.kenney.nl)
+- Source: https://kenney.nl/assets/sci-fi-sounds
+- License: CC0 1.0. The pack `License.txt` states Creative Commons Zero (Sci-fi Sounds 1.0, 11-10-2020).
+
+### Taser hit — `assets/hidden-hunter/audio/taser/taser-hit.ogg`
+
+- Sound name: monster getting tased (`Audio/laserSmall_002.ogg`)
+- Creator: Kenney Vleugels (www.kenney.nl)
+- Source: https://kenney.nl/assets/sci-fi-sounds
+- License: CC0 1.0. The pack `License.txt` states Creative Commons Zero (Sci-fi Sounds 1.0, 11-10-2020).
+
+### Bullet impact — `assets/hidden-hunter/audio/impacts/monster-shot.ogg`
+
+- Sound name: monster getting shot (`Audio/impactMetal_000.ogg`)
+- Creator: Kenney Vleugels (www.kenney.nl)
+- Source: https://kenney.nl/assets/sci-fi-sounds
+- License: CC0 1.0. The pack `License.txt` states Creative Commons Zero (Sci-fi Sounds 1.0, 11-10-2020).
+
+### Monster attack — `assets/hidden-hunter/audio/monster/monster-attack.ogg`
+
+- Sound name: monster hitting a player (`Audio/impactPunch_heavy_000.ogg`)
+- Creator: Kenney Vleugels (www.kenney.nl)
+- Source: https://kenney.nl/assets/impact-sounds
+- License: CC0 1.0. The pack `License.txt` states Creative Commons Zero (Impact Sounds 1.0, 19-12-2019).

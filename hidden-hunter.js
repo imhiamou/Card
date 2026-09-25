@@ -50,6 +50,50 @@
   let lastShot = 0;
   const IMG = Object.create(null);
   const MOVEMENT_THRESHOLD = 0.12;
+  const SFX = {
+    gunshot: { base: "assets/hidden-hunter/audio/weapons/gunshot", volume: 0.42 },
+    taserFire: { base: "assets/hidden-hunter/audio/taser/taser-fire", volume: 0.36 },
+    taserHit: { base: "assets/hidden-hunter/audio/taser/taser-hit", volume: 0.4 },
+    monsterShot: { base: "assets/hidden-hunter/audio/impacts/monster-shot", volume: 0.4 },
+    monsterAttack: { base: "assets/hidden-hunter/audio/monster/monster-attack", volume: 0.46 }
+  };
+  const sfxUrl = Object.create(null);
+  let audioUnlocked = false;
+
+  function sfxSource(base) {
+    if (!sfxUrl[base]) {
+      const probe = document.createElement("audio");
+      const ogg = probe.canPlayType('audio/ogg; codecs="vorbis"');
+      sfxUrl[base] = base + (ogg ? ".ogg" : ".mp3");
+    }
+    return sfxUrl[base];
+  }
+
+  function playSfx(name) {
+    const clip = SFX[name];
+    if (!clip) return;
+    const audio = new Audio(sfxSource(clip.base));
+    audio.volume = clip.volume;
+    const pending = audio.play();
+    if (pending && pending.catch) pending.catch(function () {});
+  }
+
+  function unlockAudio() {
+    if (audioUnlocked) return;
+    const clip = SFX.gunshot;
+    const audio = new Audio(sfxSource(clip.base));
+    audio.volume = 0.001;
+    const pending = audio.play();
+    if (!pending || !pending.then) {
+      audioUnlocked = true;
+      return;
+    }
+    pending.then(function () {
+      audio.pause();
+      audio.currentTime = 0;
+      audioUnlocked = true;
+    }).catch(function () {});
+  }
   function numbered(prefix, count) {
     const frames = [];
     for (let i = 0; i < count; i++) frames.push(prefix + i + ".png");
@@ -505,6 +549,7 @@
   }
 
   function fireWeapon() {
+    unlockAudio();
     if (!currentRoom || !state || state.phase !== "playing") return;
     const now = Date.now();
     if (now - lastShot < 120) return;
@@ -1018,6 +1063,7 @@
       onVec(x, y);
     }
     el.addEventListener("pointerdown", (e) => {
+      unlockAudio();
       pid = e.pointerId;
       el.setPointerCapture(pid);
       setFrom(e);
@@ -1037,6 +1083,7 @@
     if (!hhCanvas || hhCanvas.dataset.wired) return;
     hhCanvas.dataset.wired = "1";
     window.addEventListener("keydown", (e) => {
+      unlockAudio();
       if (!active) return;
       keys[e.code] = true;
       if (e.code === "KeyR" && myRole === "hunter") {
@@ -1046,6 +1093,7 @@
     window.addEventListener("keyup", (e) => { keys[e.code] = false; });
     hhCanvas.addEventListener("mousemove", canvasAim);
     hhCanvas.addEventListener("mousedown", (e) => {
+      unlockAudio();
       if (e.button === 0) { canvasAim(e); fireWeapon(); }
     });
     bindJoystick($("hhJoyMove"), $("hhJoyMoveKnob"), (x, y) => { moveJoy = { x, y }; });
@@ -1114,6 +1162,7 @@
         hhFlash.classList.add("show");
         setTimeout(() => { if (hhFlash) hhFlash.classList.remove("show"); }, 280);
       }
+      playSfx("monsterAttack");
     });
     socket.on("hiddenHunterRushTelegraph", () => {
       if (!active) return;
@@ -1123,14 +1172,25 @@
       if (!active) return;
       vis.shootUntil = Date.now() + 220;
       vis.muzzleUntil = Date.now() + 90;
+      playSfx("gunshot");
     });
     socket.on("hiddenHunterTaserFired", (data) => {
       if (!active || myRole !== "tracker") return;
       vis.taserUntil = Date.now() + 260;
+      playSfx("taserFire");
+      if (data && data.hit) playSfx("taserHit");
       if (hhTaser && data) {
         const left = Math.max(0, data.remainingMs || 0);
         hhTaser.textContent = left <= 0 ? "TASER READY" : ("TASER " + (left / 1000).toFixed(1) + "s");
       }
+    });
+    socket.on("hiddenHunterHit", () => {
+      if (!active || myRole !== "tracker") return;
+      playSfx("monsterShot");
+    });
+    socket.on("hiddenHunterImpact", () => {
+      if (!active || myRole !== "hunter") return;
+      playSfx("monsterShot");
     });
     socket.on("hiddenHunterPlayAgainWait", () => {
       if (hhPlayAgainBtn) hhPlayAgainBtn.textContent = "Waiting for partner...";
