@@ -298,6 +298,12 @@ function initRoomState(room, swapRoles) {
   room.hhRematch = {};
 }
 
+function intentMoving(p) {
+  if (!p || p.dead || !p.input) return false;
+  if (Date.now() - p.input.at > INPUT_STALE_MS) return false;
+  return len(p.input.mx, p.input.my) > 0.12;
+}
+
 function publicPlayer(p, viewerRole) {
   const hideAim = p.role === "tracker" && viewerRole !== "tracker";
   return {
@@ -306,6 +312,7 @@ function publicPlayer(p, viewerRole) {
     role: p.role,
     x: Math.round(p.x * 10) / 10,
     y: Math.round(p.y * 10) / 10,
+    moving: intentMoving(p),
     aimX: hideAim ? 0 : Math.round(p.aimX * 1000) / 1000,
     aimY: hideAim ? 0 : Math.round(p.aimY * 1000) / 1000,
     ammo: p.role === "hunter" ? p.ammo : null,
@@ -348,7 +355,8 @@ function publicMonster(m) {
     hp: m.hp,
     maxHp: MONSTER_HP,
     hit: m.hitUntil > now,
-    stunned: !!m.stunned && now < m.stunEndTime
+    stunned: !!m.stunned && now < m.stunEndTime,
+    moving: !!m.moving && m.hp > 0 && !(m.stunned && now < m.stunEndTime)
   };
 }
 
@@ -476,10 +484,14 @@ function teamDefeat(room, io, roomCode) {
 
 function stepMonster(hh, dt) {
   const m = hh.monster;
-  if (!m || m.hp <= 0) return;
+  if (!m || m.hp <= 0) {
+    if (m) m.moving = false;
+    return;
+  }
   const now = Date.now();
   if (m.stunned) {
     if (now < m.stunEndTime) {
+      m.moving = false;
       m.lastX = m.x;
       m.lastY = m.y;
       m.lastMovedAt = now;
@@ -495,6 +507,7 @@ function stepMonster(hh, dt) {
   }
   unstick(m, MONSTER_R);
   if (now < m.pauseUntil) {
+    m.moving = false;
     m.lastX = m.x;
     m.lastY = m.y;
     m.lastMovedAt = now;
@@ -515,6 +528,7 @@ function stepMonster(hh, dt) {
   if (stuck || targetBad || arrived || retargetDue) {
     if (stuck || targetBad) rememberFailedTarget(m, m.target);
     if (arrived && !stuck && randomInt(100) < 22) {
+      m.moving = false;
       m.pauseUntil = now + PAUSE_MIN_MS + randomInt(Math.max(1, PAUSE_MAX_MS - PAUSE_MIN_MS));
       m.lastMovedAt = now;
       m.nextRetargetAt = m.pauseUntil + RETARGET_MS;
@@ -527,7 +541,10 @@ function stepMonster(hh, dt) {
     m.lastY = m.y;
   }
   const n = norm(m.target.x - m.x, m.target.y - m.y);
+  const beforeX = m.x;
+  const beforeY = m.y;
   const moved = tryMove(m, n.x * MONSTER_SPEED * dt, n.y * MONSTER_SPEED * dt, MONSTER_R);
+  m.moving = !!(moved && (m.x !== beforeX || m.y !== beforeY));
   if (moved) {
     m.lastX = m.x;
     m.lastY = m.y;
