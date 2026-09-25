@@ -1,24 +1,18 @@
 # Hidden Hunter assets
 
-All in-game Hidden Hunter visuals are original procedural canvas/CSS art
-drawn by this project. They are not copied from commercial games.
+Warehouse environment art (floor, walls, barrels, crates, machines, labels)
+is original procedural canvas drawing created for this project.
 
-No third-party sprites were downloaded. No League of Legends, Riot, or
-other commercial-game assets are used.
+Character and monster sprites are third-party CC0 assets copied into this
+repo. They are not hotlinked at runtime.
 
 | Asset | Author | Source | License | URL |
 | --- | --- | --- | --- | --- |
-| Warehouse environment (floor, walls, barrels, crates, machine, pillars, door, window, vehicle, shelves, table, container, boxes) | Project original | `hidden-hunter.js` canvas draw | Original / CC0-equivalent (created for this repo) | n/a |
-| Hunter / Tracker silhouettes and goggles | Project original | `hidden-hunter.js` canvas draw | Original | n/a |
-| Monster supernatural silhouette (Tracker-only) | Project original | `hidden-hunter.js` canvas draw | Original | n/a |
-| HUD / joysticks / crosshair / fullscreen controls | Project original | `hidden-hunter.css` | Original | n/a |
+| Hunter (Soldier 1 stand/hold/gun/machine/reload/silencer) | Kenney | Top-down Shooter pack via Tiddybub/2d-assets | CC0 1.0 | https://kenney.nl/assets/top-down-shooter · https://github.com/Tiddybub/2d-assets |
+| Tracker (Survivor 1 stand/hold/gun/machine/reload/silencer) | Kenney | Top-down Shooter pack via Tiddybub/2d-assets | CC0 1.0 | https://kenney.nl/assets/top-down-shooter · https://github.com/Tiddybub/2d-assets |
+| Weapon gun / silencer overlays | Kenney | Top-down Shooter pack | CC0 1.0 | https://kenney.nl/assets/top-down-shooter |
+| Monster (big demon idle + run frames) | 0x72 | 16x16 Dungeon Tileset II | CC0 1.0 | https://0x72.itch.io/dungeontileset-ii |
+| Tracker goggles glow, muzzle flash, stun bolts, vignette | Project original | `hidden-hunter.js` canvas | Original | n/a |
+| HUD / joysticks / crosshair | Project original | `hidden-hunter.css` | Original | n/a |
 
-Folders reserved for optional future CC0 files:
-
-- `background/`
-- `environment/`
-- `monster/`
-- `weapon/`
-- `effects/`
-- `ui/`
-- `audio/`
+No League of Legends, Riot, or other commercial-game assets are used.

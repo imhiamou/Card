@@ -48,6 +48,73 @@
   let prev = null;
   let cam = { x: 0, y: 0 };
   let lastShot = 0;
+  const IMG = Object.create(null);
+  const SPRITE = {
+    hunter: {
+      idle: ["assets/hidden-hunter/hunter/soldier1_stand.png", "assets/hidden-hunter/hunter/soldier1_hold.png"],
+      walk: [
+        "assets/hidden-hunter/hunter/soldier1_hold.png",
+        "assets/hidden-hunter/hunter/soldier1_stand.png",
+        "assets/hidden-hunter/hunter/soldier1_gun.png",
+        "assets/hidden-hunter/hunter/soldier1_hold.png"
+      ],
+      shoot: ["assets/hidden-hunter/hunter/soldier1_gun.png", "assets/hidden-hunter/hunter/soldier1_machine.png"],
+      death: ["assets/hidden-hunter/hunter/soldier1_reload.png"]
+    },
+    tracker: {
+      idle: ["assets/hidden-hunter/tracker/survivor1_stand.png", "assets/hidden-hunter/tracker/survivor1_hold.png"],
+      walk: [
+        "assets/hidden-hunter/tracker/survivor1_hold.png",
+        "assets/hidden-hunter/tracker/survivor1_stand.png",
+        "assets/hidden-hunter/tracker/survivor1_gun.png",
+        "assets/hidden-hunter/tracker/survivor1_hold.png"
+      ],
+      taser: ["assets/hidden-hunter/tracker/survivor1_silencer.png", "assets/hidden-hunter/tracker/survivor1_gun.png"],
+      death: ["assets/hidden-hunter/tracker/survivor1_reload.png"]
+    },
+    monster: {
+      idle: [0, 1, 2, 3].map((i) => "assets/hidden-hunter/monster/demon_idle_" + i + ".png"),
+      walk: [0, 1, 2, 3].map((i) => "assets/hidden-hunter/monster/demon_walk_" + i + ".png"),
+      attack: ["assets/hidden-hunter/monster/demon_walk_2.png", "assets/hidden-hunter/monster/demon_walk_3.png"],
+      stun: [0, 1, 2, 3].map((i) => "assets/hidden-hunter/monster/demon_idle_" + i + ".png"),
+      death: ["assets/hidden-hunter/monster/demon_idle_3.png", "assets/hidden-hunter/monster/demon_idle_0.png"]
+    }
+  };
+  const vis = {
+    shootUntil: 0,
+    taserUntil: 0,
+    muzzleUntil: 0,
+    monsterAttackUntil: 0,
+    monsterDeathAt: 0,
+    lastHp: Object.create(null),
+    lastMonster: null
+  };
+
+  function loadImg(src) {
+    if (IMG[src]) return IMG[src];
+    const im = new Image();
+    im.src = src;
+    IMG[src] = im;
+    return im;
+  }
+
+  function preloadSprites() {
+    Object.keys(SPRITE).forEach((k) => {
+      Object.keys(SPRITE[k]).forEach((anim) => SPRITE[k][anim].forEach(loadImg));
+    });
+    loadImg("assets/hidden-hunter/weapon/weapon_gun.png");
+    loadImg("assets/hidden-hunter/weapon/weapon_silencer.png");
+  }
+
+  function frameOf(list, fps) {
+    if (!list || !list.length) return null;
+    const i = Math.floor(Date.now() / (1000 / fps)) % list.length;
+    return loadImg(list[i]);
+  }
+
+  function spriteReady(im) {
+    return im && im.complete && im.naturalWidth > 0;
+  }
 
   let lobbyScreen, placementScreen, gameScreen, wordChainScreen, codeBreakerScreen;
   let dominoScreen, unoScreen, dodgeBallScreen, coinFlipScreen, hiddenHunterScreen;
@@ -186,6 +253,13 @@
     state._recvAt = Date.now();
     if (data.room) currentRoom = data.room;
     myRole = data.you ? data.you.role : myRole;
+    (data.players || []).forEach((p) => {
+      const prevHp = vis.lastHp[p.id];
+      if (prevHp != null && p.hp < prevHp) vis.monsterAttackUntil = Date.now() + 380;
+      vis.lastHp[p.id] = p.hp;
+    });
+    if (data.monster && data.monster.hp <= 0 && !vis.monsterDeathAt) vis.monsterDeathAt = Date.now();
+    if (data.monster && data.monster.hp > 0) vis.monsterDeathAt = 0;
     renderHud();
   }
 
@@ -263,8 +337,11 @@
     lastShot = now;
     const aim = touchMode ? aimJoy : mouseAim;
     if (myRole === "hunter") {
+      vis.shootUntil = Date.now() + 220;
+      vis.muzzleUntil = Date.now() + 90;
       socket.emit("hiddenHunterShoot", { roomCode: currentRoom, aimX: aim.x, aimY: aim.y });
     } else if (myRole === "tracker") {
+      vis.taserUntil = Date.now() + 260;
       socket.emit("hiddenHunterTaser", { roomCode: currentRoom, aimX: aim.x, aimY: aim.y });
     }
   }
@@ -366,77 +443,126 @@
     }
   }
 
+  function playerMoving(p) {
+    const old = prev && (prev.players || []).find((o) => o.id === p.id);
+    if (!old) return false;
+    return Math.abs(p.x - old.x) + Math.abs(p.y - old.y) > 0.35;
+  }
+
+  function faceFor(p, isMe) {
+    const hideTrackerAim = p.role === "tracker" && !(isMe && myRole === "tracker");
+    if (!hideTrackerAim && (p.aimX || p.aimY)) return { x: p.aimX, y: p.aimY };
+    const old = prev && (prev.players || []).find((o) => o.id === p.id);
+    if (old && (Math.abs(p.x - old.x) + Math.abs(p.y - old.y) > 0.35)) {
+      return { x: p.x - old.x, y: p.y - old.y };
+    }
+    return { x: 0, y: -1 };
+  }
+
+  function drawSprite(ctx, im, w) {
+    if (!spriteReady(im)) return false;
+    const h = w * (im.naturalHeight / im.naturalWidth);
+    ctx.drawImage(im, -w / 2, -h / 2, w, h);
+    return true;
+  }
+
   function drawPlayer(ctx, p, isMe) {
     const s = worldToScreen(ctx, p.x, p.y);
+    const now = Date.now();
+    const pack = p.role === "hunter" ? SPRITE.hunter : SPRITE.tracker;
+    const dead = !!p.dead || (state && state.phase === "over" && state.result === "caught");
+    let frames = pack.idle;
+    let fps = 2;
+    if (dead) { frames = pack.death; fps = 1; }
+    else if (p.role === "hunter" && now < vis.shootUntil) { frames = pack.shoot; fps = 10; }
+    else if (p.role === "tracker" && now < vis.taserUntil && isMe && myRole === "tracker") { frames = pack.taser; fps = 8; }
+    else if (playerMoving(p)) { frames = pack.walk; fps = 8; }
+    const im = frameOf(frames, fps);
+    const face = faceFor(p, isMe);
+    const ang = Math.atan2(face.y, face.x) + Math.PI / 2;
     ctx.save();
     ctx.translate(s.x, s.y);
-    ctx.fillStyle = p.role === "hunter" ? "#4f9cff" : "#74df9b";
-    ctx.beginPath();
-    ctx.arc(0, 0, 18, 0, Math.PI * 2);
-    ctx.fill();
-    if (p.role === "tracker") {
-      ctx.strokeStyle = "#b8ffd4";
-      ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.arc(0, -4, 8, 0, Math.PI * 2); ctx.stroke();
-      ctx.fillStyle = "rgba(116,223,155,.45)";
-      ctx.beginPath(); ctx.arc(-4, -4, 4, 0, Math.PI * 2); ctx.arc(4, -4, 4, 0, Math.PI * 2); ctx.fill();
-    }
-    if (p.role === "hunter") {
-      ctx.strokeStyle = "#e8e8e8";
-      ctx.lineWidth = 5;
-      ctx.beginPath();
-      ctx.moveTo(8, 0);
-      ctx.lineTo(8 + p.aimX * 28, p.aimY * 28);
-      ctx.stroke();
+    ctx.rotate(ang);
+    ctx.imageSmoothingEnabled = true;
+    if (!drawSprite(ctx, im, 46)) {
+      ctx.fillStyle = p.role === "hunter" ? "#4f9cff" : "#74df9b";
+      ctx.beginPath(); ctx.arc(0, 0, 18, 0, Math.PI * 2); ctx.fill();
     }
     if (p.role === "tracker") {
-      const showAim = isMe && myRole === "tracker";
-      ctx.strokeStyle = "#7cf0ff";
-      ctx.lineWidth = 4;
-      ctx.beginPath();
-      ctx.moveTo(6, 2);
-      if (showAim) ctx.lineTo(6 + p.aimX * 22, 2 + p.aimY * 22);
-      else ctx.lineTo(22, 6);
-      ctx.stroke();
+      const pulse = 0.45 + Math.sin(now / 180) * 0.2;
+      ctx.shadowColor = "#7cf0ff";
+      ctx.shadowBlur = 10;
+      ctx.fillStyle = "rgba(124,240,255," + pulse + ")";
+      ctx.beginPath(); ctx.ellipse(-5, -11, 4.2, 3.2, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(5, -11, 4.2, 3.2, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = "rgba(180,255,240,.85)";
+      ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.moveTo(-9, -11); ctx.lineTo(9, -11); ctx.stroke();
     }
+    if (p.role === "hunter" && isMe && now < vis.muzzleUntil) {
+      ctx.fillStyle = "rgba(255,220,90,.92)";
+      ctx.beginPath();
+      ctx.moveTo(0, -28);
+      ctx.lineTo(-6, -42);
+      ctx.lineTo(6, -42);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+    ctx.save();
     ctx.fillStyle = "#fff";
     ctx.font = "11px Arial";
     ctx.textAlign = "center";
-    ctx.fillText(isMe ? "YOU" : (p.role === "hunter" ? "HUNTER" : "TRACKER"), 0, -26);
+    ctx.fillText(isMe ? "YOU" : (p.role === "hunter" ? "HUNTER" : "TRACKER"), s.x, s.y - 32);
     ctx.restore();
   }
 
   function drawMonster(ctx, m) {
     const s = worldToScreen(ctx, m.x, m.y);
+    const now = Date.now();
+    const old = vis.lastMonster;
+    const moving = old && (Math.abs(m.x - old.x) + Math.abs(m.y - old.y) > 0.4);
+    vis.lastMonster = { x: m.x, y: m.y };
+    const dead = m.hp <= 0 || !!vis.monsterDeathAt;
+    let frames = SPRITE.monster.idle;
+    let fps = 6;
+    if (dead) { frames = SPRITE.monster.death; fps = 3; }
+    else if (m.stunned) { frames = SPRITE.monster.stun; fps = 10; }
+    else if (now < vis.monsterAttackUntil) { frames = SPRITE.monster.attack; fps = 8; }
+    else if (moving) { frames = SPRITE.monster.walk; fps = 8; }
+    const im = frameOf(frames, fps);
+    let faceX = 0, faceY = 1;
+    if (old && moving) { faceX = m.x - old.x; faceY = m.y - old.y; }
+    const ang = Math.atan2(faceY, faceX) + Math.PI / 2;
     ctx.save();
     ctx.translate(s.x, s.y);
-    if (m.stunned) {
-      ctx.shadowColor = "#ffe066";
-      ctx.shadowBlur = 28;
+    ctx.rotate(dead ? ang + 0.6 : ang);
+    ctx.imageSmoothingEnabled = false;
+    ctx.shadowColor = m.stunned ? "#ffe066" : (m.hit ? "#ff6b6b" : "#7cf0ff");
+    ctx.shadowBlur = 18;
+    const fade = dead ? Math.max(0.25, 1 - (now - (vis.monsterDeathAt || now)) / 900) : 1;
+    ctx.globalAlpha = fade;
+    if (!drawSprite(ctx, im, 58)) {
+      ctx.fillStyle = "rgba(90,230,255,.75)";
+      ctx.beginPath(); ctx.ellipse(0, 0, 22, 28, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
+    if (m.stunned && !dead) {
       ctx.strokeStyle = "rgba(255,240,80,.9)";
-      ctx.lineWidth = 3;
+      ctx.lineWidth = 2;
       for (let i = 0; i < 6; i++) {
-        const ang = (i / 6) * Math.PI * 2 + Date.now() / 80;
+        const a = (i / 6) * Math.PI * 2 + now / 80;
         ctx.beginPath();
-        ctx.moveTo(Math.cos(ang) * 18, Math.sin(ang) * 22);
-        ctx.lineTo(Math.cos(ang) * 34, Math.sin(ang) * 38);
+        ctx.moveTo(Math.cos(a) * 16, Math.sin(a) * 20);
+        ctx.lineTo(Math.cos(a) * 30, Math.sin(a) * 34);
         ctx.stroke();
       }
-    }
-    ctx.shadowColor = m.hit ? "#ff6b6b" : (m.stunned ? "#ffe066" : "#7cf0ff");
-    ctx.shadowBlur = 22;
-    ctx.fillStyle = m.hit ? "rgba(255,80,80,.85)" : (m.stunned ? "rgba(255,230,90,.8)" : "rgba(90,230,255,.75)");
-    ctx.beginPath();
-    ctx.ellipse(0, 0, 22, 28, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = "#e9ffff";
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    if (m.stunned) {
       ctx.fillStyle = "#ffe066";
       ctx.font = "bold 12px Arial";
       ctx.textAlign = "center";
-      ctx.shadowBlur = 0;
+      ctx.rotate(-ang);
       ctx.fillText("STUNNED", 0, -40);
     }
     ctx.restore();
@@ -511,6 +637,11 @@
       drawMonster(ctx, interpPos(oldM, state.monster, t) || state.monster);
     }
     livePlayers.forEach((p) => drawPlayer(ctx, p, p.id === socket.id));
+    const fog = ctx.createRadialGradient(vw / 2, vh / 2, vw * 0.28, vw / 2, vh / 2, vw * 0.78);
+    fog.addColorStop(0, "rgba(0,0,0,0)");
+    fog.addColorStop(1, "rgba(8,4,6,.42)");
+    ctx.fillStyle = fog;
+    ctx.fillRect(0, 0, vw, vh);
     if (myRole === "tracker") {
       const g = ctx.createRadialGradient(vw / 2, vh / 2, vw * 0.2, vw / 2, vh / 2, vw * 0.72);
       g.addColorStop(0, "rgba(80,210,230,0)");
@@ -636,6 +767,10 @@
         hhPlayAgainBtn.classList.remove("hidden");
       }
       if (hhMsg) hhMsg.textContent = "Talk outside the game — there is no chat.";
+      vis.shootUntil = vis.taserUntil = vis.muzzleUntil = vis.monsterAttackUntil = vis.monsterDeathAt = 0;
+      vis.lastHp = Object.create(null);
+      vis.lastMonster = null;
+      preloadSprites();
       showScreen();
     });
     socket.on("hiddenHunterState", (data) => {
@@ -648,18 +783,30 @@
     });
     socket.on("hiddenHunterHurt", () => {
       if (!active || !hhFlash) return;
+      vis.monsterAttackUntil = Date.now() + 380;
       hhFlash.classList.add("show");
       setTimeout(() => { if (hhFlash) hhFlash.classList.remove("show"); }, 180);
     });
+    socket.on("hiddenHunterShot", () => {
+      if (!active) return;
+      vis.shootUntil = Date.now() + 220;
+      vis.muzzleUntil = Date.now() + 90;
+    });
     socket.on("hiddenHunterTaserFired", (data) => {
-      if (!active || myRole !== "tracker" || !hhTaser || !data) return;
-      const left = Math.max(0, data.remainingMs || 0);
-      hhTaser.textContent = left <= 0 ? "TASER READY" : ("TASER " + (left / 1000).toFixed(1) + "s");
+      if (!active || myRole !== "tracker") return;
+      vis.taserUntil = Date.now() + 260;
+      if (hhTaser && data) {
+        const left = Math.max(0, data.remainingMs || 0);
+        hhTaser.textContent = left <= 0 ? "TASER READY" : ("TASER " + (left / 1000).toFixed(1) + "s");
+      }
     });
     socket.on("hiddenHunterPlayAgainWait", () => {
       if (hhPlayAgainBtn) hhPlayAgainBtn.textContent = "Waiting for partner...";
     });
     socket.on("hiddenHunterReset", () => {
+      vis.shootUntil = vis.taserUntil = vis.muzzleUntil = vis.monsterAttackUntil = vis.monsterDeathAt = 0;
+      vis.lastHp = Object.create(null);
+      vis.lastMonster = null;
       if (hhPlayAgainBtn) {
         hhPlayAgainBtn.disabled = false;
         hhPlayAgainBtn.textContent = "Play Again";
@@ -668,7 +815,7 @@
     socket.on("playerLeft", () => {
       partnerDisconnected();
     });
-    if (bindDom()) wireControls();
+    if (bindDom()) { preloadSprites(); wireControls(); }
   }
 
   function returnToLobby() {
