@@ -8,8 +8,8 @@
 
 const { randomInt } = require("crypto");
 
-const MAP_W = 4200;
-const MAP_H = 2700;
+const MAP_W = 1400;
+const MAP_H = 900;
 const PLAYER_R = 22;
 const MONSTER_R = 26;
 const BULLET_R = 5;
