@@ -898,7 +898,7 @@
   function draw() {
     if (!hhCanvas || !state) return;
     const ctx = hhCanvas.getContext("2d");
-    const map = state.map || { w: 1400, h: 900, obstacles: [] };
+    const map = state.map || { w: 1820, h: 1170, obstacles: [] };
     const t = interpT();
     const livePlayers = (state.players || []).map((p) => {
       const old = prev && (prev.players || []).find((o) => o.id === p.id);
