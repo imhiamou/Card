@@ -8,14 +8,19 @@
 
 const { randomInt } = require("crypto");
 
-const MAP_W = 1400;
-const MAP_H = 900;
+const LAYOUT = require("./hiddenHunterLayout");
+const MAP_W = LAYOUT.MAP_W;
+const MAP_H = LAYOUT.MAP_H;
 const PLAYER_R = 22;
 const MONSTER_R = 26;
 const BULLET_R = 5;
 const PLAYER_SPEED = 210;
 const MONSTER_BASE_SPEED = 138;
-const MONSTER_SPEED = MONSTER_BASE_SPEED;
+const MONSTER_NORMAL_SPEED = MONSTER_BASE_SPEED;
+const MONSTER_SPEED = MONSTER_NORMAL_SPEED;
+const MONSTER_ANGRY_SPEED = 228;
+const MONSTER_ANGRY_DURATION = 5000;
+const MONSTER_ESCAPE_DIST = 380;
 const MONSTER_RUSH_RANGE = 320;
 const MONSTER_RUSH_SPEED = 276;
 const MONSTER_RUSH_DURATION = 1000;
@@ -26,7 +31,7 @@ const MONSTER_RUSH_DAMAGE = 25;
 const BULLET_SPEED = 640;
 const TICK_MS = 50;
 const MATCH_MS = 5 * 60 * 1000;
-const MONSTER_HP = 100;
+const MONSTER_HP = 100 * 3;
 const DAMAGE = 25;
 const MAGAZINE_SIZE = 6;
 const FIRE_COOLDOWN_MS = 500;
@@ -46,7 +51,7 @@ const RETARGET_MS = 3800;
 const PAUSE_MIN_MS = 280;
 const PAUSE_MAX_MS = 720;
 
-const OBSTACLES = require("./hiddenHunterLayout").filter((o) =>
+const OBSTACLES = LAYOUT.filter((o) =>
   o.x >= 0 && o.y >= 0 && o.x + o.w <= MAP_W && o.y + o.h <= MAP_H
 );
 const SOLID_OBSTACLES = OBSTACLES.filter((o) => o.solid !== false);
@@ -296,7 +301,10 @@ function makeMonster(players) {
     rushRecoverUntil: 0,
     rushCooldownUntil: 0,
     faceX: 1,
-    faceY: 0
+    faceY: 0,
+    angryUntil: 0,
+    escaping: false,
+    escapeFromId: null
   };
   m.target = pickMonsterTarget(m);
   return m;
@@ -555,6 +563,61 @@ function endRush(m, now) {
   m.rushTargetId = null;
 }
 
+function pickEscapeTarget(m, shooter) {
+  const sx = shooter ? shooter.x : m.x - 1;
+  const sy = shooter ? shooter.y : m.y;
+  let away = norm(m.x - sx, m.y - sy);
+  if (len(away.x, away.y) < 0.01) away = { x: 1, y: 0 };
+  const base = Math.atan2(away.y, away.x);
+  const angles = [0, 0.5, -0.5, 1, -1, 1.5, -1.5, 2, -2];
+  const dists = [MONSTER_ESCAPE_DIST, 300, 220];
+  for (let ai = 0; ai < angles.length; ai++) {
+    const ang = base + angles[ai];
+    for (let di = 0; di < dists.length; di++) {
+      const dist = dists[di];
+      const t = {
+        x: m.x + Math.cos(ang) * dist,
+        y: m.y + Math.sin(ang) * dist
+      };
+      if (blocked(t.x, t.y, MONSTER_R)) continue;
+      if (!walkableLine(m.x, m.y, t.x, t.y, MONSTER_R)) continue;
+      if (shooter && len(t.x - sx, t.y - sy) + 40 < len(m.x - sx, m.y - sy)) continue;
+      return t;
+    }
+  }
+  for (let ai = 0; ai < angles.length; ai++) {
+    const ang = base + angles[ai];
+    for (let dist = 160; dist >= 70; dist -= 30) {
+      const t = {
+        x: m.x + Math.cos(ang) * dist,
+        y: m.y + Math.sin(ang) * dist
+      };
+      if (blocked(t.x, t.y, MONSTER_R)) continue;
+      if (shooter && len(t.x - sx, t.y - sy) + 20 < len(m.x - sx, m.y - sy)) continue;
+      return t;
+    }
+  }
+  return pickMonsterTarget(m);
+}
+
+function angerMonster(hh, m, now) {
+  if (!m || m.hp <= 0) return;
+  const shooter = hh.players[hh.hunterId];
+  const from = shooter && !shooter.dead ? shooter : null;
+  m.angryUntil = now + MONSTER_ANGRY_DURATION;
+  m.escaping = true;
+  m.escapeFromId = from ? from.id : null;
+  m.rushPhase = "idle";
+  m.rushTargetId = null;
+  m.pauseUntil = 0;
+  m.failedTargets = [];
+  m.target = pickEscapeTarget(m, from);
+  m.nextRetargetAt = now + MONSTER_ANGRY_DURATION;
+  m.lastMovedAt = now;
+  m.lastX = m.x;
+  m.lastY = m.y;
+}
+
 function stepMonster(hh, dt, io) {
   const m = hh.monster;
   if (!m || m.hp <= 0) {
@@ -576,7 +639,15 @@ function stepMonster(hh, dt, io) {
     m.stunEndTime = 0;
     m.pauseUntil = 0;
     m.failedTargets = [];
-    m.target = pickMonsterTarget(m);
+    if (now < (m.angryUntil || 0)) {
+      const shooter = m.escapeFromId && hh.players[m.escapeFromId];
+      const from = shooter && !shooter.dead ? shooter : null;
+      m.target = pickEscapeTarget(m, from);
+      m.escaping = true;
+    } else {
+      m.target = pickMonsterTarget(m);
+      m.escaping = false;
+    }
     m.nextRetargetAt = now + RETARGET_MS;
     m.lastMovedAt = now;
   }
@@ -624,7 +695,15 @@ function stepMonster(hh, dt, io) {
     if (now < m.rushRecoverUntil) return;
     m.rushPhase = "idle";
   }
-  if (m.rushPhase === "idle" && now >= (m.rushCooldownUntil || 0)) {
+  const angry = now < (m.angryUntil || 0);
+  if (m.escaping && !angry) {
+    m.escaping = false;
+    m.escapeFromId = null;
+    m.target = pickMonsterTarget(m);
+    m.nextRetargetAt = now + RETARGET_MS;
+    m.failedTargets = [];
+  }
+  if (m.rushPhase === "idle" && !angry && now >= (m.rushCooldownUntil || 0)) {
     const prey = nearestLiving(hh, m.x, m.y, MONSTER_RUSH_RANGE);
     if (prey) {
       m.rushPhase = "windup";
@@ -660,23 +739,44 @@ function stepMonster(hh, dt, io) {
   const retargetDue = now >= (m.nextRetargetAt || 0);
   if (stuck || targetBad || arrived || retargetDue) {
     if (stuck || targetBad) rememberFailedTarget(m, m.target);
-    if (arrived && !stuck && randomInt(100) < 22) {
-      m.moving = false;
-      m.pauseUntil = now + PAUSE_MIN_MS + randomInt(Math.max(1, PAUSE_MAX_MS - PAUSE_MIN_MS));
+    if (angry) {
+      const shooter = m.escapeFromId && hh.players[m.escapeFromId];
+      const from = shooter && !shooter.dead ? shooter : null;
+      const fled = from && len(m.x - from.x, m.y - from.y) >= MONSTER_ESCAPE_DIST * 0.7;
+      if (arrived && fled) {
+        m.angryUntil = now;
+        m.escaping = false;
+        m.escapeFromId = null;
+        m.target = pickMonsterTarget(m);
+        m.nextRetargetAt = now + RETARGET_MS;
+      } else {
+        m.target = pickEscapeTarget(m, from);
+        m.nextRetargetAt = now + MONSTER_ANGRY_DURATION;
+      }
       m.lastMovedAt = now;
-      m.nextRetargetAt = m.pauseUntil + RETARGET_MS;
-      return;
+      m.lastX = m.x;
+      m.lastY = m.y;
+    } else {
+      if (arrived && !stuck && randomInt(100) < 22) {
+        m.moving = false;
+        m.pauseUntil = now + PAUSE_MIN_MS + randomInt(Math.max(1, PAUSE_MAX_MS - PAUSE_MIN_MS));
+        m.lastMovedAt = now;
+        m.nextRetargetAt = m.pauseUntil + RETARGET_MS;
+        return;
+      }
+      m.target = pickMonsterTarget(m);
+      m.nextRetargetAt = now + RETARGET_MS + randomInt(900);
+      m.lastMovedAt = now;
+      m.lastX = m.x;
+      m.lastY = m.y;
     }
-    m.target = pickMonsterTarget(m);
-    m.nextRetargetAt = now + RETARGET_MS + randomInt(900);
-    m.lastMovedAt = now;
-    m.lastX = m.x;
-    m.lastY = m.y;
   }
+  const stillAngry = now < (m.angryUntil || 0);
+  const speed = stillAngry ? MONSTER_ANGRY_SPEED : MONSTER_NORMAL_SPEED;
   const n = norm(m.target.x - m.x, m.target.y - m.y);
   const beforeX = m.x;
   const beforeY = m.y;
-  const moved = tryMove(m, n.x * MONSTER_BASE_SPEED * dt, n.y * MONSTER_BASE_SPEED * dt, MONSTER_R);
+  const moved = tryMove(m, n.x * speed * dt, n.y * speed * dt, MONSTER_R);
   m.moving = !!(moved && (m.x !== beforeX || m.y !== beforeY));
   if (moved) {
     m.lastX = m.x;
@@ -743,8 +843,10 @@ function stepProjectiles(room, io, roomCode, dt) {
       b.y = ny;
       const m = hh.monster;
       if (m && m.hp > 0 && len(b.x - m.x, b.y - m.y) <= MONSTER_R + BULLET_R) {
+        const hitAt = Date.now();
         m.hp = Math.max(0, m.hp - DAMAGE);
-        m.hitUntil = Date.now() + 220;
+        m.hitUntil = hitAt + 220;
+        if (m.hp > 0) angerMonster(hh, m, hitAt);
         addImpact(hh, b.x, b.y, "hit");
         io.to(hh.trackerId).emit("hiddenHunterHit", {
           remainingHp: m.hp,
@@ -1019,6 +1121,10 @@ module.exports = {
   MONSTER_DAMAGE,
   MONSTER_ATTACK_COOLDOWN,
   MONSTER_BASE_SPEED,
+  MONSTER_NORMAL_SPEED,
+  MONSTER_ANGRY_SPEED,
+  MONSTER_ANGRY_DURATION,
+  MONSTER_ESCAPE_DIST,
   MONSTER_RUSH_RANGE,
   MONSTER_RUSH_SPEED,
   MONSTER_RUSH_DURATION,
