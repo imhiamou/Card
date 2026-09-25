@@ -49,35 +49,32 @@
   let cam = { x: 0, y: 0 };
   let lastShot = 0;
   const IMG = Object.create(null);
+  const MOVEMENT_THRESHOLD = 0.12;
   const SPRITE = {
     hunter: {
-      idle: ["assets/hidden-hunter/hunter/soldier1_stand.png", "assets/hidden-hunter/hunter/soldier1_hold.png"],
+      idle: ["assets/hidden-hunter/hunter/soldier1_stand.png"],
       walk: [
-        "assets/hidden-hunter/hunter/soldier1_hold.png",
         "assets/hidden-hunter/hunter/soldier1_stand.png",
-        "assets/hidden-hunter/hunter/soldier1_gun.png",
         "assets/hidden-hunter/hunter/soldier1_hold.png"
       ],
       shoot: ["assets/hidden-hunter/hunter/soldier1_gun.png", "assets/hidden-hunter/hunter/soldier1_machine.png"],
       death: ["assets/hidden-hunter/hunter/soldier1_reload.png"]
     },
     tracker: {
-      idle: ["assets/hidden-hunter/tracker/survivor1_stand.png", "assets/hidden-hunter/tracker/survivor1_hold.png"],
+      idle: ["assets/hidden-hunter/tracker/survivor1_stand.png"],
       walk: [
-        "assets/hidden-hunter/tracker/survivor1_hold.png",
         "assets/hidden-hunter/tracker/survivor1_stand.png",
-        "assets/hidden-hunter/tracker/survivor1_gun.png",
         "assets/hidden-hunter/tracker/survivor1_hold.png"
       ],
-      taser: ["assets/hidden-hunter/tracker/survivor1_silencer.png", "assets/hidden-hunter/tracker/survivor1_gun.png"],
+      taser: ["assets/hidden-hunter/tracker/survivor1_silencer.png"],
       death: ["assets/hidden-hunter/tracker/survivor1_reload.png"]
     },
     monster: {
-      idle: [0, 1, 2, 3].map((i) => "assets/hidden-hunter/monster/demon_idle_" + i + ".png"),
-      walk: [0, 1, 2, 3].map((i) => "assets/hidden-hunter/monster/demon_walk_" + i + ".png"),
-      attack: ["assets/hidden-hunter/monster/demon_walk_2.png", "assets/hidden-hunter/monster/demon_walk_3.png"],
-      stun: [0, 1, 2, 3].map((i) => "assets/hidden-hunter/monster/demon_idle_" + i + ".png"),
-      death: ["assets/hidden-hunter/monster/demon_idle_3.png", "assets/hidden-hunter/monster/demon_idle_0.png"]
+      idle: [0, 1, 2, 3].map((i) => "assets/hidden-hunter/monster/monster_idle_" + i + ".png"),
+      walk: [0, 1, 2, 3].map((i) => "assets/hidden-hunter/monster/monster_walk_" + i + ".png"),
+      attack: [0, 1, 2, 3].map((i) => "assets/hidden-hunter/monster/monster_attack_" + i + ".png"),
+      stun: [0, 1, 2, 3].map((i) => "assets/hidden-hunter/monster/monster_stun_" + i + ".png"),
+      death: [0, 1, 2, 3].map((i) => "assets/hidden-hunter/monster/monster_death_" + i + ".png")
     }
   };
   const vis = {
@@ -86,6 +83,8 @@
     muzzleUntil: 0,
     monsterAttackUntil: 0,
     monsterDeathAt: 0,
+    monsterFace: { x: 0, y: 1 },
+    face: Object.create(null),
     lastHp: Object.create(null),
     lastMonster: null
   };
@@ -106,10 +105,26 @@
     loadImg("assets/hidden-hunter/weapon/weapon_silencer.png");
   }
 
-  function frameOf(list, fps) {
+  function frameOf(list, fps, onceSince) {
     if (!list || !list.length) return null;
-    const i = Math.floor(Date.now() / (1000 / fps)) % list.length;
+    let i = 0;
+    if (list.length > 1) {
+      if (onceSince) i = Math.min(list.length - 1, Math.floor((Date.now() - onceSince) / (1000 / fps)));
+      else i = Math.floor(Date.now() / (1000 / fps)) % list.length;
+    }
     return loadImg(list[i]);
+  }
+
+  function pickAnim(role, o) {
+    if (o.dead) return "death";
+    if (role === "monster" && o.stunned) return "stun";
+    if (o.attacking) {
+      if (role === "hunter") return "shoot";
+      if (role === "tracker") return "taser";
+      return "attack";
+    }
+    if (o.moving) return "walk";
+    return "idle";
   }
 
   function spriteReady(im) {
@@ -443,20 +458,26 @@
     }
   }
 
-  function playerMoving(p) {
-    const old = prev && (prev.players || []).find((o) => o.id === p.id);
-    if (!old) return false;
-    return Math.abs(p.x - old.x) + Math.abs(p.y - old.y) > 0.35;
+  function playerMoving(p, isMe) {
+    if (!p || p.dead) return false;
+    if (isMe) {
+      const move = touchMode ? moveJoy : keyVec();
+      const mag = Math.sqrt(move.x * move.x + move.y * move.y);
+      return mag > MOVEMENT_THRESHOLD;
+    }
+    return p.moving === true;
   }
 
   function faceFor(p, isMe) {
     const hideTrackerAim = p.role === "tracker" && !(isMe && myRole === "tracker");
     if (!hideTrackerAim && (p.aimX || p.aimY)) return { x: p.aimX, y: p.aimY };
-    const old = prev && (prev.players || []).find((o) => o.id === p.id);
-    if (old && (Math.abs(p.x - old.x) + Math.abs(p.y - old.y) > 0.35)) {
-      return { x: p.x - old.x, y: p.y - old.y };
+    if (playerMoving(p, isMe)) {
+      const old = prev && (prev.players || []).find((o) => o.id === p.id);
+      if (old && (Math.abs(p.x - old.x) + Math.abs(p.y - old.y) > 0.4)) {
+        vis.face[p.id] = { x: p.x - old.x, y: p.y - old.y };
+      }
     }
-    return { x: 0, y: -1 };
+    return vis.face[p.id] || { x: 0, y: -1 };
   }
 
   function drawSprite(ctx, im, w) {
@@ -469,20 +490,23 @@
   function drawPlayer(ctx, p, isMe) {
     const s = worldToScreen(ctx, p.x, p.y);
     const now = Date.now();
-    const pack = p.role === "hunter" ? SPRITE.hunter : SPRITE.tracker;
+    const role = p.role === "hunter" ? "hunter" : "tracker";
+    const pack = SPRITE[role];
     const dead = !!p.dead || (state && state.phase === "over" && state.result === "caught");
-    let frames = pack.idle;
-    let fps = 2;
-    if (dead) { frames = pack.death; fps = 1; }
-    else if (p.role === "hunter" && now < vis.shootUntil) { frames = pack.shoot; fps = 10; }
-    else if (p.role === "tracker" && now < vis.taserUntil && isMe && myRole === "tracker") { frames = pack.taser; fps = 8; }
-    else if (playerMoving(p)) { frames = pack.walk; fps = 8; }
+    const shooting = role === "hunter" && !dead && now < vis.shootUntil;
+    const tasering = role === "tracker" && !dead && isMe && myRole === "tracker" && now < vis.taserUntil;
+    const moving = playerMoving(p, isMe);
+    const anim = pickAnim(role, { dead: dead, attacking: shooting || tasering, moving: moving });
+    const frames = pack[anim] || pack.idle;
+    const fps = anim === "walk" ? 6 : (anim === "shoot" || anim === "taser" ? 12 : 1);
     const im = frameOf(frames, fps);
     const face = faceFor(p, isMe);
     const ang = Math.atan2(face.y, face.x) + Math.PI / 2;
     ctx.save();
     ctx.translate(s.x, s.y);
     ctx.rotate(ang);
+    if (anim === "walk") ctx.translate(0, Math.sin(now / 90) * 1.5);
+    if (role === "hunter" && now < vis.muzzleUntil) ctx.translate(0, 3);
     ctx.imageSmoothingEnabled = true;
     if (!drawSprite(ctx, im, 46)) {
       ctx.fillStyle = p.role === "hunter" ? "#4f9cff" : "#74df9b";
@@ -500,7 +524,7 @@
       ctx.lineWidth = 1.4;
       ctx.beginPath(); ctx.moveTo(-9, -11); ctx.lineTo(9, -11); ctx.stroke();
     }
-    if (p.role === "hunter" && isMe && now < vis.muzzleUntil) {
+    if (p.role === "hunter" && now < vis.muzzleUntil) {
       ctx.fillStyle = "rgba(255,220,90,.92)";
       ctx.beginPath();
       ctx.moveTo(0, -28);
@@ -521,34 +545,44 @@
   function drawMonster(ctx, m) {
     const s = worldToScreen(ctx, m.x, m.y);
     const now = Date.now();
-    const old = vis.lastMonster;
-    const moving = old && (Math.abs(m.x - old.x) + Math.abs(m.y - old.y) > 0.4);
-    vis.lastMonster = { x: m.x, y: m.y };
     const dead = m.hp <= 0 || !!vis.monsterDeathAt;
-    let frames = SPRITE.monster.idle;
-    let fps = 6;
-    if (dead) { frames = SPRITE.monster.death; fps = 3; }
-    else if (m.stunned) { frames = SPRITE.monster.stun; fps = 10; }
-    else if (now < vis.monsterAttackUntil) { frames = SPRITE.monster.attack; fps = 8; }
-    else if (moving) { frames = SPRITE.monster.walk; fps = 8; }
-    const im = frameOf(frames, fps);
-    let faceX = 0, faceY = 1;
-    if (old && moving) { faceX = m.x - old.x; faceY = m.y - old.y; }
-    const ang = Math.atan2(faceY, faceX) + Math.PI / 2;
+    const stunned = !!m.stunned && !dead;
+    const moving = !dead && !stunned && m.moving === true;
+    const attacking = !dead && !stunned && now < vis.monsterAttackUntil;
+    const anim = pickAnim("monster", { dead: dead, stunned: stunned, attacking: attacking, moving: moving });
+    const frames = SPRITE.monster[anim] || SPRITE.monster.idle;
+    const fps = anim === "idle" ? 3 : anim === "walk" ? 8 : anim === "stun" ? 10 : 8;
+    const im = frameOf(frames, fps, anim === "death" ? (vis.monsterDeathAt || now) : 0);
+    const old = prev && prev.monster;
+    if (moving && old && (Math.abs(m.x - old.x) + Math.abs(m.y - old.y) > 0.25)) {
+      vis.monsterFace = { x: m.x - old.x, y: m.y - old.y };
+    }
+    const face = vis.monsterFace || { x: 0, y: 1 };
+    const ang = Math.atan2(face.y, face.x) + Math.PI / 2;
+    const deathAge = vis.monsterDeathAt ? now - vis.monsterDeathAt : 0;
     ctx.save();
     ctx.translate(s.x, s.y);
-    ctx.rotate(dead ? ang + 0.6 : ang);
-    ctx.imageSmoothingEnabled = false;
+    if (anim === "stun") ctx.translate(Math.sin(now / 28) * 2.4, 0);
+    ctx.rotate(anim === "death" ? ang + Math.min(0.8, deathAge / 800) : ang);
+    ctx.imageSmoothingEnabled = true;
     ctx.shadowColor = m.stunned ? "#ffe066" : (m.hit ? "#ff6b6b" : "#7cf0ff");
-    ctx.shadowBlur = 18;
-    const fade = dead ? Math.max(0.25, 1 - (now - (vis.monsterDeathAt || now)) / 900) : 1;
+    ctx.shadowBlur = 14;
+    const fade = dead ? Math.max(0.35, 1 - Math.max(0, deathAge - 640) / 1100) : 1;
     ctx.globalAlpha = fade;
-    if (!drawSprite(ctx, im, 58)) {
+    if (!drawSprite(ctx, im, 64)) {
       ctx.fillStyle = "rgba(90,230,255,.75)";
       ctx.beginPath(); ctx.ellipse(0, 0, 22, 28, 0, 0, Math.PI * 2); ctx.fill();
     }
-    ctx.globalAlpha = 1;
     ctx.shadowBlur = 0;
+    if (!dead) {
+      ctx.fillStyle = stunned ? "rgba(255,220,70,.95)" : "rgba(255,36,36,.9)";
+      ctx.shadowColor = ctx.fillStyle;
+      ctx.shadowBlur = 8;
+      ctx.beginPath(); ctx.arc(-5, -18, 1.7, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(5, -18, 1.7, 0, Math.PI * 2); ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+    ctx.globalAlpha = 1;
     if (m.stunned && !dead) {
       ctx.strokeStyle = "rgba(255,240,80,.9)";
       ctx.lineWidth = 2;
@@ -768,6 +802,8 @@
       }
       if (hhMsg) hhMsg.textContent = "Talk outside the game — there is no chat.";
       vis.shootUntil = vis.taserUntil = vis.muzzleUntil = vis.monsterAttackUntil = vis.monsterDeathAt = 0;
+      vis.monsterFace = { x: 0, y: 1 };
+      vis.face = Object.create(null);
       vis.lastHp = Object.create(null);
       vis.lastMonster = null;
       preloadSprites();
@@ -805,6 +841,8 @@
     });
     socket.on("hiddenHunterReset", () => {
       vis.shootUntil = vis.taserUntil = vis.muzzleUntil = vis.monsterAttackUntil = vis.monsterDeathAt = 0;
+      vis.monsterFace = { x: 0, y: 1 };
+      vis.face = Object.create(null);
       vis.lastHp = Object.create(null);
       vis.lastMonster = null;
       if (hhPlayAgainBtn) {
