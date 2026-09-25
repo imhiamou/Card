@@ -1,7 +1,8 @@
 /*
  * Hidden Hunter floor plan. The original props stay where they were.
- * Everything after them extends the same ground into a larger facility.
- * solid:false objects are drawn but do not block movement.
+ * The map is moderately larger (1.3x). New props reuse the same kinds.
+ * Major landmarks are fixed. Smaller props are seeded so they stay put
+ * between matches. solid:false objects are drawn but do not block movement.
  */
 
 function prop(id, kind, x, y, w, h, label, solid) {
@@ -26,77 +27,122 @@ const ORIGINAL = [
   { id: "vehicle", kind: "vehicle", label: "VEHICLE", x: 1070, y: 710, w: 230, h: 96 }
 ];
 
-const ADDED = [
-  // East warehouse. Open floor, pillar cover, routes around every column.
-  prop("whPillar1", "pillar", 1760, 240, 72, 72, "PILLAR CLUSTER"),
-  prop("whPillar2", "pillarWood", 2140, 240, 72, 72),
-  prop("whPillar3", "pillar", 2520, 240, 72, 72),
-  prop("whPillar4", "pillarWood", 1760, 640, 72, 72),
-  prop("whPillar5", "pillar", 2140, 640, 72, 72),
-  prop("whPillar6", "pillarWood", 2520, 640, 72, 72),
-  prop("whBarrels", "barrels", 1680, 160, 110, 78, "RED BARREL STORAGE"),
-  prop("whCrates", "crates", 2860, 200, 168, 118),
-  prop("whPallet", "pallet", 2860, 720, 170, 120, "PALLET STACK"),
-  prop("whVehicle", "vehicleDark", 1960, 900, 150, 110, "LARGE VEHICLE"),
-  prop("whBags1", "sandbag", 1680, 980, 70, 48, null, false),
-  prop("whBags2", "sandbag", 1760, 990, 70, 48, null, false),
+const MAP_W = 1820;
+const MAP_H = 1170;
 
-  // Storage hall. Shelf rows with a walkable aisle between them.
-  prop("stShelf1", "shelves", 3180, 200, 240, 64, "LONG SHELF AREA"),
-  prop("stShelf2", "shelves", 3500, 200, 240, 64),
-  prop("stShelf3", "shelves", 3820, 200, 220, 64),
-  prop("stShelf4", "shelves", 3180, 520, 240, 64),
-  prop("stShelf5", "shelves", 3500, 520, 240, 64),
-  prop("stShelf6", "shelves", 3820, 520, 220, 64),
-  prop("stCrates", "crates", 3200, 780, 160, 110),
-  prop("stBarrels", "barrelsGreen", 3680, 800, 110, 78),
-  prop("stContainer", "container", 3920, 760, 180, 90, "METAL CONTAINER"),
-
-  // South gate from the original room into the loading bay stays open
-  // (x 200-900, y 920-1180). Loading bay is the open yard below that.
-  prop("bayPillar1", "pillar", 280, 1240, 70, 70),
-  prop("bayPillar2", "pillarWood", 980, 1240, 70, 70, "LOADING BAY"),
-  prop("bayVehicle", "vehicle", 360, 1480, 210, 110),
-  prop("bayPallet", "pallet", 760, 1460, 180, 120, "PALLET STACK"),
-  prop("bayCrates", "crates", 1120, 1500, 160, 110),
-  prop("bayBarrels", "barrels", 240, 1760, 110, 78),
-  prop("bayAbandoned", "vehicleGreen", 860, 1820, 170, 110, "ABANDONED VEHICLE"),
-  prop("bayContainer", "container", 1240, 1760, 180, 86),
-  prop("bayBags", "sandbag", 560, 1700, 70, 48, null, false),
-
-  // Machinery room, east of the loading bay, with gaps on the west and north.
-  prop("mxMachine", "machine", 1860, 1460, 250, 190, "PRODUCTION MACHINE"),
-  prop("mxGen", "generator", 2300, 1480, 180, 150, "GENERATOR"),
-  prop("mxConvey", "conveyor", 1860, 1860, 560, 58, "CONVEYOR"),
-  prop("mxTable", "table", 2520, 1760, 160, 70),
-  prop("mxBarrels", "barrelsBlack", 2580, 1500, 100, 74),
-  prop("mxPillar", "pillar", 1680, 1680, 68, 68),
-  prop("mxCrates", "boxes", 2480, 1960, 120, 86),
-
-  // Maintenance, south of the storage hall.
-  prop("mtTable", "table", 3240, 1360, 180, 72, "MAINTENANCE TABLE"),
-  prop("mtElec", "generator", 3680, 1320, 200, 150, "ELECTRICAL CABINET"),
-  prop("mtBarrels", "barrels", 3280, 1620, 110, 78),
-  prop("mtShelf", "shelves", 3640, 1660, 260, 64),
-  prop("mtCrates", "crates", 3280, 1840, 150, 110),
-  prop("mtPillar", "pillarWood", 3960, 1500, 68, 68),
-
-  // Side room under the loading bay.
-  prop("sideTable", "table", 280, 2240, 170, 70, "SIDE ROOM"),
-  prop("sideMachine", "machine", 620, 2180, 220, 170),
-  prop("sideBarrels", "barrelsGreen", 980, 2240, 110, 78),
-  prop("sideCrates", "boxes", 240, 2440, 120, 90),
-  prop("sidePillar", "pillar", 1100, 2460, 64, 64),
-
-  // Open yard along the south. Wide gaps, a few landmarks, not a wall.
-  prop("yardVehicle", "vehicleDark", 1680, 2320, 160, 110, "YARD VEHICLE"),
-  prop("yardBarrels", "barrels", 2140, 2380, 110, 78),
-  prop("yardPallet", "pallet", 2460, 2300, 170, 120),
-  prop("yardPillar1", "pillarWood", 2920, 2360, 72, 72),
-  prop("yardPillar2", "pillar", 3380, 2280, 72, 72),
-  prop("yardGen", "generator", 3680, 2320, 170, 140, "YARD GENERATOR"),
-  prop("yardBags", "sandbag", 2000, 2520, 70, 48, null, false),
-  prop("yardCrates", "crates", 3920, 2140, 150, 110)
+// Open routes into the new east strip and south strip. Props may not sit here.
+const GATES = [
+  { x: 1310, y: 400, w: 170, h: 300 },
+  { x: 400, y: 820, w: 620, h: 190 },
+  { x: 1360, y: 860, w: 140, h: 160 }
 ];
 
-module.exports = ORIGINAL.concat(ADDED);
+const SPAWN_PADS = [
+  { x: 240, y: 520, r: 140 },
+  { x: 240, y: 280, r: 140 },
+  { x: 980, y: 480, r: 170 }
+];
+
+const LANDMARKS = [
+  prop("eastMachine", "machine", 1472, 48, 200, 160, "EAST MACHINE"),
+  prop("eastPillar", "pillar", 1748, 220, 48, 48, "EAST PILLAR"),
+  prop("southVehicle", "vehicle", 80, 1024, 210, 90, "SOUTH VEHICLE"),
+  prop("southPallet", "pallet", 460, 1040, 140, 96, "SOUTH PALLET"),
+  prop("southContainer", "container", 760, 1052, 160, 74, "LOADING CONTAINER"),
+  prop("southShelves", "shelves", 1060, 1016, 200, 60, "SOUTH SHELVES"),
+  prop("cornerCrates", "crates", 1488, 1024, 140, 100, "CORNER CRATES"),
+  prop("cornerPillar", "pillarWood", 1704, 1048, 48, 48, "CORNER PILLAR")
+];
+
+const DECOR = [
+  ["barrels", 96, 72, 1510, 280],
+  ["boxes", 100, 78, 1640, 300],
+  ["sandbag", 70, 48, 1708, 80],
+  ["barrelsGreen", 96, 72, 1504, 748],
+  ["table", 120, 60, 1664, 760],
+  ["pillar", 46, 46, 1760, 760],
+  ["barrelsBlack", 96, 72, 1288, 1048],
+  ["boxes", 100, 78, 1668, 1008],
+  ["pillarWood", 46, 46, 1700, 340],
+  ["boxes", 100, 78, 1524, 908],
+  ["sandbag", 70, 48, 980, 1088]
+];
+
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function gapBetween(a, b) {
+  const dx = Math.max(0, Math.max(a.x, b.x) - Math.min(a.x + a.w, b.x + b.w));
+  const dy = Math.max(0, Math.max(a.y, b.y) - Math.min(a.y + a.h, b.y + b.h));
+  if (dx === 0 && dy === 0) return 0;
+  if (dx === 0) return dy;
+  if (dy === 0) return dx;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function hitsPad(rect, pad) {
+  const nx = Math.max(rect.x, Math.min(pad.x, rect.x + rect.w));
+  const ny = Math.max(rect.y, Math.min(pad.y, rect.y + rect.h));
+  const dx = pad.x - nx;
+  const dy = pad.y - ny;
+  return dx * dx + dy * dy < pad.r * pad.r;
+}
+
+function placementOk(rect, placed, gap) {
+  if (rect.x < 20 || rect.y < 20) return false;
+  if (rect.x + rect.w > MAP_W - 20 || rect.y + rect.h > MAP_H - 20) return false;
+  for (let i = 0; i < GATES.length; i++) {
+    if (gapBetween(rect, GATES[i]) < 8) return false;
+  }
+  for (let i = 0; i < SPAWN_PADS.length; i++) {
+    if (hitsPad(rect, SPAWN_PADS[i])) return false;
+  }
+  for (let i = 0; i < placed.length; i++) {
+    const need = rect.solid === false || placed[i].solid === false ? 8 : gap;
+    if (gapBetween(rect, placed[i]) < need) return false;
+  }
+  return true;
+}
+
+function seededDecor(placed) {
+  const rand = mulberry32(0x48554E54);
+  const added = [];
+  DECOR.forEach((spec) => {
+    let accepted = null;
+    for (let n = 0; n < 12; n++) {
+      const jx = Math.round((rand() - 0.5) * 36);
+      const jy = Math.round((rand() - 0.5) * 36);
+      const rect = prop(
+        "decor" + added.length,
+        spec[0],
+        spec[3] + jx,
+        spec[4] + jy,
+        spec[1],
+        spec[2],
+        null,
+        spec[0] === "sandbag" ? false : undefined
+      );
+      if (placementOk(rect, placed.concat(added), 64)) {
+        accepted = rect;
+        break;
+      }
+    }
+    if (accepted) added.push(accepted);
+  });
+  return added;
+}
+
+const PLACED = ORIGINAL.concat(LANDMARKS);
+const ADDED = seededDecor(PLACED);
+
+const ALL = ORIGINAL.concat(LANDMARKS, ADDED);
+ALL.MAP_W = MAP_W;
+ALL.MAP_H = MAP_H;
+module.exports = ALL;
