@@ -163,6 +163,11 @@ if(unoMaxPlayersWrap)unoMaxPlayersWrap.classList.toggle("hidden",game!=="uno");
 if(botFillWrap)botFillWrap.classList.toggle("hidden",game!=="dominoes"&&game!=="uno");
 const hhHint=document.getElementById("hiddenHunterHint");
 if(hhHint)hhHint.classList.toggle("hidden",game!=="hidden-hunter");
+const hhMapPick=document.getElementById("hhMapPick");
+const hhEditorGate=document.getElementById("hhEditorGate");
+if(hhMapPick)hhMapPick.classList.toggle("hidden",game!=="hidden-hunter");
+if(hhEditorGate)hhEditorGate.classList.toggle("hidden",game!=="hidden-hunter");
+if(game==="hidden-hunter"&&window.HiddenHunterEditor)HiddenHunterEditor.refreshMaps();
 // Team pick: shown for Dominoes so creators (4p) and joiners can choose.
 // 2–3 player lobbies ignore the pick on the server.
 const showTeam=game==="dominoes";
@@ -274,6 +279,9 @@ if(game==="dominoes"||game==="uno"){
 const botEl=document.getElementById("botFillCheck");
 payload.fillBots=!!(botEl&&botEl.checked);
 }
+if(game==="hidden-hunter"&&window.HiddenHunterEditor){
+payload.mapId=HiddenHunterEditor.selectedMapId();
+}
 socket.emit("createLobby",payload);
 status.textContent="Creating lobby...";
 };
@@ -301,7 +309,7 @@ if(data.game==="dominoes"||data.game==="uno"){
 const max=data.maxPlayers||2;
 status.textContent="Waiting for players (1/"+max+")...";
 }else if(data.game==="hidden-hunter"){
-status.textContent="Waiting for another player...";
+status.textContent="Waiting for another player..."+(data.mapName?" Map: "+data.mapName+".":"");
 }else{
 status.textContent="Waiting for Player 2...";
 }
@@ -1400,3 +1408,4 @@ if(window.DodgeBall)DodgeBall.init(socket);
 // Wire Coin Flip to the shared lobby socket (isolated from other games).
 if(window.CoinFlip)CoinFlip.init(socket);
 if(window.HiddenHunter)HiddenHunter.init(socket);
+if(window.HiddenHunterEditor)HiddenHunterEditor.init(socket);
