@@ -437,6 +437,7 @@
         });
       }
     }
+    if ((!data.map || !data.map.w) && state && state.map) data.map = state.map;
     if (state) prev = state;
     state = data;
     state._recvAt = Date.now();
@@ -570,105 +571,94 @@
     return true;
   }
 
-  function drawPropLayout(ctx, o) {
-    const layout = PROP_LAYOUT[o.kind];
+  function drawPropLayoutAt(ctx, kind, x, y, w, h) {
+    const layout = PROP_LAYOUT[kind];
     if (!layout) return false;
     for (let i = 0; i < layout.length; i++) {
       if (!spriteReady(loadImg(PROP_SRC[layout[i][0]]))) return false;
     }
-    const p = worldToScreen(ctx, o.x, o.y);
     for (let i = 0; i < layout.length; i++) {
       const cell = layout[i];
-      drawPropSprite(ctx, cell[0], p.x + cell[1] * o.w, p.y + cell[2] * o.h, cell[3] * o.w, cell[4] * o.h);
+      drawPropSprite(ctx, cell[0], x + cell[1] * w, y + cell[2] * h, cell[3] * w, cell[4] * h);
     }
     return true;
   }
 
+  function visualAabb(o) {
+    const s = o.scale > 0 ? o.scale : 1;
+    const hw = (o.w * s) / 2;
+    const hh = (o.h * s) / 2;
+    const rad = ((o.rotation || 0) * Math.PI) / 180;
+    const c = Math.abs(Math.cos(rad));
+    const sn = Math.abs(Math.sin(rad));
+    const cx = o.x + o.w / 2;
+    const cy = o.y + o.h / 2;
+    const aw = hw * c + hh * sn;
+    const ah = hw * sn + hh * c;
+    return { x: cx - aw, y: cy - ah, w: aw * 2, h: ah * 2 };
+  }
+
   function drawObstacle(ctx, o) {
-    if (o.x + o.w < cam.x - 40 || o.y + o.h < cam.y - 40) return;
-    if (o.x > cam.x + cam.viewW + 40 || o.y > cam.y + cam.viewH + 40) return;
-    const p = worldToScreen(ctx, o.x, o.y);
-    if (drawPropLayout(ctx, o)) {
+    const bounds = visualAabb(o);
+    if (bounds.x + bounds.w < cam.x - 40 || bounds.y + bounds.h < cam.y - 40) return;
+    if (bounds.x > cam.x + cam.viewW + 40 || bounds.y > cam.y + cam.viewH + 40) return;
+    const s = o.scale > 0 ? o.scale : 1;
+    const dw = o.w * s;
+    const dh = o.h * s;
+    const p = worldToScreen(ctx, o.x + o.w / 2, o.y + o.h / 2);
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    if (o.rotation) ctx.rotate((o.rotation * Math.PI) / 180);
+    const x = -dw / 2;
+    const y = -dh / 2;
+    if (drawPropLayoutAt(ctx, o.kind, x, y, dw, dh)) {
       if (o.label) {
         ctx.fillStyle = "rgba(255,240,210,.88)";
         ctx.font = "10px Arial";
         ctx.textAlign = "center";
-        ctx.fillText(o.label, p.x + o.w / 2, p.y - 6);
+        ctx.fillText(o.label, 0, y - 6);
       }
+      ctx.restore();
       return;
     }
-    if (o.kind === "barrels") {
-      ctx.fillStyle = "#9a2b2b";
-      ctx.fillRect(p.x, p.y, o.w, o.h);
-      ctx.fillStyle = "#c43c3c";
-      ctx.beginPath(); ctx.arc(p.x + 24, p.y + 36, 20, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.arc(p.x + 70, p.y + 36, 20, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = "#e8e8e8";
-      ctx.fillRect(p.x + 10, p.y + 28, 28, 4);
-      ctx.fillRect(p.x + 56, p.y + 28, 28, 4);
-    } else if (o.kind === "crates") {
-      ctx.fillStyle = "#8a6232";
-      ctx.fillRect(p.x, p.y, o.w, o.h);
-      ctx.strokeStyle = "#5c3d18";
-      ctx.strokeRect(p.x + 6, p.y + 6, o.w / 2 - 10, o.h / 2 - 10);
-      ctx.strokeRect(p.x + o.w / 2, p.y + o.h / 2, o.w / 2 - 8, o.h / 2 - 8);
-    } else if (o.kind === "machine") {
-      ctx.fillStyle = "#3a4658";
-      ctx.fillRect(p.x, p.y, o.w, o.h);
-      ctx.fillStyle = "#6ad0ff";
-      ctx.fillRect(p.x + 20, p.y + 24, 50, 18);
-      ctx.fillStyle = "#222";
-      ctx.fillRect(p.x + 90, p.y + 50, 110, 80);
-    } else if (o.kind === "pillar") {
-      ctx.fillStyle = "#6b7280";
-      ctx.fillRect(p.x, p.y, o.w, o.h);
-    } else if (o.kind === "door") {
-      ctx.fillStyle = "#4a3020";
-      ctx.fillRect(p.x, p.y, o.w, o.h);
-      ctx.fillStyle = "#c9a227";
-      ctx.fillRect(p.x + o.w - 22, p.y + 10, 8, 8);
-    } else if (o.kind === "vehicle") {
-      ctx.fillStyle = "#c9a227";
-      ctx.fillRect(p.x, p.y + 20, o.w, o.h - 28);
-      ctx.fillStyle = "#222";
-      ctx.beginPath(); ctx.arc(p.x + 40, p.y + o.h - 8, 16, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.arc(p.x + o.w - 40, p.y + o.h - 8, 16, 0, Math.PI * 2); ctx.fill();
-    } else if (o.kind === "shelves") {
-      ctx.fillStyle = "#5a4630";
-      ctx.fillRect(p.x, p.y, o.w, o.h);
-      ctx.fillStyle = "#2b2116";
-      ctx.fillRect(p.x + 8, p.y + 12, o.w - 16, 8);
-      ctx.fillRect(p.x + 8, p.y + 36, o.w - 16, 8);
-    } else if (o.kind === "table") {
-      ctx.fillStyle = "#6e4b2a";
-      ctx.fillRect(p.x, p.y, o.w, o.h);
-    } else if (o.kind === "container") {
-      ctx.fillStyle = "#2f6b4f";
-      ctx.fillRect(p.x, p.y, o.w, o.h);
-      ctx.strokeStyle = "#1c4030";
-      ctx.strokeRect(p.x + 8, p.y + 8, o.w - 16, o.h - 16);
-    } else if (o.kind === "window") {
-      ctx.fillStyle = "#2a3344";
-      ctx.fillRect(p.x, p.y, o.w, o.h);
-      ctx.fillStyle = "rgba(140,190,220,.35)";
-      ctx.fillRect(p.x + 4, p.y + 10, o.w - 8, 36);
-      ctx.fillRect(p.x + 4, p.y + 54, o.w - 8, 36);
-      ctx.fillRect(p.x + 4, p.y + 98, o.w - 8, 30);
-    } else if (o.kind === "boxes") {
-      ctx.fillStyle = "#7a5a2e";
-      ctx.fillRect(p.x, p.y, o.w, o.h);
-      ctx.fillStyle = "#c4a36a";
-      ctx.fillRect(p.x + 8, p.y + 8, o.w - 16, 18);
-    } else {
-      ctx.fillStyle = "#445";
-      ctx.fillRect(p.x, p.y, o.w, o.h);
-    }
+    ctx.fillStyle = "#445";
+    ctx.fillRect(x, y, dw, dh);
     if (o.label) {
       ctx.fillStyle = "rgba(255,240,210,.88)";
       ctx.font = "10px Arial";
       ctx.textAlign = "center";
-      ctx.fillText(o.label, p.x + o.w / 2, p.y - 6);
+      ctx.fillText(o.label, 0, y - 6);
     }
+    ctx.restore();
+  }
+
+  function drawMapText(ctx, t) {
+    if (!t || !t.text) return;
+    const pad = (t.size || 18) + 20;
+    if (t.x < cam.x - pad || t.y < cam.y - pad || t.x > cam.x + cam.viewW + pad || t.y > cam.y + cam.viewH + pad) return;
+    const p = worldToScreen(ctx, t.x, t.y);
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    if (t.rotation) ctx.rotate((t.rotation * Math.PI) / 180);
+    ctx.globalAlpha = Math.max(0, Math.min(1, t.opacity == null ? 1 : t.opacity));
+    ctx.fillStyle = "rgba(255,240,210,.95)";
+    ctx.font = "bold " + (t.size || 18) + "px Arial";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(t.text, 0, 0);
+    ctx.restore();
+  }
+
+  function drawLayered(ctx, items, drawOne) {
+    const low = [];
+    const high = [];
+    (items || []).forEach((item) => {
+      if ((item.layer == null ? 6 : item.layer) < 5) low.push(item);
+      else high.push(item);
+    });
+    low.sort((a, b) => (a.layer || 0) - (b.layer || 0));
+    high.sort((a, b) => (a.layer || 0) - (b.layer || 0));
+    return { low, high, drawOne };
   }
 
   function playerMoving(p, isMe) {
@@ -869,7 +859,7 @@
   function draw() {
     if (!hhCanvas || !state) return;
     const ctx = hhCanvas.getContext("2d");
-    const map = state.map || { w: 2360, h: 1520, obstacles: [] };
+    const map = state.map || { w: 2360, h: 1520, obstacles: [], texts: [] };
     const t = interpT();
     const livePlayers = (state.players || []).map((p) => {
       const old = prev && (prev.players || []).find((o) => o.id === p.id);
@@ -915,7 +905,17 @@
     ctx.lineWidth = 16;
     const origin = worldToScreen(ctx, 8, 8);
     ctx.strokeRect(origin.x, origin.y, map.w - 16, map.h - 16);
-    (map.obstacles || []).forEach((o) => drawObstacle(ctx, o));
+    const layeredProps = drawLayered(ctx, map.obstacles);
+    const layeredText = drawLayered(ctx, map.texts);
+    layeredProps.low.forEach((o) => drawObstacle(ctx, o));
+    layeredText.low.forEach((t) => drawMapText(ctx, t));
+    if (myRole === "tracker" && state.monster) {
+      const oldM = prev && prev.monster;
+      drawMonster(ctx, interpPos(oldM, state.monster, t) || state.monster);
+    }
+    livePlayers.forEach((p) => drawPlayer(ctx, p, p.id === socket.id));
+    layeredProps.high.forEach((o) => drawObstacle(ctx, o));
+    layeredText.high.forEach((t) => drawMapText(ctx, t));
     (state.impacts || []).forEach((i) => {
       const p = worldToScreen(ctx, i.x, i.y);
       ctx.fillStyle = i.kind === "hit" ? "rgba(255,200,80,.7)" : "rgba(200,200,200,.45)";
@@ -940,11 +940,6 @@
         ctx.stroke();
       });
     }
-    if (myRole === "tracker" && state.monster) {
-      const oldM = prev && prev.monster;
-      drawMonster(ctx, interpPos(oldM, state.monster, t) || state.monster);
-    }
-    livePlayers.forEach((p) => drawPlayer(ctx, p, p.id === socket.id));
     const fog = ctx.createRadialGradient(vw / 2, vh / 2, vw * 0.28, vw / 2, vh / 2, vw * 0.78);
     fog.addColorStop(0, "rgba(0,0,0,0)");
     fog.addColorStop(1, "rgba(8,4,6,.42)");
