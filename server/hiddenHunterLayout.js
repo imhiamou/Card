@@ -46,7 +46,7 @@ const SPAWN_PADS = [
 const LANDMARKS = [
   prop("eastMachine", "machine", 1472, 48, 200, 160, "EAST MACHINE"),
   prop("eastPillar", "pillar", 1748, 220, 48, 48, "EAST PILLAR"),
-  prop("southVehicle", "vehicle", 80, 1024, 210, 90, "SOUTH VEHICLE"),
+  prop("southVehicle", "forklift", 80, 1024, 210, 90, "FORKLIFT"),
   prop("southPallet", "pallet", 460, 1040, 140, 96, "SOUTH PALLET"),
   prop("southContainer", "container", 760, 1052, 160, 74, "LOADING CONTAINER"),
   prop("southShelves", "shelves", 1060, 1016, 200, 60, "SOUTH SHELVES"),
