@@ -30,7 +30,7 @@ Only files copied into this repository are used at runtime. Nothing is loaded fr
   - `assets/hidden-hunter/environment/props/industrial/grate.png` (tile 465)
   - `assets/hidden-hunter/environment/props/industrial/debris.png` (tile 289)
 
-The ground is still the original procedural floor. These sprites sit on that floor in the existing prop locations.
+The ground is still the original procedural floor. The dock layout reuses these same sprites. No other art pack is used.
 
 ## Combat audio
 
