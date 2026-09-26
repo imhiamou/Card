@@ -1,7 +1,7 @@
 # Hidden Hunter assets
 
 The ground and border are the original procedural canvas drawing, tiled across the larger map.
-Prop sprites are Kenney CC0 top-down art. See `ASSET_CREDITS.md`.
+Prop sprites are all from Kenney's Top-down Shooter pack (CC0). See `ASSET_CREDITS.md`.
 
 Character and monster sprites are third-party assets copied into this
 repo. They are not hotlinked at runtime.
@@ -11,8 +11,7 @@ repo. They are not hotlinked at runtime.
 | Hunter body and feet (`player/hunter/`) | Riley Gombart | Animated Top Down Survivor (`Top_Down_Survivor`, rifle idle/move and feet idle/walk) | CC-BY 3.0 | https://opengameart.org/content/animated-top-down-survivor-player |
 | Tracker body (`player/tracker/`) | Riley Gombart | Animated Top Down Survivor (`Top_Down_Survivor`, handgun idle/move/shoot) | CC-BY 3.0 | https://opengameart.org/content/animated-top-down-survivor-player |
 | Monster (`monster/zombie_idle_*`, `zombie_move_*`, `zombie_attack_*`) | Riley Gombart (ChessMasterRiley) | Animated Top Down Zombie (`tds_zombie.zip`, files exported as `skeleton-*`) | CC0 1.0 | https://opengameart.org/content/animated-top-down-zombie |
-| Barrels, crates, tanks, barricades, sandbags (`environment/props/`) | Kenney Vleugels | Top-down Tanks Redux (`barrelRed_top`, `barrelRust_top`, `barrelGreen_top`, `barrelBlack_top`, `crateWood`, `crateMetal`, `tank_sand`, `tank_dark`, `tank_green`, `barricadeMetal`, `barricadeWood`, `sandbagBrown`) | CC0 1.0 | https://opengameart.org/content/top-down-tanks-redux |
-| Table, shelves, machine, door, window (`environment/props/`) | Kenney Vleugels | Top-down Shooter (tiles 180, 166, 342, 436, 433) | CC0 1.0 | https://kenney.nl/assets/top-down-shooter |
+| Shelves, tables, crates, barrels, machines, pillars, containers, forklift, vehicle, pallet, door, window (`environment/props/`) | Kenney Vleugels | Top-down Shooter (tiles 166, 171, 180, 197, 206, 224, 289, 333, 342, 359, 386, 433, 436, 456, 465, 474, 476, 492) | CC0 1.0 | https://kenney.nl/assets/top-down-shooter |
 | Gunshot (`audio/weapons/gunshot`) | rubberduck | 25 CC0 bang / firework SFX (`shot_03.ogg`) | CC0 1.0 | https://opengameart.org/content/25-cc0-bang-firework-sfx |
 | Taser fire (`audio/taser/taser-fire`) | Kenney Vleugels | Sci-fi Sounds (`laserSmall_000.ogg`) | CC0 1.0 | https://kenney.nl/assets/sci-fi-sounds |
 | Taser hit (`audio/taser/taser-hit`) | Kenney Vleugels | Sci-fi Sounds (`laserSmall_002.ogg`) | CC0 1.0 | https://kenney.nl/assets/sci-fi-sounds |

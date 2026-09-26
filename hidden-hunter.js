@@ -132,112 +132,83 @@
     return frames;
   }
   // Kenney CC0 top-down sprites. Drawn inside the existing obstacle boxes.
+  // One pack only: Kenney Top-down Shooter. Every prop is a tile from that sheet.
   const PROP_SRC = {
-    barrelRed: "assets/hidden-hunter/environment/props/barrels/barrel-red-top.png",
-    barrelRust: "assets/hidden-hunter/environment/props/barrels/barrel-rust-top.png",
-    crateWood: "assets/hidden-hunter/environment/props/crates/crate-wood.png",
-    crateMetal: "assets/hidden-hunter/environment/props/crates/crate-metal.png",
-    tableTop: "assets/hidden-hunter/environment/props/furniture/table-top.png",
-    shelf: "assets/hidden-hunter/environment/props/furniture/shelf-panel.png",
-    machine: "assets/hidden-hunter/environment/props/industrial/machine-panel.png",
-    pillar: "assets/hidden-hunter/environment/props/industrial/barricade-metal.png",
-    tank: "assets/hidden-hunter/environment/props/industrial/tank-sand.png",
-    tankDark: "assets/hidden-hunter/environment/props/industrial/tank-dark.png",
-    tankGreen: "assets/hidden-hunter/environment/props/industrial/tank-green.png",
-    barrelGreen: "assets/hidden-hunter/environment/props/barrels/barrel-green-top.png",
-    barrelBlack: "assets/hidden-hunter/environment/props/barrels/barrel-black-top.png",
-    pillarWood: "assets/hidden-hunter/environment/props/industrial/barricade-wood.png",
-    sandbag: "assets/hidden-hunter/environment/props/industrial/sandbag.png",
-    door: "assets/hidden-hunter/environment/props/industrial/door-slab.png",
-    window: "assets/hidden-hunter/environment/props/industrial/window-frame.png"
+    barrel: "assets/hidden-hunter/environment/props/barrels/barrel-orange.png",
+    barrelTan: "assets/hidden-hunter/environment/props/barrels/barrel-tan.png",
+    barrelMetal: "assets/hidden-hunter/environment/props/barrels/barrel-metal.png",
+    crate: "assets/hidden-hunter/environment/props/crates/crate.png",
+    crateSide: "assets/hidden-hunter/environment/props/crates/crate-side.png",
+    table: "assets/hidden-hunter/environment/props/furniture/table.png",
+    shelf: "assets/hidden-hunter/environment/props/furniture/shelf.png",
+    machine: "assets/hidden-hunter/environment/props/industrial/machine.png",
+    console: "assets/hidden-hunter/environment/props/industrial/console.png",
+    container: "assets/hidden-hunter/environment/props/industrial/container.png",
+    pillar: "assets/hidden-hunter/environment/props/industrial/pillar.png",
+    post: "assets/hidden-hunter/environment/props/industrial/post.png",
+    door: "assets/hidden-hunter/environment/props/industrial/door.png",
+    window: "assets/hidden-hunter/environment/props/industrial/window.png",
+    forklift: "assets/hidden-hunter/environment/props/industrial/forklift.png",
+    vehicle: "assets/hidden-hunter/environment/props/industrial/vehicle.png",
+    pallet: "assets/hidden-hunter/environment/props/industrial/pallet.png",
+    grate: "assets/hidden-hunter/environment/props/industrial/grate.png",
+    debris: "assets/hidden-hunter/environment/props/industrial/debris.png"
   };
   // x, y, w, h are fractions of the obstacle. Each sprite keeps its own aspect.
   const PROP_LAYOUT = {
     barrels: [
-      ["barrelRed", 0, 0.06, 0.58, 0.88],
-      ["barrelRust", 0.42, 0.06, 0.58, 0.88]
+      ["barrel", 0.02, 0.04, 0.48, 0.92],
+      ["barrel", 0.5, 0.04, 0.48, 0.92]
     ],
-    crates: [
-      ["crateWood", 0, 0, 0.36, 0.52],
-      ["crateMetal", 0.32, 0, 0.36, 0.52],
-      ["crateWood", 0.64, 0, 0.36, 0.52],
-      ["crateMetal", 0, 0.48, 0.36, 0.52],
-      ["crateWood", 0.32, 0.48, 0.36, 0.52],
-      ["crateMetal", 0.64, 0.48, 0.36, 0.52]
-    ],
-    boxes: [
-      ["crateWood", 0, 0, 0.58, 0.72],
-      ["crateMetal", 0.4, 0.28, 0.58, 0.72]
-    ],
-    table: [
-      ["tableTop", 0, 0, 0.52, 1],
-      ["tableTop", 0.48, 0, 0.52, 1]
-    ],
-    shelves: [
-      ["shelf", 0, 0, 0.36, 1],
-      ["shelf", 0.32, 0, 0.36, 1],
-      ["shelf", 0.64, 0, 0.36, 1]
-    ],
-    machine: [
-      ["machine", 0, 0, 0.52, 0.55],
-      ["machine", 0.48, 0, 0.52, 0.55],
-      ["machine", 0, 0.48, 0.52, 0.52],
-      ["crateWood", 0.5, 0.42, 0.28, 0.36],
-      ["barrelRed", 0.72, 0.5, 0.26, 0.42]
-    ],
-    container: [
-      ["crateMetal", 0, 0.08, 0.36, 0.84],
-      ["crateMetal", 0.32, 0.08, 0.36, 0.84],
-      ["crateMetal", 0.64, 0.08, 0.36, 0.84]
-    ],
-    door: [["door", 0, 0, 1, 1]],
-    window: [
-      ["window", 0, 0, 1, 0.52],
-      ["window", 0, 0.48, 1, 0.52]
-    ],
-    pillar: [["pillar", 0, 0, 1, 1]],
-    vehicle: [
-      ["crateWood", 0, 0.12, 0.24, 0.76],
-      ["tank", 0.22, 0.02, 0.4, 0.96],
-      ["crateMetal", 0.6, 0.12, 0.22, 0.76],
-      ["barrelRust", 0.8, 0.16, 0.2, 0.7]
-    ],
-    vehicleDark: [
-      ["tankDark", 0.02, 0.04, 0.62, 0.92],
-      ["crateMetal", 0.62, 0.16, 0.36, 0.7]
-    ],
-    vehicleGreen: [
-      ["tankGreen", 0.04, 0.04, 0.7, 0.92],
-      ["barrelGreen", 0.68, 0.2, 0.3, 0.62]
-    ],
-    pillarWood: [["pillarWood", 0, 0, 1, 1]],
     barrelsGreen: [
-      ["barrelGreen", 0, 0.06, 0.58, 0.88],
-      ["barrelGreen", 0.42, 0.06, 0.58, 0.88]
+      ["barrelTan", 0.02, 0.04, 0.48, 0.92],
+      ["barrelTan", 0.5, 0.04, 0.48, 0.92]
     ],
     barrelsBlack: [
-      ["barrelBlack", 0, 0.06, 0.58, 0.88],
-      ["barrelRust", 0.42, 0.06, 0.58, 0.88]
+      ["barrelMetal", 0.02, 0.04, 0.48, 0.92],
+      ["barrelMetal", 0.5, 0.04, 0.48, 0.92]
     ],
-    pallet: [
-      ["crateWood", 0, 0, 0.52, 0.52],
-      ["crateMetal", 0.48, 0, 0.52, 0.52],
-      ["crateWood", 0.08, 0.46, 0.52, 0.52],
-      ["crateMetal", 0.46, 0.46, 0.52, 0.52]
+    crates: [
+      ["crate", 0.02, 0.02, 0.48, 0.48],
+      ["crateSide", 0.5, 0.02, 0.48, 0.48],
+      ["crateSide", 0.02, 0.5, 0.48, 0.48],
+      ["crate", 0.5, 0.5, 0.48, 0.48]
+    ],
+    boxes: [
+      ["crate", 0.04, 0.06, 0.55, 0.88],
+      ["crateSide", 0.42, 0.2, 0.54, 0.74]
+    ],
+    table: [["table", 0.04, 0.02, 0.92, 0.96]],
+    shelves: [
+      ["shelf", 0, 0, 0.34, 1],
+      ["shelf", 0.33, 0, 0.34, 1],
+      ["shelf", 0.66, 0, 0.34, 1]
+    ],
+    machine: [
+      ["machine", 0.02, 0.02, 0.48, 0.48],
+      ["console", 0.5, 0.02, 0.48, 0.48],
+      ["machine", 0.02, 0.5, 0.48, 0.48],
+      ["machine", 0.5, 0.5, 0.48, 0.48]
     ],
     generator: [
-      ["machine", 0, 0, 0.52, 0.62],
-      ["machine", 0.48, 0, 0.52, 0.62],
-      ["barrelRed", 0.62, 0.55, 0.34, 0.42]
+      ["console", 0.06, 0.04, 0.88, 0.62],
+      ["machine", 0.1, 0.58, 0.8, 0.38]
     ],
-    conveyor: [
-      ["shelf", 0, 0, 0.22, 1],
-      ["shelf", 0.2, 0, 0.22, 1],
-      ["shelf", 0.4, 0, 0.22, 1],
-      ["shelf", 0.6, 0, 0.22, 1],
-      ["shelf", 0.78, 0, 0.22, 1]
+    container: [
+      ["container", 0.02, 0.08, 0.48, 0.84],
+      ["container", 0.5, 0.08, 0.48, 0.84]
     ],
-    sandbag: [["sandbag", 0, 0, 1, 1]]
+    door: [["door", 0, 0, 1, 1]],
+    window: [["window", 0, 0, 1, 1]],
+    pillar: [["pillar", 0, 0, 1, 1]],
+    pillarWood: [["post", 0.08, 0, 0.84, 1]],
+    vehicle: [["vehicle", 0.02, 0.02, 0.96, 0.96]],
+    forklift: [["forklift", 0.02, 0.02, 0.96, 0.96]],
+    vehicleDark: [["vehicle", 0.02, 0.02, 0.96, 0.96]],
+    vehicleGreen: [["forklift", 0.02, 0.02, 0.96, 0.96]],
+    pallet: [["pallet", 0.02, 0.08, 0.96, 0.84]],
+    conveyor: [["grate", 0, 0.15, 1, 0.7]],
+    sandbag: [["debris", 0.05, 0.05, 0.9, 0.9]]
   };
 
   const SPRITE = {

@@ -2,40 +2,35 @@
 
 Only files copied into this repository are used at runtime. Nothing is loaded from a third-party site during play.
 
-## Kenney — Top-down Tanks Redux
-
-- Source: https://opengameart.org/content/top-down-tanks-redux
-- Creator: Kenney Vleugels (www.kenney.nl)
-- License: CC0 1.0 (public domain). The pack's `License.txt` states Creative Commons Zero.
-- Files used:
-  - `assets/hidden-hunter/environment/props/barrels/barrel-red-top.png` (`barrelRed_top`)
-  - `assets/hidden-hunter/environment/props/barrels/barrel-rust-top.png` (`barrelRust_top`)
-  - `assets/hidden-hunter/environment/props/barrels/barrel-green-top.png` (`barrelGreen_top`)
-  - `assets/hidden-hunter/environment/props/barrels/barrel-black-top.png` (`barrelBlack_top`)
-  - `assets/hidden-hunter/environment/props/crates/crate-wood.png` (`crateWood`)
-  - `assets/hidden-hunter/environment/props/crates/crate-metal.png` (`crateMetal`)
-  - `assets/hidden-hunter/environment/props/industrial/tank-sand.png` (`tank_sand`)
-  - `assets/hidden-hunter/environment/props/industrial/tank-dark.png` (`tank_dark`)
-  - `assets/hidden-hunter/environment/props/industrial/tank-green.png` (`tank_green`)
-  - `assets/hidden-hunter/environment/props/industrial/barricade-metal.png` (`barricadeMetal`)
-  - `assets/hidden-hunter/environment/props/industrial/barricade-wood.png` (`barricadeWood`)
-  - `assets/hidden-hunter/environment/props/industrial/sandbag.png` (`sandbagBrown`)
-
 ## Kenney — Top-down Shooter
 
-- Source: https://kenney.nl/assets/top-down-shooter
+- Pack name: Top-down Shooter
 - Creator: Kenney Vleugels (www.kenney.nl)
+- Source: https://kenney.nl/assets/top-down-shooter
 - License: CC0 1.0 (public domain). The pack's `License.txt` states Creative Commons Zero.
-- Files used, cropped from the tilesheet:
-  - `assets/hidden-hunter/environment/props/furniture/table-top.png` (tile 180)
-  - `assets/hidden-hunter/environment/props/furniture/shelf-panel.png` (tile 166)
-  - `assets/hidden-hunter/environment/props/industrial/machine-panel.png` (tile 342)
-  - `assets/hidden-hunter/environment/props/industrial/door-slab.png` (tile 436)
-  - `assets/hidden-hunter/environment/props/industrial/window-frame.png` (tile 433)
+- Every environmental prop is a tile from this one pack. Tanks Redux sprites are no longer used.
+- Files used:
+  - `assets/hidden-hunter/environment/props/barrels/barrel-orange.png` (tile 197)
+  - `assets/hidden-hunter/environment/props/barrels/barrel-tan.png` (tile 206)
+  - `assets/hidden-hunter/environment/props/barrels/barrel-metal.png` (tile 359)
+  - `assets/hidden-hunter/environment/props/crates/crate.png` (tile 171)
+  - `assets/hidden-hunter/environment/props/crates/crate-side.png` (tile 224)
+  - `assets/hidden-hunter/environment/props/furniture/table.png` (tile 180)
+  - `assets/hidden-hunter/environment/props/furniture/shelf.png` (tile 166)
+  - `assets/hidden-hunter/environment/props/industrial/machine.png` (tile 342)
+  - `assets/hidden-hunter/environment/props/industrial/console.png` (tile 333)
+  - `assets/hidden-hunter/environment/props/industrial/container.png` (tile 386)
+  - `assets/hidden-hunter/environment/props/industrial/pillar.png` (tile 492)
+  - `assets/hidden-hunter/environment/props/industrial/post.png` (tile 224)
+  - `assets/hidden-hunter/environment/props/industrial/door.png` (tile 436)
+  - `assets/hidden-hunter/environment/props/industrial/window.png` (tile 433)
+  - `assets/hidden-hunter/environment/props/industrial/forklift.png` (tile 476)
+  - `assets/hidden-hunter/environment/props/industrial/vehicle.png` (tile 474)
+  - `assets/hidden-hunter/environment/props/industrial/pallet.png` (tile 456)
+  - `assets/hidden-hunter/environment/props/industrial/grate.png` (tile 465)
+  - `assets/hidden-hunter/environment/props/industrial/debris.png` (tile 289)
 
-The ground is still the original procedural floor. These sprites are placed on that floor inside the larger facility.
-
-Kenney Furniture Kit only includes isometric renders, Factory Kit is 3D, and Pixel Platformer Industrial Expansion is side-view. Those do not match this top-down camera, so they are not used.
+The ground is still the original procedural floor. These sprites sit on that floor in the existing prop locations.
 
 ## Combat audio
 
