@@ -15,6 +15,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const LAYOUT = require("./hiddenHunterLayout");
+const library = require("./hhAssetLibrary");
 
 const EDITOR_NAME = "himou";
 const MIN_SIZE = 800;
@@ -217,11 +218,26 @@ function cleanObject(raw, errors) {
     errors.push("An object on the map is invalid.");
     return null;
   }
-  const kind = typeof raw.kind === "string" ? raw.kind : "";
-  const spec = assetByKind(kind);
-  if (!spec) {
-    errors.push("Unknown asset.");
-    return null;
+  const assetId = typeof raw.assetId === "string" ? raw.assetId : "";
+  let kind = "";
+  let spec = null;
+  if (assetId) {
+    if (!/^[a-z0-9_]{1,80}$/.test(assetId)) {
+      errors.push("Unknown asset.");
+      return null;
+    }
+    spec = library.get(assetId);
+    if (!spec) {
+      errors.push("Unknown asset.");
+      return null;
+    }
+  } else {
+    kind = typeof raw.kind === "string" ? raw.kind : "";
+    spec = assetByKind(kind);
+    if (!spec) {
+      errors.push("Unknown asset.");
+      return null;
+    }
   }
   const w = Number(raw.w);
   const h = Number(raw.h);
@@ -248,7 +264,6 @@ function cleanObject(raw, errors) {
   }
   const item = {
     id: cleanText(String(raw.id || ""), 40) || ("o" + crypto.randomBytes(4).toString("hex")),
-    kind,
     x,
     y,
     w,
@@ -259,6 +274,8 @@ function cleanObject(raw, errors) {
     solid: raw.solid !== false && spec.solid !== false ? true : raw.solid === true,
     label: cleanText(raw.label || "", 32)
   };
+  if (assetId) item.assetId = assetId;
+  else item.kind = kind;
   if (spec.solid === false && raw.solid !== true) item.solid = false;
   if (raw.solid === false) item.solid = false;
   if (finite(Number(raw.cw)) && Number(raw.cw) > 0 && Number(raw.cw) <= 2400) item.cw = Number(raw.cw);
@@ -494,7 +511,6 @@ function publicView(map) {
     obstacles: (map.objects || []).map((o) => {
       const item = {
         id: o.id,
-        kind: o.kind,
         x: o.x,
         y: o.y,
         w: o.w,
@@ -504,6 +520,13 @@ function publicView(map) {
         layer: o.layer,
         solid: o.solid !== false
       };
+      if (o.assetId) {
+        item.assetId = o.assetId;
+        const spec = library.get(o.assetId);
+        if (spec) item.src = spec.file;
+      } else {
+        item.kind = o.kind;
+      }
       if (o.label) item.label = o.label;
       if (finite(o.cw)) item.cw = o.cw;
       if (finite(o.ch)) item.ch = o.ch;
