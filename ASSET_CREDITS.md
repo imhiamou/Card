@@ -30,7 +30,60 @@ Only files copied into this repository are used at runtime. Nothing is loaded fr
   - `assets/hidden-hunter/environment/props/industrial/grate.png` (tile 465)
   - `assets/hidden-hunter/environment/props/industrial/debris.png` (tile 289)
 
-The ground is still the original procedural floor. The dock layout reuses these same sprites. No other art pack is used.
+The ground is still the original procedural floor. The default dock layout still uses only the sprites listed above. The map editor can also place sprites from the library below. Those sprites are not added to the default map on their own.
+
+## Map editor library
+
+Sprites in `assets/map-editor/` are stored in the repository. The game and the editor load those files. They are not requested from Kenney, OpenGameArt, or itch.io at runtime. A saved map stores an asset id, position, rotation, scale, layer, and collision flag. It does not embed the image.
+
+### Kenney — Top-down Shooter (editor tiles)
+
+- Pack name: Top-down Shooter
+- Creator: Kenney Vleugels (www.kenney.nl)
+- Website: https://kenney.nl/assets/top-down-shooter
+- License: CC0 1.0. The pack `License.txt` states Creative Commons Zero.
+- Files: `assets/map-editor/kenney/top-down-shooter/` (the pack's environment tiles). Character sheets and weapon icons from the same zip were not imported.
+
+### Kenney — Top-down Tanks Remastered
+
+- Pack name: Top-down Tanks Remastered
+- Creator: Kenney Vleugels (www.kenney.nl)
+- Website: https://kenney.nl/assets/top-down-tanks-remastered
+- License: CC0 1.0. The pack `License.txt` states Creative Commons Zero.
+- Files: `assets/map-editor/kenney/top-down-tanks/` (vehicles, top-down barrels, barricades, crates, and related props). Bullets, explosions, outlines, and side-view barrel sprites were not imported. Outdoor road tiles are in the library with warehouse style turned off.
+
+### Kenney — Map Pack
+
+- Pack name: Map Pack
+- Creator: Kenney Vleugels (www.kenney.nl)
+- Website: https://kenney.nl/assets/map-pack
+- License: CC0 1.0. The pack `License.txt` states Creative Commons Zero.
+- Files: `assets/map-editor/kenney/map-pack/`. These are separate terrain pieces. They do not replace the Hidden Hunter ground. Warehouse style leaves them hidden until that filter is turned off.
+
+### Screaming Brain Studios — Tiny Top Down Pack
+
+- Pack name: Tiny Top Down Pack
+- Creator: Screaming Brain Studios
+- Website: https://screamingbrainstudios.itch.io/tiny-top-down-pack
+- License: CC0 1.0. The pack `License.txt` states CC0 / public domain, and the itch.io page says the same.
+- Files: `assets/map-editor/screaming-brain/tiny-top-down/` (100 tiles, 32×32, cut from the pack sheet). Different pixel scale from the Kenney warehouse sprites, so warehouse style leaves them hidden until that filter is turned off.
+
+### OpenGameArt — Sci-fi Interior tiles
+
+- Pack name: Sci-fi Interior tiles
+- Creator: MDK
+- Website: https://opengameart.org/content/sci-fi-interior-tiles
+- License: CC0 1.0. The OpenGameArt license field links to Creative Commons Zero.
+- Files: `assets/map-editor/opengameart/sci-fi-interior/` (16×16 cells cut from `scifitiles-sheet.png`). Different pixel scale, so warehouse style leaves them hidden until that filter is turned off.
+
+### Reviewed and not imported
+
+These packs were checked and left out so the library does not mix in a different perspective or an unseparated sheet:
+
+- Tiny Platformer Pack, Screaming Brain Studios, https://screamingbrainstudios.itch.io/tiny-platformer-pack, CC0. Side-view platformer tiles.
+- Factory tileset, KeyserEX, https://opengameart.org/content/factory-tileset, CC0. Side-view factory tiles.
+- Modern city extension, Snabisch, https://opengameart.org/content/modern-city-extension, CC0. One unseparated town sheet in a different style.
+- Home Objects, Curt, https://opengameart.org/content/home-objects, CC0. One unseparated object sheet; the pieces did not cut into clean sprites.
 
 ## Combat audio
 

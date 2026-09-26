@@ -558,6 +558,20 @@
     return { x: x - cam.x, y: y - cam.y };
   }
 
+  function drawMapSprite(ctx, src, x, y, w, h) {
+    if (typeof src !== "string" || src.indexOf("assets/map-editor/") !== 0 || src.indexOf("..") !== -1) return false;
+    const im = loadImg(src);
+    if (!spriteReady(im)) return false;
+    const scale = Math.min(w / im.naturalWidth, h / im.naturalHeight);
+    const dw = im.naturalWidth * scale;
+    const dh = im.naturalHeight * scale;
+    const prev = ctx.imageSmoothingEnabled;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(im, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
+    ctx.imageSmoothingEnabled = prev;
+    return true;
+  }
+
   function drawPropSprite(ctx, key, x, y, w, h) {
     const im = loadImg(PROP_SRC[key]);
     if (!spriteReady(im)) return false;
@@ -611,6 +625,16 @@
     if (o.rotation) ctx.rotate((o.rotation * Math.PI) / 180);
     const x = -dw / 2;
     const y = -dh / 2;
+    if (o.src && drawMapSprite(ctx, o.src, x, y, dw, dh)) {
+      if (o.label) {
+        ctx.fillStyle = "rgba(255,240,210,.88)";
+        ctx.font = "10px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText(o.label, 0, y - 6);
+      }
+      ctx.restore();
+      return;
+    }
     if (drawPropLayoutAt(ctx, o.kind, x, y, dw, dh)) {
       if (o.label) {
         ctx.fillStyle = "rgba(255,240,210,.88)";

@@ -54,13 +54,53 @@
     vehicleGreen: "#d07028", barrels: "#9a2b2b", barrelsGreen: "#a08040", barrelsBlack: "#5a6268",
     pillar: "#8b939c", pillarWood: "#8a6232", door: "#4a3020", window: "#2a3344", sandbag: "#5a5040"
   };
-  const CATS = ["Structures", "Storage", "Industrial", "Furniture", "Vehicles", "Decoration"];
   const SPAWN_R = { hunter: 22, tracker: 22, monster: 26 };
+  const PAGE_SIZE = 48;
+  const CHIPS = [
+    ["all", "ALL"], ["favorites", "FAVORITES"], ["recent", "RECENT"],
+    ["wall", "WALLS"], ["floor", "FLOORS"], ["shelf", "SHELVES"], ["table", "TABLES"],
+    ["chair", "CHAIRS"], ["crate", "CRATES"], ["barrel", "BARRELS"], ["pallet", "PALLETS"],
+    ["container", "CONTAINERS"], ["machine", "MACHINES"], ["vehicle", "VEHICLES"],
+    ["pillar", "PILLARS"], ["pipe", "PIPES"], ["door", "DOORS"], ["furniture", "FURNITURE"],
+    ["decoration", "DECORATION"], ["industrial", "INDUSTRIAL"], ["terrain", "TERRAIN"],
+    ["tile", "TILES"], ["other", "OTHER"]
+  ];
+  const PRESET_PREVIEW = {
+    door: PROP_SRC.door, window: PROP_SRC.window, pillar: PROP_SRC.pillar, pillarWood: PROP_SRC.post,
+    shelves: PROP_SRC.shelf, crates: PROP_SRC.crate, boxes: PROP_SRC.crate, pallet: PROP_SRC.pallet,
+    container: PROP_SRC.container, machine: PROP_SRC.machine, generator: PROP_SRC.console,
+    conveyor: PROP_SRC.grate, table: PROP_SRC.table, forklift: PROP_SRC.forklift,
+    vehicle: PROP_SRC.vehicle, vehicleDark: PROP_SRC.vehicle, vehicleGreen: PROP_SRC.forklift,
+    barrels: PROP_SRC.barrel, barrelsGreen: PROP_SRC.barrelTan, barrelsBlack: PROP_SRC.barrelMetal,
+    sandbag: PROP_SRC.debris
+  };
+  const PRESET_CAT = {
+    door: "door", window: "window", pillar: "pillar", pillarWood: "pillar",
+    shelves: "shelf", crates: "crate", boxes: "crate", pallet: "pallet", container: "container",
+    machine: "machine", generator: "machine", conveyor: "pipe", table: "table",
+    forklift: "vehicle", vehicle: "vehicle", vehicleDark: "vehicle", vehicleGreen: "vehicle",
+    barrels: "barrel", barrelsGreen: "barrel", barrelsBlack: "barrel", sandbag: "decoration"
+  };
+  const GROUP_NAME = {
+    Structures: "Structure", Storage: "Storage", Industrial: "Industrial",
+    Furniture: "Furniture", Vehicles: "Vehicle", Decoration: "Decoration"
+  };
 
   const IMG = Object.create(null);
   let socket = null;
   let accessName = "";
   let catalog = [];
+  let library = [];
+  let libraryById = Object.create(null);
+  let libraryReady = null;
+  let query = "";
+  let chip = "all";
+  let sourceFilter = "all";
+  let styleFilter = "all";
+  let groupFilter = "all";
+  let licenseFilter = "all";
+  let warehouseOnly = true;
+  let page = 0;
   let mapList = [];
   let selectedMapId = "default";
   let doc = null;
@@ -94,6 +134,123 @@
   }
 
   function ready(im) { return im && im.complete && im.naturalWidth > 0; }
+
+  function loadLibrary() {
+    if (libraryReady) return libraryReady;
+    libraryReady = fetch("assets/map-editor/catalog.json")
+      .then((response) => response.json())
+      .then((data) => {
+        library = data.assets || [];
+        libraryById = Object.create(null);
+        library.forEach((item) => { libraryById[item.id] = item; });
+      })
+      .catch(() => { library = []; });
+    return libraryReady;
+  }
+
+  function readStore(key) {
+    try {
+      const value = JSON.parse(localStorage.getItem(key) || "[]");
+      return Array.isArray(value) ? value.filter((item) => typeof item === "string") : [];
+    } catch (err) {
+      return [];
+    }
+  }
+
+  function favorites() { return readStore("hhEditorFavorites"); }
+
+  function recentIds() { return readStore("hhEditorRecent"); }
+
+  function toggleFavorite(id) {
+    const list = favorites().filter((item) => item !== id);
+    if (list.length === favorites().length) list.unshift(id);
+    localStorage.setItem("hhEditorFavorites", JSON.stringify(list.slice(0, 200)));
+  }
+
+  function rememberRecent(id) {
+    const list = [id].concat(recentIds().filter((item) => item !== id)).slice(0, 24);
+    localStorage.setItem("hhEditorRecent", JSON.stringify(list));
+  }
+
+  function presetEntries() {
+    return catalog.map((item) => ({
+      id: "kind:" + item.kind,
+      kind: item.kind,
+      preset: true,
+      name: item.name + " set",
+      family: "Existing set",
+      source: "Kenney",
+      pack: "Kenney Top-down Shooter",
+      sourceUrl: "https://kenney.nl/assets/top-down-shooter",
+      license: "CC0",
+      category: PRESET_CAT[item.kind] || "other",
+      group: GROUP_NAME[item.category] || "Decoration",
+      style: ["top-down", "clean-2d", "industrial"],
+      perspective: "top-down",
+      recommend: true,
+      tags: [item.kind, item.name.toLowerCase(), PRESET_CAT[item.kind] || ""],
+      width: item.w,
+      height: item.h,
+      file: PRESET_PREVIEW[item.kind] || "",
+      solid: item.solid !== false,
+      layer: item.layer
+    }));
+  }
+
+  function allEntries() {
+    return presetEntries().concat(library);
+  }
+
+  function entryById(id) {
+    if (!id) return null;
+    if (id.indexOf("kind:") === 0) return presetEntries().find((item) => item.id === id) || null;
+    return libraryById[id] || null;
+  }
+
+  function placeSize(spec) {
+    if (spec.preset) return { w: spec.width, h: spec.height };
+    const longest = Math.max(spec.width, spec.height);
+    if (longest >= 48) return { w: spec.width, h: spec.height };
+    const scale = 48 / longest;
+    return {
+      w: Math.max(8, Math.round(spec.width * scale)),
+      h: Math.max(8, Math.round(spec.height * scale))
+    };
+  }
+
+  function chipMatch(item) {
+    if (chip === "all" || chip === "favorites" || chip === "recent") return true;
+    if (chip === "furniture") return item.group === "Furniture" || item.category === "furniture" || (item.tags || []).indexOf("furniture") !== -1;
+    if (chip === "industrial") return item.group === "Industrial" || (item.tags || []).indexOf("industrial") !== -1;
+    if (item.category === chip) return true;
+    return (item.tags || []).indexOf(chip) !== -1;
+  }
+
+  function filteredEntries() {
+    const fav = Object.create(null);
+    favorites().forEach((id) => { fav[id] = true; });
+    const recent = recentIds();
+    const recentOrder = Object.create(null);
+    recent.forEach((id, index) => { recentOrder[id] = index; });
+    const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    let list = allEntries().filter((item) => {
+      if (warehouseOnly && !item.recommend) return false;
+      if (chip === "favorites" && !fav[item.id]) return false;
+      if (chip === "recent" && recentOrder[item.id] == null) return false;
+      if (!chipMatch(item)) return false;
+      if (sourceFilter === "other" && (item.source === "Kenney" || item.source === "OpenGameArt" || item.source === "itch.io")) return false;
+      if (sourceFilter !== "all" && sourceFilter !== "other" && item.source !== sourceFilter) return false;
+      if (licenseFilter !== "all" && item.license !== licenseFilter) return false;
+      if (styleFilter !== "all" && (item.style || []).indexOf(styleFilter) === -1) return false;
+      if (groupFilter !== "all" && item.group !== groupFilter) return false;
+      if (!terms.length) return true;
+      const hay = [item.name, item.family, item.category, item.group, item.pack, item.source, item.license, (item.tags || []).join(" ")].join(" ").toLowerCase();
+      return terms.every((term) => hay.indexOf(term) !== -1);
+    });
+    if (chip === "recent") list.sort((a, b) => recentOrder[a.id] - recentOrder[b.id]);
+    else list.sort((a, b) => (a.family || "").localeCompare(b.family || "") || (a.name || "").localeCompare(b.name || ""));
+    return list;
+  }
 
   function newId(prefix) {
     return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -240,27 +397,30 @@
     return { x: (sx - panX) / zoom, y: (sy - panY) / zoom };
   }
 
-  function placeObject(kind, world) {
-    const spec = catalog.find((item) => item.kind === kind);
+  function placeObject(id, world) {
+    const spec = entryById(id);
     if (!spec || !doc) return;
+    const size = placeSize(spec);
     pushUndo();
     const obj = {
       id: newId("o"),
-      kind: spec.kind,
-      x: snap(world.x - spec.w / 2),
-      y: snap(world.y - spec.h / 2),
-      w: spec.w,
-      h: spec.h,
+      x: snap(world.x - size.w / 2),
+      y: snap(world.y - size.h / 2),
+      w: size.w,
+      h: size.h,
       rotation: 0,
       scale: 1,
       layer: spec.layer,
       solid: spec.solid !== false,
       label: ""
     };
+    if (spec.preset) obj.kind = spec.kind;
+    else obj.assetId = spec.id;
     doc.objects.push(obj);
     selection = { type: "object", id: obj.id };
     tool = "select";
     armedKind = "";
+    rememberRecent(spec.id);
     fillProps();
     renderLibrary();
     setStatus("Placed " + spec.name);
@@ -346,7 +506,7 @@
       const rad = ((o.rotation || 0) * Math.PI) / 180;
       const aw = hw * Math.abs(Math.cos(rad)) + hh * Math.abs(Math.sin(rad));
       const ah = hw * Math.abs(Math.sin(rad)) + hh * Math.abs(Math.cos(rad));
-      if (c.x - aw < 0 || c.y - ah < 0 || c.x + aw > width || c.y + ah > height) names.push(o.kind);
+      if (c.x - aw < 0 || c.y - ah < 0 || c.x + aw > width || c.y + ah > height) names.push(o.assetId || o.kind);
     });
     doc.texts.forEach((t) => {
       if (t.x < 0 || t.y < 0 || t.x > width || t.y > height) names.push("text");
@@ -385,6 +545,16 @@
     panY = (ui.canvas.height - doc.height * zoom) / 2;
   }
 
+  function drawContained(ctx, im, x, y, w, h) {
+    if (!ready(im) || !im.naturalWidth || !im.naturalHeight) return false;
+    const sc = Math.min(w / im.naturalWidth, h / im.naturalHeight);
+    const dw = im.naturalWidth * sc;
+    const dh = im.naturalHeight * sc;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(im, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
+    return true;
+  }
+
   function drawSprite(ctx, key, x, y, w, h) {
     const im = loadImg(PROP_SRC[key]);
     if (!ready(im)) return false;
@@ -400,6 +570,21 @@
     const s = scaleOf(o);
     const dw = o.w * s;
     const dh = o.h * s;
+    if (o.assetId) {
+      const spec = libraryById[o.assetId];
+      const im = spec && spec.file ? loadImg(spec.file) : null;
+      if (!im || !drawContained(ctx, im, -dw / 2, -dh / 2, dw, dh)) {
+        ctx.fillStyle = "#667";
+        ctx.fillRect(-dw / 2, -dh / 2, dw, dh);
+      }
+      if (o.label) {
+        ctx.fillStyle = "rgba(255,240,210,.9)";
+        ctx.font = "10px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText(o.label, 0, -dh / 2 - 4);
+      }
+      return;
+    }
     const layout = PROP_LAYOUT[o.kind];
     let drew = false;
     if (layout) {
@@ -580,11 +765,14 @@
         + "<div class=\"row\">" + field("Opacity", "hheOp", text.opacity) + field("Layer", "hheLayer", text.layer) + "</div>"
         + "<button type=\"button\" id=\"hheDup\">Duplicate</button> <button type=\"button\" id=\"hheDel\">Delete</button>";
     } else {
-      const spec = catalog.find((item) => item.kind === obj.kind);
+      const spec = obj.assetId ? libraryById[obj.assetId] : catalog.find((item) => item.kind === obj.kind);
       const s = scaleOf(obj);
       const cw = obj.cw || obj.w;
       const ch = obj.ch || obj.h;
-      ui.props.innerHTML = "<h4>OBJECT</h4><p>Asset: " + (spec ? spec.name : obj.kind) + "</p>"
+      const meta = spec && spec.pack
+        ? "<p class=\"hheNote\">Source: " + spec.source + "<br>Pack: " + spec.pack + "<br>Style: " + (spec.style || []).join(", ") + "<br>License: " + spec.license + "<br>Category: " + spec.category + "</p>"
+        : (obj.kind ? "<p class=\"hheNote\">Source: Kenney<br>Pack: Kenney Top-down Shooter<br>License: CC0</p>" : "");
+      ui.props.innerHTML = "<h4>OBJECT</h4><p>Asset: " + (spec ? spec.name : (obj.assetId || obj.kind)) + "</p>" + meta
         + "<div class=\"row\">" + field("X", "hheX", Math.round(obj.x)) + field("Y", "hheY", Math.round(obj.y)) + "</div>"
         + "<div class=\"row\">" + field("Rotation", "hheRot", Math.round(obj.rotation || 0)) + field("Scale", "hheScale", s) + "</div>"
         + "<label class=\"hheCheck\"><input id=\"hheSolid\" type=\"checkbox\"" + (obj.solid !== false ? " checked" : "") + "> Collision</label>"
@@ -785,37 +973,108 @@
   }
 
   function renderLibrary() {
-    if (!ui.lib) return;
-    ui.lib.innerHTML = "";
-    CATS.forEach((cat) => {
-      const items = catalog.filter((item) => item.category === cat);
-      if (!items.length) return;
-      const title = document.createElement("h4");
-      title.textContent = cat.toUpperCase();
-      ui.lib.appendChild(title);
-      items.forEach((item) => {
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "hheAsset" + (tool === "place" && armedKind === item.kind ? " armed" : "");
-        btn.textContent = item.name;
-        btn.draggable = true;
-        btn.onclick = () => {
-          tool = "place";
-          armedKind = item.kind;
-          setStatus("Click the map to place " + item.name);
-          renderLibrary();
-        };
-        btn.addEventListener("dragstart", (ev) => {
-          ev.dataTransfer.setData("text/plain", item.kind);
-          tool = "place";
-          armedKind = item.kind;
-        });
-        ui.lib.appendChild(btn);
+    if (!ui.libScroll) return;
+    const kept = ui.libScroll.scrollTop;
+    const fav = Object.create(null);
+    favorites().forEach((id) => { fav[id] = true; });
+    if (ui.chips) {
+      ui.chips.querySelectorAll("button").forEach((btn) => {
+        btn.classList.toggle("armed", btn.getAttribute("data-chip") === chip);
       });
+    }
+    const list = filteredEntries();
+    const pages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
+    if (page >= pages) page = pages - 1;
+    if (page < 0) page = 0;
+    const slice = list.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+    const counts = Object.create(null);
+    list.forEach((item) => {
+      const key = (item.pack || "") + ":" + (item.family || "");
+      counts[key] = (counts[key] || 0) + 1;
     });
+    ui.libScroll.innerHTML = "";
+    const grid = document.createElement("div");
+    grid.className = "hheGrid";
+    let lastFamily = "";
+    if (!slice.length) {
+      const empty = document.createElement("p");
+      empty.className = "hheNote";
+      empty.textContent = library.length ? "No assets match these filters." : "The asset library is still loading.";
+      grid.appendChild(empty);
+    }
+    slice.forEach((item) => {
+      const familyKey = (item.pack || "") + ":" + (item.family || "");
+      if (item.family && item.family !== lastFamily && counts[familyKey] > 1) {
+        const heading = document.createElement("h4");
+        heading.className = "hheFamily";
+        heading.textContent = item.family.toUpperCase();
+        grid.appendChild(heading);
+      }
+      lastFamily = item.family || "";
+      const card = document.createElement("button");
+      card.type = "button";
+      card.className = "hheCard" + (tool === "place" && armedKind === item.id ? " armed" : "");
+      card.draggable = true;
+      const img = document.createElement("img");
+      img.alt = item.name;
+      img.src = item.file || "";
+      const name = document.createElement("span");
+      name.className = "hheCardName";
+      name.textContent = item.name;
+      const meta = document.createElement("span");
+      meta.className = "hheCardMeta";
+      meta.textContent = item.source + " · " + item.license;
+      const favBtn = document.createElement("span");
+      favBtn.className = "hheFav" + (fav[item.id] ? " on" : "");
+      favBtn.textContent = fav[item.id] ? "★" : "☆";
+      favBtn.title = "Favorite";
+      favBtn.onclick = (ev) => {
+        ev.stopPropagation();
+        ev.preventDefault();
+        toggleFavorite(item.id);
+        renderLibrary();
+      };
+      card.appendChild(img);
+      card.appendChild(favBtn);
+      card.appendChild(name);
+      card.appendChild(meta);
+      card.onclick = () => {
+        tool = "place";
+        armedKind = item.id;
+        setStatus("Click the map to place " + item.name);
+        renderLibrary();
+      };
+      card.addEventListener("dragstart", (ev) => {
+        ev.dataTransfer.setData("text/plain", item.id);
+        tool = "place";
+        armedKind = item.id;
+      });
+      grid.appendChild(card);
+    });
+    ui.libScroll.appendChild(grid);
+    const pager = document.createElement("div");
+    pager.className = "hhePager";
+    const prev = document.createElement("button");
+    prev.type = "button";
+    prev.textContent = "Prev";
+    prev.disabled = page <= 0;
+    prev.onclick = () => { page -= 1; ui.libScroll.scrollTop = 0; renderLibrary(); };
+    const label = document.createElement("span");
+    const from = list.length ? page * PAGE_SIZE + 1 : 0;
+    const to = Math.min(list.length, (page + 1) * PAGE_SIZE);
+    label.textContent = from + "–" + to + " of " + list.length;
+    const next = document.createElement("button");
+    next.type = "button";
+    next.textContent = "Next";
+    next.disabled = page >= pages - 1;
+    next.onclick = () => { page += 1; ui.libScroll.scrollTop = 0; renderLibrary(); };
+    pager.appendChild(prev);
+    pager.appendChild(label);
+    pager.appendChild(next);
+    ui.libScroll.appendChild(pager);
     const title = document.createElement("h4");
-    title.textContent = "CHARACTERS / GAME OBJECTS";
-    ui.lib.appendChild(title);
+    title.textContent = "SPAWNS";
+    ui.libScroll.appendChild(title);
     [["hunter", "Hunter spawn"], ["tracker", "Tracker spawn"], ["monster", "Monster spawn"]].forEach((pair) => {
       const btn = document.createElement("button");
       btn.type = "button";
@@ -827,12 +1086,13 @@
         setStatus("Click the map to move the " + pair[1].toLowerCase());
         renderLibrary();
       };
-      ui.lib.appendChild(btn);
+      ui.libScroll.appendChild(btn);
     });
     const note = document.createElement("p");
     note.className = "hheNote";
-    note.textContent = "Saved maps live on the game server. On Render they last only until the service restarts unless MAP_STORE_DIR is a persistent disk. Default Warehouse always remains available from the game itself.";
-    ui.lib.appendChild(note);
+    note.textContent = "Warehouse style shows Kenney sprites that match the current map. Turn it off to browse other CC0 packs. Nothing here is placed until you click the map. Saved maps store the asset id, not the image. On Render, saved maps last until the service restarts unless MAP_STORE_DIR is a persistent disk.";
+    ui.libScroll.appendChild(note);
+    ui.libScroll.scrollTop = kept;
   }
 
   function showModal(html) {
@@ -934,13 +1194,25 @@
       + "<button type=\"button\" id=\"hheTextBtn\">Text tool</button>"
       + "<span class=\"hheStatus\" id=\"hheStatus\"></span>"
       + "</div>"
-      + "<div class=\"hheBody\"><aside class=\"hheLib\" id=\"hheLib\"></aside><div class=\"hheStage\" id=\"hheStage\"><canvas id=\"hheCanvas\"></canvas></div><aside class=\"hheProps\" id=\"hheProps\"></aside></div>"
+      + "<div class=\"hheBody\"><aside class=\"hheLib\" id=\"hheLib\">"
+      + "<div class=\"hheLibHead\"><input id=\"hheSearch\" type=\"search\" placeholder=\"Search assets...\">"
+      + "<div id=\"hheChips\" class=\"hheChips\"></div>"
+      + "<div class=\"hheFilters\">"
+      + "<label>Source<select id=\"hheSource\"><option value=\"all\">All</option><option value=\"Kenney\">Kenney</option><option value=\"OpenGameArt\">OpenGameArt</option><option value=\"itch.io\">itch.io</option><option value=\"other\">Other</option></select></label>"
+      + "<label>License<select id=\"hheLicense\"><option value=\"all\">All</option><option value=\"CC0\">CC0</option></select></label>"
+      + "<label>Style<select id=\"hheStyle\"><option value=\"all\">All</option><option value=\"pixel\">Pixel</option><option value=\"clean-2d\">Clean 2D</option><option value=\"top-down\">Top-down</option><option value=\"industrial\">Industrial</option><option value=\"generic\">Generic</option></select></label>"
+      + "<label>Category<select id=\"hheGroup\"><option value=\"all\">All</option><option value=\"Furniture\">Furniture</option><option value=\"Industrial\">Industrial</option><option value=\"Storage\">Storage</option><option value=\"Vehicle\">Vehicle</option><option value=\"Structure\">Structure</option><option value=\"Decoration\">Decoration</option></select></label>"
+      + "<label class=\"hheCheck\"><input id=\"hheWarehouse\" type=\"checkbox\" checked> Warehouse style</label>"
+      + "</div></div><div class=\"hheLibScroll\" id=\"hheLibScroll\"></div></aside>"
+      + "<div class=\"hheStage\" id=\"hheStage\"><canvas id=\"hheCanvas\"></canvas></div><aside class=\"hheProps\" id=\"hheProps\"></aside></div>"
       + "<div class=\"hheModal hidden\" id=\"hheModal\"></div>";
     ui = {
       status: $("hheStatus"),
       width: $("hheW"),
       height: $("hheH"),
       lib: $("hheLib"),
+      libScroll: $("hheLibScroll"),
+      chips: $("hheChips"),
       props: $("hheProps"),
       stage: $("hheStage"),
       canvas: $("hheCanvas"),
@@ -973,6 +1245,21 @@
       renderLibrary();
     };
     ui.textInput.addEventListener("input", () => { textDraft = ui.textInput.value; });
+    CHIPS.forEach((pair) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = pair[1];
+      btn.setAttribute("data-chip", pair[0]);
+      btn.onclick = () => { chip = pair[0]; page = 0; renderLibrary(); };
+      ui.chips.appendChild(btn);
+    });
+    const resetPage = () => { page = 0; renderLibrary(); };
+    $("hheSearch").addEventListener("input", () => { query = $("hheSearch").value; resetPage(); });
+    $("hheSource").onchange = () => { sourceFilter = $("hheSource").value; resetPage(); };
+    $("hheLicense").onchange = () => { licenseFilter = $("hheLicense").value; resetPage(); };
+    $("hheStyle").onchange = () => { styleFilter = $("hheStyle").value; resetPage(); };
+    $("hheGroup").onchange = () => { groupFilter = $("hheGroup").value; resetPage(); };
+    $("hheWarehouse").onchange = () => { warehouseOnly = $("hheWarehouse").checked; resetPage(); };
     ui.canvas.addEventListener("pointerdown", onPointerDown);
     window.addEventListener("pointermove", onPointerMove);
     window.addEventListener("pointerup", onPointerUp);
@@ -981,8 +1268,8 @@
     ui.canvas.addEventListener("dragover", (e) => e.preventDefault());
     ui.canvas.addEventListener("drop", (e) => {
       e.preventDefault();
-      const kind = e.dataTransfer.getData("text/plain");
-      if (kind) placeObject(kind, eventWorld(e));
+      const id = e.dataTransfer.getData("text/plain");
+      if (id) placeObject(id, eventWorld(e));
     });
     window.addEventListener("keydown", onKey);
     window.addEventListener("resize", sizeCanvas);
@@ -1031,7 +1318,11 @@
     fitMap();
     if (raf) cancelAnimationFrame(raf);
     raf = requestAnimationFrame(loop);
-    setStatus("New map. Place assets, then save.");
+    setStatus("Loading asset library…");
+    loadLibrary().then(() => {
+      renderLibrary();
+      setStatus("New map. " + library.length + " library sprites. Warehouse style shows the matching Kenney set.");
+    });
   }
 
   function renderChoices() {
@@ -1075,8 +1366,11 @@
       ctx.save();
       ctx.translate(o.x + o.w / 2, o.y + o.h / 2);
       if (o.rotation) ctx.rotate((o.rotation * Math.PI) / 180);
-      ctx.fillStyle = KIND_COLOR[o.kind] || "#667";
-      ctx.fillRect((-o.w * s) / 2, (-o.h * s) / 2, o.w * s, o.h * s);
+      const im = o.src ? loadImg(o.src) : null;
+      if (!im || !drawContained(ctx, im, (-o.w * s) / 2, (-o.h * s) / 2, o.w * s, o.h * s)) {
+        ctx.fillStyle = KIND_COLOR[o.kind] || "#667";
+        ctx.fillRect((-o.w * s) / 2, (-o.h * s) / 2, o.w * s, o.h * s);
+      }
       ctx.restore();
     });
     (map.texts || []).forEach((t) => {
@@ -1092,6 +1386,7 @@
 
   function init(shared) {
     socket = shared;
+    loadLibrary();
     const enter = $("hhEditorEnter");
     const nameInput = $("hhEditorName");
     const msg = $("hhEditorMsg");
