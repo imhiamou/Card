@@ -7,10 +7,13 @@
  */
 
 const { randomInt } = require("crypto");
+const hhMaps = require("./hhMapStore");
 
-const LAYOUT = require("./hiddenHunterLayout");
-const MAP_W = LAYOUT.MAP_W;
-const MAP_H = LAYOUT.MAP_H;
+const DEFAULT_SNAP = hhMaps.snapshot("default");
+const DEFAULT_NAV = hhMaps.buildNav(DEFAULT_SNAP);
+const MAP_W = DEFAULT_SNAP.width;
+const MAP_H = DEFAULT_SNAP.height;
+const OBSTACLES = DEFAULT_SNAP.objects;
 const PLAYER_R = 22;
 const MONSTER_R = 26;
 const BULLET_R = 5;
@@ -51,31 +54,16 @@ const RETARGET_MS = 3800;
 const PAUSE_MIN_MS = 280;
 const PAUSE_MAX_MS = 720;
 
-const OBSTACLES = LAYOUT.filter((o) =>
-  o.x >= 0 && o.y >= 0 && o.x + o.w <= MAP_W && o.y + o.h <= MAP_H
-);
-const SOLID_OBSTACLES = OBSTACLES.filter((o) => o.solid !== false);
-const COLLISION_CELL = 256;
-const COLLISION_GRID = new Map();
-SOLID_OBSTACLES.forEach((o) => {
-  const x0 = Math.floor(o.x / COLLISION_CELL);
-  const y0 = Math.floor(o.y / COLLISION_CELL);
-  const x1 = Math.floor((o.x + o.w) / COLLISION_CELL);
-  const y1 = Math.floor((o.y + o.h) / COLLISION_CELL);
-  for (let gy = y0; gy <= y1; gy++) {
-    for (let gx = x0; gx <= x1; gx++) {
-      const key = gx + "," + gy;
-      if (!COLLISION_GRID.has(key)) COLLISION_GRID.set(key, []);
-      COLLISION_GRID.get(key).push(o);
-    }
-  }
-});
-
 const SPAWNS = {
-  hunter: { x: 240, y: 520 },
-  tracker: { x: 240, y: 280 },
-  monster: { x: 980, y: 480 }
+  hunter: { x: DEFAULT_SNAP.spawns.hunter.x, y: DEFAULT_SNAP.spawns.hunter.y },
+  tracker: { x: DEFAULT_SNAP.spawns.tracker.x, y: DEFAULT_SNAP.spawns.tracker.y },
+  monster: { x: DEFAULT_SNAP.spawns.monster.x, y: DEFAULT_SNAP.spawns.monster.y }
 };
+let activeNav = null;
+
+function navNow() {
+  return activeNav || DEFAULT_NAV;
+}
 
 function clamp(v, lo, hi) {
   return Math.max(lo, Math.min(hi, v));
@@ -91,34 +79,13 @@ function norm(x, y) {
   return { x: x / d, y: y / d };
 }
 
-function circleHitsAabb(cx, cy, r, o) {
-  const nx = clamp(cx, o.x, o.x + o.w);
-  const ny = clamp(cy, o.y, o.y + o.h);
-  const dx = cx - nx;
-  const dy = cy - ny;
-  return dx * dx + dy * dy < r * r;
-}
-
 function inBounds(cx, cy, r) {
-  return cx >= r + 18 && cy >= r + 18 && cx <= MAP_W - r - 18 && cy <= MAP_H - r - 18;
+  const nav = navNow();
+  return cx >= r + 18 && cy >= r + 18 && cx <= nav.w - r - 18 && cy <= nav.h - r - 18;
 }
 
 function blocked(cx, cy, r) {
-  if (!inBounds(cx, cy, r)) return true;
-  const x0 = Math.floor((cx - r) / COLLISION_CELL);
-  const y0 = Math.floor((cy - r) / COLLISION_CELL);
-  const x1 = Math.floor((cx + r) / COLLISION_CELL);
-  const y1 = Math.floor((cy + r) / COLLISION_CELL);
-  for (let gy = y0; gy <= y1; gy++) {
-    for (let gx = x0; gx <= x1; gx++) {
-      const list = COLLISION_GRID.get(gx + "," + gy);
-      if (!list) continue;
-      for (let i = 0; i < list.length; i++) {
-        if (circleHitsAabb(cx, cy, r, list[i])) return true;
-      }
-    }
-  }
-  return false;
+  return hhMaps.pointBlocked(navNow(), cx, cy, r);
 }
 
 function tryMove(ent, dx, dy, r) {
@@ -191,12 +158,15 @@ function sameSpot(a, b, tol) {
 }
 
 function randomWalkable(r) {
+  const nav = navNow();
+  const spanX = Math.max(1, Math.floor(nav.w - 160));
+  const spanY = Math.max(1, Math.floor(nav.h - 160));
   for (let i = 0; i < 40; i++) {
-    const x = 80 + randomInt(MAP_W - 160);
-    const y = 80 + randomInt(MAP_H - 160);
+    const x = 80 + randomInt(spanX);
+    const y = 80 + randomInt(spanY);
     if (!blocked(x, y, r)) return { x, y };
   }
-  return { x: MAP_W * 0.5, y: MAP_H * 0.5 };
+  return { x: nav.w * 0.5, y: nav.h * 0.5 };
 }
 
 function pickMonsterTarget(m) {
@@ -246,8 +216,9 @@ function stopRoom(room) {
   stopCountdown(room);
 }
 
-function makePlayer(id, name, role) {
-  const spawn = SPAWNS[role] || SPAWNS.hunter;
+function makePlayer(id, name, role, spawns) {
+  const table = spawns || SPAWNS;
+  const spawn = table[role] || table.hunter || SPAWNS.hunter;
   return {
     id,
     name,
@@ -266,7 +237,7 @@ function makePlayer(id, name, role) {
   };
 }
 
-function makeMonster(players) {
+function makeMonster(players, spawns) {
   const avoid = players ? Object.values(players) : [];
   let spawn = null;
   for (let i = 0; i < 50; i++) {
@@ -277,7 +248,8 @@ function makeMonster(players) {
       break;
     }
   }
-  if (!spawn) spawn = { x: SPAWNS.monster.x, y: SPAWNS.monster.y };
+  const fallback = (spawns && spawns.monster) || SPAWNS.monster;
+  if (!spawn) spawn = { x: fallback.x, y: fallback.y };
   const m = {
     x: spawn.x,
     y: spawn.y,
@@ -312,6 +284,8 @@ function makeMonster(players) {
 
 function initRoomState(room, swapRoles) {
   stopRoom(room);
+  const snap = room.hhMapSnapshot || hhMaps.snapshot("default");
+  activeNav = hhMaps.buildNav(snap);
   const a = room.players[0];
   const b = room.players[1];
   let hunterId;
@@ -329,8 +303,8 @@ function initRoomState(room, swapRoles) {
   const hunter = room.players.find((p) => p.id === hunterId);
   const tracker = room.players.find((p) => p.id === trackerId);
   const players = {
-    [hunterId]: makePlayer(hunterId, hunter.name, "hunter"),
-    [trackerId]: makePlayer(trackerId, tracker.name, "tracker")
+    [hunterId]: makePlayer(hunterId, hunter.name, "hunter", snap.spawns),
+    [trackerId]: makePlayer(trackerId, tracker.name, "tracker", snap.spawns)
   };
   room.hh = {
     phase: "countdown",
@@ -338,7 +312,9 @@ function initRoomState(room, swapRoles) {
     hunterId,
     trackerId,
     players,
-    monster: makeMonster(players),
+    monster: makeMonster(players, snap.spawns),
+    nav: activeNav,
+    publicMap: hhMaps.publicView(snap),
     projectiles: [],
     impacts: [],
     taserBeams: [],
@@ -438,7 +414,7 @@ function remainingMs(hh) {
   return Math.max(0, hh.endsAt - Date.now());
 }
 
-function buildStateFor(room, viewerId, roomCode) {
+function buildStateFor(room, viewerId, roomCode, opts) {
   const hh = room.hh;
   const me = hh.players[viewerId];
   const role = me ? me.role : null;
@@ -450,7 +426,7 @@ function buildStateFor(room, viewerId, roomCode) {
     countdown: hh.countdown,
     now: Date.now(),
     remainingMs: remainingMs(hh),
-    map: { w: MAP_W, h: MAP_H, obstacles: OBSTACLES },
+    map: hh.publicMap || { w: MAP_W, h: MAP_H, obstacles: OBSTACLES, texts: [] },
     you: me
       ? { id: me.id, name: me.name, role: me.role }
       : { id: viewerId, name: "", role: null },
@@ -478,6 +454,7 @@ function buildStateFor(room, viewerId, roomCode) {
     };
     payload.taserBeams = publicTaserBeams(hh, Date.now());
   }
+  if (opts && opts.includeMap === false) delete payload.map;
   return payload;
 }
 
@@ -486,7 +463,7 @@ function emitStates(room, io, roomCode) {
   if (!hh) return;
   hh.seq += 1;
   room.players.forEach((player) => {
-    io.to(player.id).emit("hiddenHunterState", buildStateFor(room, player.id, roomCode));
+    io.to(player.id).emit("hiddenHunterState", buildStateFor(room, player.id, roomCode, { includeMap: false }));
   });
 }
 
@@ -870,6 +847,7 @@ function stepProjectiles(room, io, roomCode, dt) {
 function tick(room, io, roomCode) {
   const hh = room.hh;
   if (!hh || hh.phase === "over") return;
+  activeNav = hh.nav || DEFAULT_NAV;
   const dt = TICK_MS / 1000;
   if (hh.phase === "playing") {
     if (Date.now() >= hh.endsAt) {
@@ -1033,6 +1011,7 @@ function registerSocket(socket, io, rooms) {
     p.aimX = a.x;
     p.aimY = a.y;
     p.taserUntil = now + TASER_COOLDOWN;
+    activeNav = hh.nav || DEFAULT_NAV;
     const origin = { x: p.x + a.x * (PLAYER_R + 6), y: p.y + a.y * (PLAYER_R + 6) };
     const steps = Math.max(8, Math.ceil(TASER_RANGE / 8));
     let endX = origin.x + a.x * TASER_RANGE;

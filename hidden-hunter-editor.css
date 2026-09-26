@@ -1,0 +1,74 @@
+/* Hidden Hunter map editor. Desktop layout. Does not change the match HUD. */
+
+#hhMapPick.hhLobbyCard,
+#hhEditorGate.hhLobbyCard{
+margin-top:12px;
+padding:12px;
+border:1px solid rgba(255,216,102,.35);
+border-radius:10px;
+background:rgba(20,16,24,.55);
+text-align:left;
+}
+#hhMapPick h3,#hhEditorGate h3{margin:0 0 8px;color:#ffd866;}
+#hhMapChoices{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;}
+#hhMapChoices button{
+width:auto;margin:0;padding:6px 10px;
+background:#2a3142;color:#eef3ff;border:1px solid #445;border-radius:6px;
+}
+#hhMapChoices button.selected{border-color:#ffd866;color:#ffd866;}
+#hhMapPreview{display:block;width:100%;height:150px;background:#1a1510;border-radius:8px;}
+#hhMapMeta{margin:6px 0 0;color:#c5d2e8;font-size:13px;}
+#hhEditorName{margin-bottom:8px;}
+#hhEditorEnter{width:auto;margin:0;padding:8px 16px;}
+#hhEditorMsg{min-height:1.2em;margin:8px 0 0;color:#ffb4b4;font-size:13px;}
+
+#hhEditorScreen{
+position:fixed;inset:0;z-index:50;
+background:#121018;color:#e8e0d4;
+display:flex;flex-direction:column;
+font:14px Arial,sans-serif;
+}
+#hhEditorScreen.hidden{display:none;}
+.hheTop{
+display:flex;flex-wrap:wrap;gap:8px;align-items:center;
+padding:8px 10px;background:#1c1822;border-bottom:1px solid #3a3344;
+}
+.hheTop button,.hheProps button,.hheModal button{
+width:auto;margin:0;padding:6px 10px;border:0;border-radius:6px;
+background:#3a4256;color:#eef3ff;font-weight:bold;cursor:pointer;
+}
+.hheTop button.primary,.hheModal button.primary{background:#8a6a22;color:#fff8e4;}
+.hheTop label,.hheProps label{display:flex;flex-direction:column;gap:2px;font-size:11px;color:#c5d2e8;}
+.hheTop input,.hheTop select,.hheProps input,.hheProps select,.hheModal input{
+margin:0;padding:4px 6px;width:88px;background:#0e0c12;color:#fff;border:1px solid #444;border-radius:4px;
+}
+.hheStatus{flex:1;min-width:180px;color:#ffd866;font-size:13px;}
+.hheBody{flex:1;min-height:0;display:flex;}
+.hheLib,.hheProps{
+width:230px;overflow:auto;background:#18141e;padding:8px;
+border-right:1px solid #3a3344;
+}
+.hheProps{border-right:0;border-left:1px solid #3a3344;}
+.hheLib h4,.hheProps h4{margin:10px 0 6px;color:#ffd866;font-size:12px;letter-spacing:.06em;}
+.hheAsset,.hheSpawn{
+display:block;width:100%;margin:0 0 6px;padding:6px 8px;text-align:left;
+background:#2a3142;color:#eef3ff;border:1px solid #445;border-radius:6px;cursor:grab;
+}
+.hheAsset.armed,.hheSpawn.armed{border-color:#ffd866;color:#ffd866;}
+.hheStage{flex:1;min-width:0;position:relative;background:#100e0c;}
+#hheCanvas{display:block;width:100%;height:100%;touch-action:none;}
+.hheProps .row{display:flex;gap:6px;margin-bottom:8px;}
+.hheProps .row label{flex:1;}
+.hheProps input[type="checkbox"]{width:auto;}
+.hheCheck{flex-direction:row;align-items:center;gap:6px;margin:8px 0;}
+.hheNote{color:#9aa;font-size:12px;line-height:1.4;}
+.hheModal{
+position:absolute;inset:0;background:rgba(0,0,0,.55);
+display:flex;align-items:center;justify-content:center;
+}
+.hheModal.hidden{display:none;}
+.hheDialog{background:#1c1822;border:1px solid #ffd866;border-radius:10px;padding:16px;min-width:280px;max-width:420px;}
+.hheDialog h3{margin:0 0 10px;color:#ffd866;}
+.hheDialog input{width:100%;margin:0 0 10px;}
+.hheList{display:flex;flex-direction:column;gap:6px;max-height:280px;overflow:auto;margin-bottom:10px;}
+.hheList button{text-align:left;}

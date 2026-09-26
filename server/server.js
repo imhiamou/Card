@@ -7,6 +7,8 @@ const domino = require("./domino");
 const uno = require("./uno");
 const dodgeBall = require("./dodgeBall");
 const hiddenHunter = require("./hiddenHunter");
+const hhMaps = require("./hhMapStore");
+const hhEditor = require("./hhEditor");
 const coinFlip = require("./coinFlip");
 const { createBotSocket } = require("./bots/botSocket");
 
@@ -706,6 +708,7 @@ io.on("connection", (socket) => {
   dodgeBall.registerSocket(socket, io, rooms);
   // Hidden Hunter socket handlers (no-ops unless the lobby gameMode is hidden-hunter).
   hiddenHunter.registerSocket(socket, io, rooms);
+  hhEditor.register(socket);
   // Coin Flip socket handlers (no-ops unless the lobby gameMode is coin-flip).
   coinFlip.registerSocket(socket, io, rooms);
 
@@ -773,6 +776,11 @@ io.on("connection", (socket) => {
       domino.assignPlayerTeam(rooms[roomCode], rooms[roomCode].players[0], data && data.team);
     }
 
+    if (gameMode === "hidden-hunter") {
+      const snap = hhMaps.snapshot(data && data.mapId);
+      rooms[roomCode].hhMapSnapshot = snap;
+    }
+
     socket.join(roomCode);
     socket.emit("lobbyCreated", {
       room: roomCode,
@@ -782,7 +790,9 @@ io.on("connection", (socket) => {
       teamMode: gameMode === "dominoes" && maxPlayers === 4,
       players: gameMode === "dominoes"
         ? domino.publicLobbyPlayers(rooms[roomCode])
-        : undefined
+        : undefined,
+      mapId: rooms[roomCode].hhMapSnapshot ? rooms[roomCode].hhMapSnapshot.id : undefined,
+      mapName: rooms[roomCode].hhMapSnapshot ? rooms[roomCode].hhMapSnapshot.name : undefined
     });
     if (gameMode === "dominoes" && maxPlayers === 4) {
       domino.emitDominoLobbyUpdate(rooms[roomCode], io, roomCode);

@@ -12,6 +12,7 @@
 <link rel="stylesheet" href="dodge-ball.css">
 <link rel="stylesheet" href="coin-flip.css">
 <link rel="stylesheet" href="hidden-hunter.css">
+<link rel="stylesheet" href="hidden-hunter-editor.css">
 <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
 </head>
 <body>
@@ -38,6 +39,18 @@
 <strong>HIDDEN HUNTER</strong>
 <p>2 players required</p>
 <p>One player can see the monster. The other has the gun. Communicate and hunt it down.</p>
+</div>
+<div id="hhMapPick" class="hidden hhLobbyCard">
+<h3>Select map</h3>
+<div id="hhMapChoices"></div>
+<canvas id="hhMapPreview" width="320" height="180"></canvas>
+<p id="hhMapMeta"></p>
+</div>
+<div id="hhEditorGate" class="hidden hhLobbyCard">
+<h3>Map editor</h3>
+<input id="hhEditorName" placeholder="Name" maxlength="32" autocomplete="off" autocapitalize="off" spellcheck="false">
+<button type="button" id="hhEditorEnter">Enter</button>
+<p id="hhEditorMsg"></p>
 </div>
 
 <!-- Dominoes only: lobby creator picks 2–4 seats -->
@@ -206,6 +219,7 @@
 
 <!-- Hidden Hunter screen (mounted by hidden-hunter.js; unused for other games) -->
 <div class="box hidden" id="hiddenHunterScreen"></div>
+<div id="hhEditorScreen" class="hidden"></div>
 
 <script src="game-sfx.js"></script>
 <script src="wordchain.js"></script>
@@ -215,6 +229,7 @@
 <script src="dodge-ball.js"></script>
 <script src="coin-flip.js"></script>
 <script src="hidden-hunter.js"></script>
+<script src="hidden-hunter-editor.js"></script>
 <script src="index.js"></script>
 </body>
 </html>
