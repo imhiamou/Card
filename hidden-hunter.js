@@ -477,7 +477,7 @@
     if (hhAmmo) {
       if (!hunter || !me) hhAmmo.textContent = "";
       else if (me.reloadingUntil && Date.now() < me.reloadingUntil) hhAmmo.textContent = "RELOADING…";
-      else hhAmmo.textContent = "AMMO " + (me.ammo == null ? 0 : me.ammo) + " / " + (me.magazine || 6);
+      else hhAmmo.textContent = "AMMO: " + (me.ammo == null ? 0 : me.ammo) + " / " + (me.magazine || 3);
     }
     if (hhTaser) {
       hhTaser.classList.toggle("hidden", hunter);

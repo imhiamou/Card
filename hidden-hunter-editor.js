@@ -63,7 +63,7 @@
     ["container", "CONTAINERS"], ["machine", "MACHINES"], ["vehicle", "VEHICLES"],
     ["pillar", "PILLARS"], ["pipe", "PIPES"], ["door", "DOORS"], ["furniture", "FURNITURE"],
     ["decoration", "DECORATION"], ["industrial", "INDUSTRIAL"], ["terrain", "TERRAIN"],
-    ["tile", "TILES"], ["other", "OTHER"]
+    ["tile", "TILES"], ["tribe_warehouse", "TRIBE WAREHOUSE"], ["other", "OTHER"]
   ];
   const PRESET_PREVIEW = {
     door: PROP_SRC.door, window: PROP_SRC.window, pillar: PROP_SRC.pillar, pillarWood: PROP_SRC.post,
@@ -88,7 +88,6 @@
 
   const IMG = Object.create(null);
   let socket = null;
-  let accessName = "";
   let catalog = [];
   let library = [];
   let libraryById = Object.create(null);
@@ -233,8 +232,10 @@
     const recentOrder = Object.create(null);
     recent.forEach((id, index) => { recentOrder[id] = index; });
     const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const tribeQuery = terms.some((term) => term === "tribe" || term === "warehouse");
     let list = allEntries().filter((item) => {
-      if (warehouseOnly && !item.recommend) return false;
+      const tribeSheet = item.category === "tribe_warehouse";
+      if (warehouseOnly && !item.recommend && chip !== "tribe_warehouse" && !(tribeQuery && tribeSheet)) return false;
       if (chip === "favorites" && !fav[item.id]) return false;
       if (chip === "recent" && recentOrder[item.id] == null) return false;
       if (!chipMatch(item)) return false;
@@ -1090,7 +1091,7 @@
     });
     const note = document.createElement("p");
     note.className = "hheNote";
-    note.textContent = "Warehouse style shows Kenney sprites that match the current map. Turn it off to browse other CC0 packs. Nothing here is placed until you click the map. Saved maps store the asset id, not the image. On Render, saved maps last until the service restarts unless MAP_STORE_DIR is a persistent disk.";
+    note.textContent = "Warehouse style shows Kenney sprites that match the current map. Turn it off to browse other CC0 packs. TRIBE WAREHOUSE is the uploaded Tribe location sheet and is not CC0. Nothing here is placed until you click the map. Saved maps store the asset id, not the image. With DATABASE_URL set, those maps stay in Postgres across redeploys.";
     ui.libScroll.appendChild(note);
     ui.libScroll.scrollTop = kept;
   }
@@ -1117,7 +1118,7 @@
       if (!name) { $("hheSaveErr").textContent = "Enter a map name."; return; }
       doc.name = name.slice(0, 40);
       socket.emit("hhEditorSave", {
-        editorName: accessName,
+        editorName: "",
         map: {
           id: doc.isNew ? "new" : doc.id,
           baseVersion: doc.version,
@@ -1146,7 +1147,7 @@
     $("hheOpenCancel").onclick = hideModal;
     ui.modal.querySelectorAll("[data-id]").forEach((btn) => {
       btn.onclick = () => {
-        socket.emit("hhEditorLoad", { editorName: accessName, id: btn.getAttribute("data-id") });
+        socket.emit("hhEditorLoad", { id: btn.getAttribute("data-id") });
       };
     });
   }
@@ -1199,7 +1200,7 @@
       + "<div id=\"hheChips\" class=\"hheChips\"></div>"
       + "<div class=\"hheFilters\">"
       + "<label>Source<select id=\"hheSource\"><option value=\"all\">All</option><option value=\"Kenney\">Kenney</option><option value=\"OpenGameArt\">OpenGameArt</option><option value=\"itch.io\">itch.io</option><option value=\"other\">Other</option></select></label>"
-      + "<label>License<select id=\"hheLicense\"><option value=\"all\">All</option><option value=\"CC0\">CC0</option></select></label>"
+      + "<label>License<select id=\"hheLicense\"><option value=\"all\">All</option><option value=\"CC0\">CC0</option><option value=\"All rights reserved\">All rights reserved</option></select></label>"
       + "<label>Style<select id=\"hheStyle\"><option value=\"all\">All</option><option value=\"pixel\">Pixel</option><option value=\"clean-2d\">Clean 2D</option><option value=\"top-down\">Top-down</option><option value=\"industrial\">Industrial</option><option value=\"generic\">Generic</option></select></label>"
       + "<label>Category<select id=\"hheGroup\"><option value=\"all\">All</option><option value=\"Furniture\">Furniture</option><option value=\"Industrial\">Industrial</option><option value=\"Storage\">Storage</option><option value=\"Vehicle\">Vehicle</option><option value=\"Structure\">Structure</option><option value=\"Decoration\">Decoration</option></select></label>"
       + "<label class=\"hheCheck\"><input id=\"hheWarehouse\" type=\"checkbox\" checked> Warehouse style</label>"
@@ -1301,12 +1302,10 @@
     if (lobby) lobby.classList.remove("hidden");
     if (raf) cancelAnimationFrame(raf);
     raf = 0;
-    accessName = "";
     doc = null;
   }
 
-  function openEditor(data, editorName) {
-    accessName = editorName;
+  function openEditor(data) {
     catalog = data.catalog || [];
     mapList = data.maps || mapList;
     if (!built) build();
@@ -1388,17 +1387,12 @@
     socket = shared;
     loadLibrary();
     const enter = $("hhEditorEnter");
-    const nameInput = $("hhEditorName");
     const msg = $("hhEditorMsg");
-    let pendingName = "";
-    if (enter && nameInput) {
-      const submit = () => {
-        pendingName = nameInput.value;
+    if (enter) {
+      enter.onclick = () => {
         if (msg) msg.textContent = "";
-        socket.emit("hhEditorOpen", { editorName: pendingName });
+        socket.emit("hhEditorOpen", {});
       };
-      enter.onclick = submit;
-      nameInput.addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
     }
     socket.on("hhMapList", (data) => {
       mapList = (data && data.maps) || [];
@@ -1417,7 +1411,7 @@
         if (msg) msg.textContent = (data && data.error) || "That name cannot open the editor.";
         return;
       }
-      openEditor(data, pendingName);
+      openEditor(data);
     });
     socket.on("hhEditorLoad", (data) => {
       if (!data || !data.ok) {

@@ -1,12 +1,12 @@
 /*
  * Hidden Hunter saved maps.
  *
- * Storage is isolated behind the functions in this file so it can move to a
- * database later. The current backend has no database. Maps are JSON files.
+ * The built-in Default Warehouse lives in code and does not use the disk.
+ * User maps are JSON files for fast reads. When DATABASE_URL is set, each
+ * save is also written to Postgres, and the server copies those rows back
+ * into the JSON files on startup. Render's container disk is wiped on
+ * redeploy, so Postgres is what keeps maps across builds.
  *
- * Render's container disk is ephemeral: files written here disappear when the
- * service redeploys or restarts, unless MAP_STORE_DIR points at a mounted
- * persistent disk. The built-in Default Warehouse does not use that disk.
  * A failed save leaves the previous file in place. The previous version is
  * copied aside before the current file is replaced.
  */
@@ -16,8 +16,7 @@ const path = require("path");
 const crypto = require("crypto");
 const LAYOUT = require("./hiddenHunterLayout");
 const library = require("./hhAssetLibrary");
-
-const EDITOR_NAME = "himou";
+const persist = require("./hhMapPersist");
 const MIN_SIZE = 800;
 const MAX_SIZE = 4000;
 const MAX_OBJECTS = 500;
@@ -54,11 +53,6 @@ const ASSETS = [
 ];
 
 const ASSET_BY_KIND = new Map(ASSETS.map((asset) => [asset.kind, asset]));
-
-function isEditorAccess(name) {
-  if (typeof name !== "string") return false;
-  return name.trim().toLowerCase() === EDITOR_NAME;
-}
 
 function storeDir() {
   const custom = process.env.MAP_STORE_DIR;
@@ -599,10 +593,18 @@ function pruneVersions(id) {
   }
 }
 
-function saveMap(editorName, raw) {
-  if (!isEditorAccess(editorName)) {
-    return { ok: false, error: "Editor access denied." };
-  }
+async function ready() {
+  const connected = await persist.connect();
+  if (!connected) return { persistent: false };
+  const rows = await persist.loadAll();
+  rows.forEach((row) => {
+    if (!row || !safeId(row.id) || !row.document) return;
+    writeAtomic(mapFile(row.id), JSON.stringify(row.document));
+  });
+  return { persistent: true, count: rows.length };
+}
+
+async function saveMap(raw) {
   let encoded = "";
   try {
     encoded = JSON.stringify(raw);
@@ -654,17 +656,30 @@ function saveMap(editorName, raw) {
   }
   map.updatedAt = now;
   map.builtin = false;
+  const previous = !isNew ? readStored(map.id) : null;
   try {
     writeAtomic(mapFile(map.id), JSON.stringify(map));
   } catch (err) {
     return { ok: false, error: "Could not save the map." };
   }
+  if (persist.enabled()) {
+    try {
+      await persist.save(readStored(map.id) || map);
+    } catch (err) {
+      try {
+        if (previous) writeAtomic(mapFile(map.id), JSON.stringify(previous));
+        else fs.unlinkSync(mapFile(map.id));
+      } catch (restoreErr) {
+        /* The save response still reports failure. */
+      }
+      return { ok: false, error: "Could not store the map. It was not saved." };
+    }
+  }
   pruneVersions(map.id);
   return { ok: true, map: readStored(map.id) || map };
 }
 
-function loadForEditor(editorName, id) {
-  if (!isEditorAccess(editorName)) return { ok: false, error: "Editor access denied." };
+function loadForEditor(id) {
   const wanted = typeof id === "string" && id ? id : "default";
   if (!safeId(wanted)) return { ok: false, error: "That map could not be loaded." };
   const stored = readStored(wanted);
@@ -676,7 +691,7 @@ function loadForEditor(editorName, id) {
 module.exports = {
   ASSETS,
   PLAYER_LAYER: 5,
-  isEditorAccess,
+  ready,
   assetByKind,
   visualAabb,
   buildNav,
