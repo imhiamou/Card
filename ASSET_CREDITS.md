@@ -76,6 +76,15 @@ Sprites in `assets/map-editor/` are stored in the repository. The game and the e
 - License: CC0 1.0. The OpenGameArt license field links to Creative Commons Zero.
 - Files: `assets/map-editor/opengameart/sci-fi-interior/` (16×16 cells cut from `scifitiles-sheet.png`). Different pixel scale, so warehouse style leaves them hidden until that filter is turned off.
 
+### The Tribe Game — Warehouse location sheet
+
+- Source: The Spriters Resource
+- Game: The Tribe Game
+- Asset: Warehouse
+- Page: https://www.spriters-resource.com/pc_computer/thetribegame/asset/204345/
+- Files: `assets/map-editor/The Tribe Game - Locations - Warehouse.png` (the uploaded sheet) and `assets/map-editor/tribe-warehouse/warehouse.png` (the same pixels, with the outer black margin transparent, used by the editor).
+- License: not CC0. This is not original art and not a public-domain pack. It is shown in the map editor under TRIBE WAREHOUSE. It is not part of the default Hidden Hunter map.
+
 ### Reviewed and not imported
 
 These packs were checked and left out so the library does not mix in a different perspective or an unseparated sheet:

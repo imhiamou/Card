@@ -1,7 +1,8 @@
 /*
  * Hidden Hunter map-editor socket API.
- * Listing and previews are available to every client.
- * Load and save require the editor name, checked again on the server.
+ * Listing, previews, load, and save are available to every connected player.
+ * Saved maps are validated on the server. The client cannot mark a map saved
+ * unless this handler accepts it.
  */
 
 const maps = require("./hhMapStore");
@@ -21,12 +22,7 @@ function register(socket) {
     socket.emit("hhMapPreview", { ok: true, map });
   });
 
-  socket.on("hhEditorOpen", (data) => {
-    const editorName = data && data.editorName;
-    if (!maps.isEditorAccess(editorName)) {
-      socket.emit("hhEditorOpen", { ok: false, error: "That name cannot open the editor." });
-      return;
-    }
+  socket.on("hhEditorOpen", () => {
     socket.emit("hhEditorOpen", {
       ok: true,
       catalog: maps.ASSETS,
@@ -35,14 +31,14 @@ function register(socket) {
   });
 
   socket.on("hhEditorLoad", (data) => {
-    const result = maps.loadForEditor(data && data.editorName, data && data.id);
+    const result = maps.loadForEditor(data && data.id);
     socket.emit("hhEditorLoad", result.ok
       ? { ok: true, map: result.map }
       : { ok: false, error: result.error || "That map could not be loaded." });
   });
 
-  socket.on("hhEditorSave", (data) => {
-    const result = maps.saveMap(data && data.editorName, data && data.map);
+  socket.on("hhEditorSave", async (data) => {
+    const result = await maps.saveMap(data && data.map);
     if (!result.ok) {
       socket.emit("hhEditorSave", { ok: false, error: result.error || "Cannot save map." });
       return;

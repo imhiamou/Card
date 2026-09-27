@@ -1385,6 +1385,17 @@ io.on("connection", (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log("Hidden Duel server listening on port " + PORT);
+hhMaps.ready().then((storage) => {
+  if (storage && storage.persistent) {
+    console.log("Hidden Hunter maps restored from Postgres (" + storage.count + ").");
+  } else {
+    console.log("Hidden Hunter maps are stored on local disk. Set DATABASE_URL to keep them across Render redeploys.");
+  }
+  server.listen(PORT, () => {
+    console.log("Hidden Duel server listening on port " + PORT);
+  });
+}).catch((err) => {
+  console.error("Hidden Hunter map storage failed to start.");
+  console.error(err);
+  process.exit(1);
 });
