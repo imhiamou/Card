@@ -317,6 +317,23 @@
 
   function scaleOf(o) { return o.scale > 0 ? o.scale : 1; }
 
+  function collisionBase(o) {
+    return {
+      w: o.cw > 0 ? o.cw : o.w,
+      h: o.ch > 0 ? o.ch : o.h
+    };
+  }
+
+  function collisionSize(o) {
+    const s = scaleOf(o);
+    const base = collisionBase(o);
+    return { w: base.w * s, h: base.h * s };
+  }
+
+  function formatDim(n) {
+    return Math.round(n * 100) / 100;
+  }
+
   function center(o) { return { x: o.x + o.w / 2, y: o.y + o.h / 2 }; }
 
   function snap(v) {
@@ -661,6 +678,14 @@
         ctx.strokeStyle = "#ffd866";
         ctx.lineWidth = 2 / zoom;
         ctx.strokeRect((-o.w * s) / 2, (-o.h * s) / 2, o.w * s, o.h * s);
+        if (o.solid !== false) {
+          const hit = collisionSize(o);
+          ctx.strokeStyle = "#7cf0ff";
+          ctx.lineWidth = 2 / zoom;
+          ctx.setLineDash([6 / zoom, 4 / zoom]);
+          ctx.strokeRect(-hit.w / 2, -hit.h / 2, hit.w, hit.h);
+          ctx.setLineDash([]);
+        }
       }
       ctx.restore();
     });
@@ -768,8 +793,7 @@
     } else {
       const spec = obj.assetId ? libraryById[obj.assetId] : catalog.find((item) => item.kind === obj.kind);
       const s = scaleOf(obj);
-      const cw = obj.cw || obj.w;
-      const ch = obj.ch || obj.h;
+      const hit = collisionSize(obj);
       const meta = spec && spec.pack
         ? "<p class=\"hheNote\">Source: " + spec.source + "<br>Pack: " + spec.pack + "<br>Style: " + (spec.style || []).join(", ") + "<br>License: " + spec.license + "<br>Category: " + spec.category + "</p>"
         : (obj.kind ? "<p class=\"hheNote\">Source: Kenney<br>Pack: Kenney Top-down Shooter<br>License: CC0</p>" : "");
@@ -777,10 +801,10 @@
         + "<div class=\"row\">" + field("X", "hheX", Math.round(obj.x)) + field("Y", "hheY", Math.round(obj.y)) + "</div>"
         + "<div class=\"row\">" + field("Rotation", "hheRot", Math.round(obj.rotation || 0)) + field("Scale", "hheScale", s) + "</div>"
         + "<label class=\"hheCheck\"><input id=\"hheSolid\" type=\"checkbox\"" + (obj.solid !== false ? " checked" : "") + "> Collision</label>"
-        + "<div class=\"row\">" + field("Collision W", "hheCw", Math.round(cw)) + field("Collision H", "hheCh", Math.round(ch)) + "</div>"
+        + "<div class=\"row\">" + field("Collision W", "hheCw", formatDim(hit.w)) + field("Collision H", "hheCh", formatDim(hit.h)) + "</div>"
         + field("Layer", "hheLayer", obj.layer)
         + field("Label", "hheLabel", obj.label || "", "text")
-        + "<p class=\"hheNote\">Drag to move. The blue handle scales. The gold handle rotates. Q and E rotate. [ and ] scale.</p>"
+        + "<p class=\"hheNote\">Drag to move. The blue handle scales. The gold handle rotates. Q and E rotate. [ and ] scale. Collision uses the same scale and rotation.</p>"
         + "<button type=\"button\" id=\"hheRotL\">Rotate −15</button> <button type=\"button\" id=\"hheRotR\">Rotate +15</button><br><br>"
         + "<button type=\"button\" id=\"hheDup\">Duplicate</button> <button type=\"button\" id=\"hheDel\">Delete</button>";
     }
@@ -795,7 +819,7 @@
   }
 
   function bindPropInputs() {
-    const apply = () => {
+    const apply = (sourceId) => {
       if (filling) return;
       const obj = selectedObject();
       const text = selectedText();
@@ -822,10 +846,20 @@
       const nextScale = num("hheScale");
       if (nextScale > 0) obj.scale = Math.max(0.2, Math.min(6, nextScale));
       obj.solid = $("hheSolid").checked;
-      const cw = num("hheCw");
-      const ch = num("hheCh");
-      if (cw > 0) obj.cw = cw;
-      if (ch > 0) obj.ch = ch;
+      if (sourceId === "hheCw" || sourceId === "hheCh") {
+        const s = scaleOf(obj);
+        const cw = num("hheCw");
+        const ch = num("hheCh");
+        if (sourceId === "hheCw" && cw > 0) obj.cw = cw / s;
+        if (sourceId === "hheCh" && ch > 0) obj.ch = ch / s;
+      }
+      if (sourceId === "hheScale") {
+        const hit = collisionSize(obj);
+        filling = true;
+        if ($("hheCw")) $("hheCw").value = String(formatDim(hit.w));
+        if ($("hheCh")) $("hheCh").value = String(formatDim(hit.h));
+        filling = false;
+      }
       obj.layer = Math.max(0, Math.min(30, Math.round(num("hheLayer") || 0)));
       obj.label = ($("hheLabel").value || "").slice(0, 32);
     };
@@ -833,8 +867,8 @@
       input.addEventListener("focus", () => {
         if (!editArmed) { pushUndo(); editArmed = true; }
       });
-      input.addEventListener("input", apply);
-      input.addEventListener("change", apply);
+      input.addEventListener("input", () => apply(input.id));
+      input.addEventListener("change", () => apply(input.id));
       input.addEventListener("blur", () => { editArmed = false; });
     });
     const dup = $("hheDup");
@@ -950,6 +984,10 @@
       const c = center(obj);
       const dist = Math.max(8, Math.hypot(world.x - c.x, world.y - c.y));
       obj.scale = Math.max(0.2, Math.min(6, drag.start * (dist / drag.dist)));
+      const hit = collisionSize(obj);
+      if ($("hheScale")) $("hheScale").value = String(formatDim(obj.scale));
+      if ($("hheCw")) $("hheCw").value = String(formatDim(hit.w));
+      if ($("hheCh")) $("hheCh").value = String(formatDim(hit.h));
     } else if (drag.mode === "rotate") {
       const obj = doc.objects.find((o) => o.id === drag.id);
       if (!obj) return;
