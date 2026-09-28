@@ -16,19 +16,9 @@ function redact(text) {
 }
 
 function databaseUrl() {
-  const names = ["DATABASE_URL", "MAP_DATABASE_URL"];
-  for (let i = 0; i < names.length; i++) {
-    const url = process.env[names[i]];
-    if (url && String(url).trim()) return String(url).trim();
-  }
-  return "";
-}
-
-function databaseConfigStatus() {
-  return {
-    DATABASE_URL: process.env.DATABASE_URL && String(process.env.DATABASE_URL).trim() ? "set" : "missing",
-    MAP_DATABASE_URL: process.env.MAP_DATABASE_URL && String(process.env.MAP_DATABASE_URL).trim() ? "set" : "missing"
-  };
+  const url = process.env.DATABASE_URL;
+  if (!url || !String(url).trim()) return "";
+  return String(url).trim();
 }
 
 function databaseHost(url) {
@@ -80,12 +70,10 @@ function logFields(fields) {
 }
 
 function logFailure(action, err, map) {
-  const config = databaseConfigStatus();
   logFields({
     event: action + " failed",
     "connection status": pool ? "connected" : "not connected",
-    DATABASE_URL: config.DATABASE_URL,
-    MAP_DATABASE_URL: config.MAP_DATABASE_URL,
+    DATABASE_URL: databaseUrl() ? "set" : "missing",
     "database host": databaseUrl() ? databaseHost(databaseUrl()) : "",
     table: TABLE,
     "map id": map && map.id,
@@ -104,16 +92,15 @@ function enabled() {
 async function connect() {
   const url = databaseUrl();
   if (!url) {
-    const config = databaseConfigStatus();
+    const err = new Error("DATABASE_URL is missing");
     logFields({
-      event: "database configuration",
-      DATABASE_URL: config.DATABASE_URL,
-      MAP_DATABASE_URL: config.MAP_DATABASE_URL,
+      event: "database initialization failed",
+      DATABASE_URL: "missing",
       "connection status": "not connected",
       table: TABLE,
-      "error message": "DATABASE_URL is missing"
+      "error message": err.message
     });
-    return false;
+    throw err;
   }
   const host = databaseHost(url);
   console.log("[hh-maps] DATABASE_URL is set");

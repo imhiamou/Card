@@ -1473,18 +1473,25 @@ io.on("connection", (socket) => {
 });
 
 const PORT = process.env.PORT || 3000;
-hhMaps.ready().then((storage) => {
-  if (storage && storage.persistent) {
-    console.log("Hidden Hunter maps restored from Postgres (" + storage.count + ").");
-  } else {
-    console.error("DATABASE_URL is missing. Hidden Hunter map saves cannot persist until DATABASE_URL points at a Postgres database.");
-  }
+
+function listen() {
   server.listen(PORT, () => {
     console.log("Hidden Duel server listening on port " + PORT);
   });
+}
+
+hhMaps.ready().then((storage) => {
+  console.log("Hidden Hunter maps restored from Postgres (" + storage.count + ").");
+  listen();
 }).catch((err) => {
+  const message = hhMaps.describeError(err);
   console.error("Hidden Hunter map storage failed to start.");
-  console.error(hhMaps.describeError(err));
+  console.error(message);
   if (err && err.stack) console.error(hhMaps.redact(err.stack));
+  if (message.indexOf("DATABASE_URL is missing") !== -1) {
+    console.error("DATABASE_URL is missing. Hidden Hunter map saves cannot persist until DATABASE_URL points at a Postgres database.");
+    listen();
+    return;
+  }
   process.exit(1);
 });
