@@ -1,14 +1,10 @@
 /*
  * Hidden Hunter saved maps.
  *
- * The built-in Default Warehouse lives in code and does not use the disk.
- * User maps are JSON files for fast reads. When DATABASE_URL is set, each
- * save is also written to Postgres, and the server copies those rows back
- * into the JSON files on startup. Render's container disk is wiped on
- * redeploy, so Postgres is what keeps maps across builds.
- *
- * A failed save leaves the previous file in place. The previous version is
- * copied aside before the current file is replaced.
+ * The built-in Default Warehouse lives in code.
+ * User maps are stored in Postgres (DATABASE_URL). A save is successful only
+ * after that write. JSON files under the data directory are a cache so a
+ * match can read the map synchronously. Render wipes that cache on restart.
  */
 
 const fs = require("fs");
@@ -23,6 +19,8 @@ const MAX_OBJECTS = 500;
 const MAX_TEXTS = 80;
 const MAX_CUSTOM_MAPS = 40;
 const MAX_VERSIONS = 8;
+const PERSIST_FAIL = "Failed to save map. The server could not persist the map.";
+const LOAD_FAIL = "Failed to load saved maps. The server could not read persistent storage.";
 const CELL = 256;
 const PLAYER_R = 22;
 const MONSTER_R = 26;
@@ -441,21 +439,45 @@ function writeAtomic(file, text) {
   fs.renameSync(tmp, file);
 }
 
+function mapFromDocument(id, document) {
+  if (!document || typeof document !== "object") return null;
+  const checked = validateMap(document);
+  if (!checked.ok) return null;
+  checked.map.id = id;
+  checked.map.version = Number.isFinite(Number(document.version)) ? Number(document.version) : 1;
+  checked.map.createdAt = typeof document.createdAt === "string" ? document.createdAt : null;
+  checked.map.updatedAt = typeof document.updatedAt === "string" ? document.updatedAt : null;
+  checked.map.builtin = false;
+  return checked.map;
+}
+
 function readStored(id) {
   if (!safeId(id)) return null;
   try {
-    const parsed = JSON.parse(fs.readFileSync(mapFile(id), "utf8"));
-    const checked = validateMap(parsed);
-    if (!checked.ok) return null;
-    checked.map.id = id;
-    checked.map.version = Number.isFinite(Number(parsed.version)) ? Number(parsed.version) : 1;
-    checked.map.createdAt = typeof parsed.createdAt === "string" ? parsed.createdAt : null;
-    checked.map.updatedAt = typeof parsed.updatedAt === "string" ? parsed.updatedAt : null;
-    checked.map.builtin = false;
-    return checked.map;
+    return mapFromDocument(id, JSON.parse(fs.readFileSync(mapFile(id), "utf8")));
   } catch (err) {
     return null;
   }
+}
+
+async function ensureStored(id) {
+  if (!safeId(id) || !persist.enabled()) return null;
+  const cached = readStored(id);
+  if (cached) return cached;
+  let document = null;
+  try {
+    document = await persist.loadOne(id);
+  } catch (err) {
+    return null;
+  }
+  const map = mapFromDocument(id, document);
+  if (!map) return null;
+  try {
+    writeAtomic(mapFile(id), JSON.stringify(map));
+  } catch (err) {
+    /* The database row is still the saved map. */
+  }
+  return map;
 }
 
 function summary(map) {
@@ -471,28 +493,32 @@ function summary(map) {
   };
 }
 
-function listMaps() {
-  const maps = [];
-  const seen = new Set();
-  const def = readStored("default") || builtinMap();
-  maps.push(summary(def));
-  seen.add("default");
-  let names = [];
-  try {
-    names = fs.readdirSync(storeDir());
-  } catch (err) {
-    names = [];
+async function listMaps() {
+  if (!persist.enabled()) {
+    return { ok: false, error: LOAD_FAIL, maps: [summary(builtinMap())] };
   }
-  names.forEach((name) => {
-    if (!name.endsWith(".json") || name.indexOf(".tmp") !== -1) return;
-    const id = name.slice(0, -5);
-    if (seen.has(id) || !safeId(id)) return;
-    const map = readStored(id);
+  let rows = [];
+  try {
+    rows = await persist.loadAll();
+  } catch (err) {
+    return { ok: false, error: LOAD_FAIL, maps: [summary(readStored("default") || builtinMap())] };
+  }
+  let savedDefault = null;
+  const custom = [];
+  rows.forEach((row) => {
+    if (!row || !safeId(row.id)) return;
+    const map = mapFromDocument(row.id, row.document);
     if (!map) return;
-    maps.push(summary(map));
-    seen.add(id);
+    try {
+      writeAtomic(mapFile(row.id), JSON.stringify(map));
+    } catch (err) {
+      /* Listing still returns the database row. */
+    }
+    if (map.id === "default") savedDefault = map;
+    else custom.push(summary(map));
   });
-  return maps;
+  custom.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  return { ok: true, maps: [summary(savedDefault || builtinMap())].concat(custom) };
 }
 
 function publicView(map) {
@@ -539,9 +565,9 @@ function publicView(map) {
   };
 }
 
-function previewOf(id) {
+async function previewOf(id) {
   if (id !== "default" && !safeId(id)) return null;
-  const stored = safeId(id) ? readStored(id) : null;
+  const stored = safeId(id) ? (readStored(id) || await ensureStored(id)) : null;
   const map = stored || (id === "default" || !id ? builtinMap() : null);
   if (!map) return null;
   const view = publicView(map);
@@ -557,14 +583,17 @@ function snapshot(id) {
   return JSON.parse(JSON.stringify(map));
 }
 
-function customMapCount() {
-  let names = [];
-  try {
-    names = fs.readdirSync(storeDir());
-  } catch (err) {
-    return 0;
-  }
-  return names.filter((name) => /^m[a-f0-9]{12}\.json$/.test(name)).length;
+async function loadSnapshot(id) {
+  const wanted = typeof id === "string" && id ? id : "default";
+  if (!safeId(wanted)) return JSON.parse(JSON.stringify(builtinMap()));
+  const stored = readStored(wanted) || await ensureStored(wanted);
+  return JSON.parse(JSON.stringify(stored || builtinMap()));
+}
+
+async function customMapCount() {
+  if (!persist.enabled()) return 0;
+  const rows = await persist.loadAll();
+  return rows.filter((row) => row && row.id !== "default" && safeId(row.id)).length;
 }
 
 function pruneVersions(id) {
@@ -616,6 +645,7 @@ async function saveMap(raw) {
   }
   const checked = validateMap(raw);
   if (!checked.ok) return checked;
+  if (!persist.enabled()) return { ok: false, error: PERSIST_FAIL };
   const map = checked.map;
   const requestedId = typeof raw.id === "string" ? raw.id : "";
   const isNew = !requestedId || requestedId === "new";
@@ -624,7 +654,13 @@ async function saveMap(raw) {
   }
   const now = new Date().toISOString();
   if (isNew) {
-    if (customMapCount() >= MAX_CUSTOM_MAPS) {
+    let count = 0;
+    try {
+      count = await customMapCount();
+    } catch (err) {
+      return { ok: false, error: PERSIST_FAIL };
+    }
+    if (count >= MAX_CUSTOM_MAPS) {
       return { ok: false, error: "Cannot save map: the map list is full." };
     }
     map.id = "m" + crypto.randomBytes(6).toString("hex");
@@ -632,7 +668,7 @@ async function saveMap(raw) {
     map.createdAt = now;
   } else {
     map.id = requestedId;
-    const existing = readStored(map.id);
+    const existing = readStored(map.id) || await ensureStored(map.id);
     const baseVersion = Number(raw.baseVersion);
     if (map.id === "default" && !existing) {
       if (baseVersion !== 1) {
@@ -650,39 +686,35 @@ async function saveMap(raw) {
       try {
         writeAtomic(versionFile(map.id, existing.version), JSON.stringify(existing));
       } catch (err) {
-        return { ok: false, error: "Could not archive the previous map version." };
+        /* A local archive is optional. The database write is the save. */
       }
     }
   }
   map.updatedAt = now;
   map.builtin = false;
-  const previous = !isNew ? readStored(map.id) : null;
+  try {
+    await persist.save(map);
+  } catch (err) {
+    return { ok: false, error: PERSIST_FAIL };
+  }
   try {
     writeAtomic(mapFile(map.id), JSON.stringify(map));
   } catch (err) {
-    return { ok: false, error: "Could not save the map." };
+    /* The row is already in the database. The next list rebuilds this cache. */
   }
-  if (persist.enabled()) {
-    try {
-      await persist.save(readStored(map.id) || map);
-    } catch (err) {
-      try {
-        if (previous) writeAtomic(mapFile(map.id), JSON.stringify(previous));
-        else fs.unlinkSync(mapFile(map.id));
-      } catch (restoreErr) {
-        /* The save response still reports failure. */
-      }
-      return { ok: false, error: "Could not store the map. It was not saved." };
-    }
+  try {
+    pruneVersions(map.id);
+  } catch (err) {
+    /* Version files are a local cache. */
   }
-  pruneVersions(map.id);
-  return { ok: true, map: readStored(map.id) || map };
+  return { ok: true, map };
 }
 
-function loadForEditor(id) {
+async function loadForEditor(id) {
   const wanted = typeof id === "string" && id ? id : "default";
   if (!safeId(wanted)) return { ok: false, error: "That map could not be loaded." };
-  const stored = readStored(wanted);
+  if (wanted !== "default" && !persist.enabled()) return { ok: false, error: LOAD_FAIL };
+  const stored = readStored(wanted) || await ensureStored(wanted);
   if (stored) return { ok: true, map: stored };
   if (wanted === "default") return { ok: true, map: builtinMap() };
   return { ok: false, error: "That map could not be loaded." };
@@ -702,7 +734,10 @@ module.exports = {
   publicView,
   previewOf,
   snapshot,
+  loadSnapshot,
   saveMap,
   loadForEditor,
-  summary
+  summary,
+  PERSIST_FAIL,
+  LOAD_FAIL
 };

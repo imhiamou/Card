@@ -1409,3 +1409,6 @@ if(window.DodgeBall)DodgeBall.init(socket);
 if(window.CoinFlip)CoinFlip.init(socket);
 if(window.HiddenHunter)HiddenHunter.init(socket);
 if(window.HiddenHunterEditor)HiddenHunterEditor.init(socket);
+socket.on("connect",()=>{
+if(gameSelectEl&&gameSelectEl.value==="hidden-hunter"&&window.HiddenHunterEditor)HiddenHunterEditor.refreshMaps();
+});

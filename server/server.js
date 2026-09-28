@@ -23,6 +23,20 @@ app.get("/", (req, res) => {
   res.send("Hidden Duel server is running.");
 });
 
+app.get("/api/hh-maps", async (req, res) => {
+  res.set("Access-Control-Allow-Origin", "*");
+  try {
+    const listed = await hhMaps.listMaps();
+    res.status(listed.ok ? 200 : 503).json(listed);
+  } catch (err) {
+    res.status(503).json({
+      ok: false,
+      error: hhMaps.LOAD_FAIL,
+      maps: []
+    });
+  }
+});
+
 const BOARD_SIZE = 8;
 const MAX_PLAYERS = 2;
 const MAX_HAND_SIZE = 5;
@@ -719,7 +733,7 @@ io.on("connection", (socket) => {
    * Character is chosen later during Hidden Hunt placement.
    * Replies with "lobbyCreated" { room } to the creator.
    */
-  socket.on("createLobby", (data) => {
+  socket.on("createLobby", async (data) => {
     const name = normalizePlayerName(data && data.name);
     const roomCode = data && typeof data.room === "string" ? data.room.trim().toUpperCase() : "";
     // Lobby game mode: default Hidden Hunt. Other modes launch those games only.
@@ -777,8 +791,13 @@ io.on("connection", (socket) => {
     }
 
     if (gameMode === "hidden-hunter") {
-      const snap = hhMaps.snapshot(data && data.mapId);
-      rooms[roomCode].hhMapSnapshot = snap;
+      try {
+        rooms[roomCode].hhMapSnapshot = await hhMaps.loadSnapshot(data && data.mapId);
+      } catch (err) {
+        delete rooms[roomCode];
+        socket.emit("errorMessage", hhMaps.LOAD_FAIL);
+        return;
+      }
     }
 
     socket.join(roomCode);
@@ -1389,7 +1408,7 @@ hhMaps.ready().then((storage) => {
   if (storage && storage.persistent) {
     console.log("Hidden Hunter maps restored from Postgres (" + storage.count + ").");
   } else {
-    console.log("Hidden Hunter maps are stored on local disk. Set DATABASE_URL to keep them across Render redeploys.");
+    console.log("Hidden Hunter map saves are disabled. Set DATABASE_URL to a Postgres database before custom maps can be stored.");
   }
   server.listen(PORT, () => {
     console.log("Hidden Duel server listening on port " + PORT);

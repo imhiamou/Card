@@ -101,6 +101,7 @@
   let warehouseOnly = true;
   let page = 0;
   let mapList = [];
+  let mapLoadError = "";
   let selectedMapId = "default";
   let doc = null;
   let tool = "select";
@@ -1129,7 +1130,7 @@
     });
     const note = document.createElement("p");
     note.className = "hheNote";
-    note.textContent = "Warehouse style shows Kenney sprites that match the current map. Turn it off to browse other CC0 packs. TRIBE WAREHOUSE is the uploaded Tribe location sheet and is not CC0. Nothing here is placed until you click the map. Saved maps store the asset id, not the image. With DATABASE_URL set, those maps stay in Postgres across redeploys.";
+    note.textContent = "Warehouse style shows Kenney sprites that match the current map. Turn it off to browse other CC0 packs. TRIBE WAREHOUSE is the uploaded Tribe location sheet and is not CC0. Nothing here is placed until you click the map. Saved maps are stored in the server database. A save that cannot reach that database is rejected.";
     ui.libScroll.appendChild(note);
     ui.libScroll.scrollTop = kept;
   }
@@ -1181,7 +1182,8 @@
     const buttons = mapList.map((map) => {
       return "<button type=\"button\" data-id=\"" + map.id + "\">" + map.name + " — " + map.width + "×" + map.height + "</button>";
     }).join("");
-    showModal("<h3>Edit existing map</h3><div class=\"hheList\">" + (buttons || "<p>No maps yet.</p>") + "</div><button type=\"button\" id=\"hheOpenCancel\">Cancel</button>");
+    const warning = mapLoadError ? "<p class=\"hheNote\">" + mapLoadError.replace(/[<>]/g, "") + "</p>" : "";
+    showModal("<h3>Edit existing map</h3>" + warning + "<div class=\"hheList\">" + (buttons || "<p>No maps yet.</p>") + "</div><button type=\"button\" id=\"hheOpenCancel\">Cancel</button>");
     $("hheOpenCancel").onclick = hideModal;
     ui.modal.querySelectorAll("[data-id]").forEach((btn) => {
       btn.onclick = () => {
@@ -1358,7 +1360,7 @@
     setStatus("Loading asset library…");
     loadLibrary().then(() => {
       renderLibrary();
-      setStatus("New map. " + library.length + " library sprites. Warehouse style shows the matching Kenney set.");
+      setStatus(mapLoadError || ("New map. " + library.length + " library sprites. Warehouse style shows the matching Kenney set."));
     });
   }
 
@@ -1382,7 +1384,9 @@
     const current = mapList.find((map) => map.id === selectedMapId) || mapList[0];
     if (current && meta) {
       const when = current.updatedAt ? " · updated " + current.updatedAt.slice(0, 10) : "";
-      meta.textContent = current.name + " — " + current.width + "×" + current.height + when;
+      meta.textContent = current.name + " — " + current.width + "×" + current.height + when + (mapLoadError ? " — " + mapLoadError : "");
+    } else if (meta && mapLoadError) {
+      meta.textContent = mapLoadError;
     }
   }
 
@@ -1433,9 +1437,14 @@
       };
     }
     socket.on("hhMapList", (data) => {
+      mapLoadError = data && data.ok === false
+        ? ((data && data.error) || "Failed to load saved maps. The server could not read persistent storage.")
+        : "";
       mapList = (data && data.maps) || [];
       if (!mapList.some((map) => map.id === selectedMapId)) selectedMapId = "default";
       renderChoices();
+      const gate = $("hhEditorMsg");
+      if (gate) gate.textContent = mapLoadError;
       if (ui.modal && !ui.modal.classList.contains("hidden") && ui.modal.querySelector("#hheOpenCancel")) showOpenList();
       const preview = $("hhMapPreview");
       if (preview && socket) socket.emit("hhMapPreview", { id: selectedMapId });
@@ -1449,7 +1458,16 @@
         if (msg) msg.textContent = (data && data.error) || "That name cannot open the editor.";
         return;
       }
+      if (data.error) {
+        mapLoadError = data.error;
+        if (msg) msg.textContent = data.error;
+      }
+      if (data.maps) {
+        mapList = data.maps;
+        renderChoices();
+      }
       openEditor(data);
+      if (data.error) setStatus(data.error);
     });
     socket.on("hhEditorLoad", (data) => {
       if (!data || !data.ok) {
@@ -1462,13 +1480,15 @@
     socket.on("hhEditorSave", (data) => {
       const err = $("hheSaveErr");
       if (!data || !data.ok) {
-        if (err) err.textContent = (data && data.error) || "Cannot save map.";
-        else setStatus((data && data.error) || "Cannot save map.");
+        const message = (data && data.error) || "Failed to save map. The server could not persist the map.";
+        if (err) err.textContent = message;
+        else setStatus(message);
         return;
       }
       hideModal();
       adoptMap(data.map, false);
       if (data.maps) {
+        mapLoadError = data.error || "";
         mapList = data.maps;
         renderChoices();
       }
