@@ -8,28 +8,154 @@
 const { Pool } = require("pg");
 
 let pool = null;
+const TABLE = "hh_maps";
+
+function redact(text) {
+  return String(text || "")
+    .replace(/postgres(?:ql)?:\/\/[^\s'")]+/gi, "postgresql://[redacted]");
+}
+
+function databaseUrl() {
+  const names = ["DATABASE_URL", "MAP_DATABASE_URL"];
+  for (let i = 0; i < names.length; i++) {
+    const url = process.env[names[i]];
+    if (url && String(url).trim()) return String(url).trim();
+  }
+  return "";
+}
+
+function databaseConfigStatus() {
+  return {
+    DATABASE_URL: process.env.DATABASE_URL && String(process.env.DATABASE_URL).trim() ? "set" : "missing",
+    MAP_DATABASE_URL: process.env.MAP_DATABASE_URL && String(process.env.MAP_DATABASE_URL).trim() ? "set" : "missing"
+  };
+}
+
+function databaseHost(url) {
+  try {
+    return new URL(url).hostname || "unknown";
+  } catch (err) {
+    return "unparsed";
+  }
+}
 
 function sslOption(url) {
-  if (/localhost|127\.0\.0\.1/.test(url)) return false;
+  let host = "";
+  try {
+    host = new URL(url).hostname;
+  } catch (err) {
+    return { rejectUnauthorized: false };
+  }
+  if (host === "localhost" || host === "127.0.0.1" || host === "::1") return false;
+  // Render's private database host has no dot (for example dpg-abc-a).
+  // Forcing SSL against that host fails the connection.
+  if (host.indexOf(".") === -1) return false;
   return { rejectUnauthorized: false };
 }
 
-async function connect() {
-  const url = process.env.DATABASE_URL;
-  if (!url || !String(url).trim()) return false;
-  pool = new Pool({
-    connectionString: String(url).trim(),
-    ssl: sslOption(url),
-    max: 4
+function safeMessage(err) {
+  if (!err) return "unknown database error";
+  const code = err.code ? String(err.code) + " " : "";
+  let message = err.message ? String(err.message) : "unknown database error";
+  message = redact(message);
+  if (message.length > 400) message = message.slice(0, 400);
+  return (code + message).trim();
+}
+
+function failureReason(err) {
+  if (!databaseUrl()) return "DATABASE_URL is missing";
+  if (!pool && !err) return "database connection is not open";
+  if (!err) return "the database write did not succeed";
+  return safeMessage(err);
+}
+
+function logFields(fields) {
+  const lines = ["[hh-maps]"];
+  Object.keys(fields).forEach((key) => {
+    const value = fields[key];
+    if (value === undefined || value === null || value === "") return;
+    lines.push(key + ": " + redact(value));
   });
-  await pool.query(
-    "CREATE TABLE IF NOT EXISTS hh_maps (id text PRIMARY KEY, document jsonb NOT NULL)"
-  );
-  return true;
+  console.error(lines.join("\n"));
+}
+
+function logFailure(action, err, map) {
+  const config = databaseConfigStatus();
+  logFields({
+    event: action + " failed",
+    "connection status": pool ? "connected" : "not connected",
+    DATABASE_URL: config.DATABASE_URL,
+    MAP_DATABASE_URL: config.MAP_DATABASE_URL,
+    "database host": databaseUrl() ? databaseHost(databaseUrl()) : "",
+    table: TABLE,
+    "map id": map && map.id,
+    "map name": map && map.name,
+    operation: action,
+    "error message": err ? safeMessage(err) : failureReason(null),
+    "error code": err && err.code ? String(err.code) : ""
+  });
+  if (err && err.stack) console.error(redact(err.stack));
+}
+
+function enabled() {
+  return !!pool;
+}
+
+async function connect() {
+  const url = databaseUrl();
+  if (!url) {
+    const config = databaseConfigStatus();
+    logFields({
+      event: "database configuration",
+      DATABASE_URL: config.DATABASE_URL,
+      MAP_DATABASE_URL: config.MAP_DATABASE_URL,
+      "connection status": "not connected",
+      table: TABLE,
+      "error message": "DATABASE_URL is missing"
+    });
+    return false;
+  }
+  const host = databaseHost(url);
+  console.log("[hh-maps] DATABASE_URL is set");
+  console.log("[hh-maps] database host: " + host);
+  console.log("[hh-maps] operation: connect");
+  console.log("[hh-maps] operation: CREATE TABLE IF NOT EXISTS " + TABLE);
+  pool = new Pool({
+    connectionString: url,
+    ssl: sslOption(url),
+    max: 4,
+    connectionTimeoutMillis: 10000
+  });
+  pool.on("error", (err) => {
+    logFailure("idle database client", err, null);
+  });
+  try {
+    await pool.query(
+      "CREATE TABLE IF NOT EXISTS hh_maps (id text PRIMARY KEY, document jsonb NOT NULL)"
+    );
+    await pool.query("SELECT 1");
+    console.log("[hh-maps] connection status: connected");
+    console.log("[hh-maps] table " + TABLE + ": ready");
+    return true;
+  } catch (err) {
+    const failed = pool;
+    pool = null;
+    logFailure("connect", err, null);
+    try {
+      await failed.end();
+    } catch (endErr) {
+      /* The failed pool is discarded either way. */
+    }
+    throw err;
+  }
 }
 
 async function loadAll() {
-  if (!pool) throw new Error("persistent storage is not connected");
+  if (!pool) {
+    const err = new Error(failureReason(null));
+    logFailure("SELECT id, document FROM hh_maps", err, null);
+    throw err;
+  }
   const result = await pool.query("SELECT id, document FROM hh_maps");
   return result.rows.map((row) => ({
     id: row.id,
@@ -45,15 +171,35 @@ async function loadOne(id) {
 }
 
 async function save(map) {
-  if (!pool) throw new Error("persistent storage is not connected");
+  if (!pool) throw new Error(failureReason(null));
+  console.log("[hh-maps] operation: INSERT INTO hh_maps (id, document) ON CONFLICT (id) DO UPDATE");
+  console.log("[hh-maps] map id: " + map.id);
+  console.log("[hh-maps] map name: " + map.name);
+  console.log("[hh-maps] connection status: connected");
+  console.log("[hh-maps] table: " + TABLE);
   await pool.query(
     "INSERT INTO hh_maps (id, document) VALUES ($1, $2::jsonb) ON CONFLICT (id) DO UPDATE SET document = EXCLUDED.document",
     [map.id, JSON.stringify(map)]
   );
+  const check = await pool.query(
+    "SELECT id, document->>'name' AS name FROM hh_maps WHERE id = $1",
+    [map.id]
+  );
+  if (!check.rows.length || check.rows[0].name !== map.name) {
+    throw new Error("the database did not confirm the saved map");
+  }
+  console.log("[hh-maps] write confirmed for map id: " + map.id);
 }
 
-function enabled() {
-  return !!pool;
-}
-
-module.exports = { connect, loadAll, loadOne, save, enabled };
+module.exports = {
+  connect,
+  loadAll,
+  loadOne,
+  save,
+  enabled,
+  failureReason,
+  logFailure,
+  safeMessage,
+  redact,
+  TABLE
+};
