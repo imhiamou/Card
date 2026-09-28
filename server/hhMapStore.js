@@ -468,6 +468,7 @@ async function ensureStored(id) {
   try {
     document = await persist.loadOne(id);
   } catch (err) {
+    persist.logFailure("SELECT document FROM hh_maps", err, { id: id });
     return null;
   }
   const map = mapFromDocument(id, document);
@@ -493,15 +494,26 @@ function summary(map) {
   };
 }
 
+function storageError(prefix, err, map) {
+  persist.logFailure(prefix, err, map);
+  return prefix + " " + persist.failureReason(err);
+}
+
+function fallbackList(error) {
+  return { ok: false, error: error || LOAD_FAIL, maps: [summary(builtinMap())] };
+}
+
 async function listMaps() {
   if (!persist.enabled()) {
-    return { ok: false, error: LOAD_FAIL, maps: [summary(builtinMap())] };
+    persist.logFailure("SELECT id, document FROM hh_maps", null, null);
+    return { ok: false, error: LOAD_FAIL + " " + persist.failureReason(null), maps: [summary(builtinMap())] };
   }
   let rows = [];
   try {
     rows = await persist.loadAll();
   } catch (err) {
-    return { ok: false, error: LOAD_FAIL, maps: [summary(readStored("default") || builtinMap())] };
+    persist.logFailure("SELECT id, document FROM hh_maps", err, null);
+    return { ok: false, error: LOAD_FAIL + " " + persist.failureReason(err), maps: [summary(readStored("default") || builtinMap())] };
   }
   let savedDefault = null;
   const custom = [];
@@ -645,8 +657,13 @@ async function saveMap(raw) {
   }
   const checked = validateMap(raw);
   if (!checked.ok) return checked;
-  if (!persist.enabled()) return { ok: false, error: PERSIST_FAIL };
   const map = checked.map;
+  console.log("[hh-maps] save reached");
+  console.log("[hh-maps] map id: " + (map.id || raw.id || "new"));
+  console.log("[hh-maps] map name: " + map.name);
+  if (!persist.enabled()) {
+    return { ok: false, error: storageError(PERSIST_FAIL, null, map) };
+  }
   const requestedId = typeof raw.id === "string" ? raw.id : "";
   const isNew = !requestedId || requestedId === "new";
   if (!isNew && !safeId(requestedId)) {
@@ -658,7 +675,7 @@ async function saveMap(raw) {
     try {
       count = await customMapCount();
     } catch (err) {
-      return { ok: false, error: PERSIST_FAIL };
+      return { ok: false, error: storageError(PERSIST_FAIL, err, map) };
     }
     if (count >= MAX_CUSTOM_MAPS) {
       return { ok: false, error: "Cannot save map: the map list is full." };
@@ -695,7 +712,7 @@ async function saveMap(raw) {
   try {
     await persist.save(map);
   } catch (err) {
-    return { ok: false, error: PERSIST_FAIL };
+    return { ok: false, error: storageError(PERSIST_FAIL, err, map) };
   }
   try {
     writeAtomic(mapFile(map.id), JSON.stringify(map));
@@ -713,7 +730,10 @@ async function saveMap(raw) {
 async function loadForEditor(id) {
   const wanted = typeof id === "string" && id ? id : "default";
   if (!safeId(wanted)) return { ok: false, error: "That map could not be loaded." };
-  if (wanted !== "default" && !persist.enabled()) return { ok: false, error: LOAD_FAIL };
+  if (wanted !== "default" && !persist.enabled()) {
+    persist.logFailure("load map", null, { id: wanted });
+    return { ok: false, error: LOAD_FAIL + " " + persist.failureReason(null) };
+  }
   const stored = readStored(wanted) || await ensureStored(wanted);
   if (stored) return { ok: true, map: stored };
   if (wanted === "default") return { ok: true, map: builtinMap() };
@@ -738,6 +758,9 @@ module.exports = {
   saveMap,
   loadForEditor,
   summary,
+  fallbackList,
+  describeError: persist.safeMessage,
+  redact: persist.redact,
   PERSIST_FAIL,
   LOAD_FAIL
 };

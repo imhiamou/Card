@@ -14,6 +14,7 @@ const { createBotSocket } = require("./bots/botSocket");
 
 const app = express();
 const server = http.createServer(app);
+app.use(express.json({ limit: "2mb" }));
 const io = new Server(server, {
   cors: { origin: "*" }
 });
@@ -23,17 +24,85 @@ app.get("/", (req, res) => {
   res.send("Hidden Duel server is running.");
 });
 
-app.get("/api/hh-maps", async (req, res) => {
+function mapCors(res) {
   res.set("Access-Control-Allow-Origin", "*");
+  res.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.set("Access-Control-Allow-Headers", "Content-Type");
+}
+
+app.options("/api/hh-maps", (req, res) => {
+  mapCors(res);
+  res.sendStatus(204);
+});
+
+app.get("/api/hh-maps", async (req, res) => {
+  mapCors(res);
   try {
     const listed = await hhMaps.listMaps();
     res.status(listed.ok ? 200 : 503).json(listed);
   } catch (err) {
-    res.status(503).json({
-      ok: false,
-      error: hhMaps.LOAD_FAIL,
-      maps: []
-    });
+    console.error("[hh-maps] GET /api/hh-maps failed");
+    console.error(hhMaps.describeError(err));
+    res.status(503).json(hhMaps.fallbackList(hhMaps.LOAD_FAIL + " " + hhMaps.describeError(err)));
+  }
+});
+
+app.options("/api/maps", (req, res) => {
+  mapCors(res);
+  res.sendStatus(204);
+});
+
+app.options("/api/maps/:id", (req, res) => {
+  mapCors(res);
+  res.sendStatus(204);
+});
+
+app.get("/api/maps", async (req, res) => {
+  mapCors(res);
+  try {
+    const listed = await hhMaps.listMaps();
+    res.status(listed.ok ? 200 : 503).json(listed);
+  } catch (err) {
+    console.error("[hh-maps] GET /api/maps failed");
+    console.error(hhMaps.describeError(err));
+    res.status(503).json(hhMaps.fallbackList(hhMaps.LOAD_FAIL + " " + hhMaps.describeError(err)));
+  }
+});
+
+app.get("/api/maps/:id", async (req, res) => {
+  mapCors(res);
+  try {
+    const result = await hhMaps.loadForEditor(req.params.id);
+    if (!result.ok) {
+      const missing = String(result.error || "").indexOf(hhMaps.LOAD_FAIL) === 0;
+      res.status(missing ? 503 : 404).json(result);
+      return;
+    }
+    res.json({ ok: true, map: result.map });
+  } catch (err) {
+    console.error("[hh-maps] GET /api/maps/:id failed");
+    console.error(hhMaps.describeError(err));
+    res.status(503).json({ ok: false, error: hhMaps.LOAD_FAIL + " " + hhMaps.describeError(err) });
+  }
+});
+
+app.post("/api/maps", async (req, res) => {
+  mapCors(res);
+  console.log("[hh-maps] POST /api/maps reached");
+  const body = req.body && req.body.map ? req.body.map : req.body;
+  try {
+    const result = await hhMaps.saveMap(body);
+    if (!result.ok) {
+      const persistFail = String(result.error || "").indexOf(hhMaps.PERSIST_FAIL) === 0;
+      res.status(persistFail ? 503 : 400).json({ ok: false, error: result.error || hhMaps.PERSIST_FAIL });
+      return;
+    }
+    res.json({ ok: true, map: result.map });
+  } catch (err) {
+    console.error("[hh-maps] POST /api/maps failed");
+    console.error(hhMaps.describeError(err));
+    if (err && err.stack) console.error(err.stack);
+    res.status(503).json({ ok: false, error: hhMaps.PERSIST_FAIL + " " + hhMaps.describeError(err) });
   }
 });
 
@@ -1408,13 +1477,14 @@ hhMaps.ready().then((storage) => {
   if (storage && storage.persistent) {
     console.log("Hidden Hunter maps restored from Postgres (" + storage.count + ").");
   } else {
-    console.log("Hidden Hunter map saves are disabled. Set DATABASE_URL to a Postgres database before custom maps can be stored.");
+    console.error("DATABASE_URL is missing. Hidden Hunter map saves cannot persist until DATABASE_URL points at a Postgres database.");
   }
   server.listen(PORT, () => {
     console.log("Hidden Duel server listening on port " + PORT);
   });
 }).catch((err) => {
   console.error("Hidden Hunter map storage failed to start.");
-  console.error(err);
+  console.error(hhMaps.describeError(err));
+  if (err && err.stack) console.error(hhMaps.redact(err.stack));
   process.exit(1);
 });

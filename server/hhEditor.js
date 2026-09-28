@@ -11,7 +11,9 @@ function register(socket) {
     try {
       socket.emit("hhMapList", await maps.listMaps());
     } catch (err) {
-      socket.emit("hhMapList", { ok: false, error: maps.LOAD_FAIL, maps: [] });
+      console.error("[hh-maps] hhListMaps failed");
+      console.error(maps.describeError(err));
+      socket.emit("hhMapList", maps.fallbackList(maps.LOAD_FAIL + " " + maps.describeError(err)));
     }
   });
 
@@ -58,7 +60,10 @@ function register(socket) {
       });
       socket.broadcast.emit("hhMapList", listed);
     } catch (err) {
-      socket.emit("hhEditorSave", { ok: false, error: maps.PERSIST_FAIL });
+      console.error("[hh-maps] hhEditorSave failed");
+      console.error(maps.describeError(err));
+      if (err && err.stack) console.error(maps.redact(err.stack));
+      socket.emit("hhEditorSave", { ok: false, error: maps.PERSIST_FAIL + " " + maps.describeError(err) });
     }
   });
 }
