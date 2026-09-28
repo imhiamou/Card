@@ -53,6 +53,14 @@ const STUCK_DIST = 5;
 const RETARGET_MS = 3800;
 const PAUSE_MIN_MS = 280;
 const PAUSE_MAX_MS = 720;
+const MONSTER_DETECTION_RANGE = 560;
+const MONSTER_GENERAL_HUNT_DISTANCE = 480;
+const MONSTER_LAST_SEEN_SEARCH_RADIUS = 200;
+const MONSTER_SEARCH_DURATION = 6500;
+const MONSTER_AI_INTERVAL = 150;
+const MONSTER_LOS_RADIUS = 8;
+const MONSTER_SEARCH_STOPS = 4;
+const MONSTER_SIDESTEP_MS = 700;
 
 const SPAWNS = {
   hunter: { x: DEFAULT_SNAP.spawns.hunter.x, y: DEFAULT_SNAP.spawns.hunter.y },
@@ -276,7 +284,15 @@ function makeMonster(players, spawns) {
     faceY: 0,
     angryUntil: 0,
     escaping: false,
-    escapeFromId: null
+    escapeFromId: null,
+    huntMode: "patrol",
+    lastSeen: null,
+    seenPlayerId: null,
+    searchUntil: 0,
+    searchStops: 0,
+    seekUntil: 0,
+    nextPerceptionAt: 0,
+    sidestepUntil: 0
   };
   m.target = pickMonsterTarget(m);
   return m;
@@ -577,6 +593,143 @@ function pickEscapeTarget(m, shooter) {
   return pickMonsterTarget(m);
 }
 
+function livingPlayers(hh) {
+  return Object.values(hh.players).filter((p) => p && !p.dead);
+}
+
+function seesPlayer(m, player) {
+  if (!player || player.dead) return false;
+  if (len(player.x - m.x, player.y - m.y) > MONSTER_DETECTION_RANGE) return false;
+  return walkableLine(m.x, m.y, player.x, player.y, MONSTER_LOS_RADIUS);
+}
+
+function nearestLivingPlayer(m, players) {
+  let best = null;
+  let bestDist = Infinity;
+  players.forEach((player) => {
+    const dist = len(player.x - m.x, player.y - m.y);
+    if (dist < bestDist) {
+      best = player;
+      bestDist = dist;
+    }
+  });
+  return best ? { player: best, dist: bestDist } : null;
+}
+
+function standable(x, y) {
+  if (!inBounds(x, y, MONSTER_R) || blocked(x, y, MONSTER_R)) return null;
+  return { x: x, y: y };
+}
+
+function nearWalkable(x, y) {
+  const direct = standable(x, y);
+  if (direct) return direct;
+  for (let dist = 28; dist <= 168; dist += 28) {
+    for (let i = 0; i < 8; i++) {
+      const ang = (i * Math.PI) / 4;
+      const spot = standable(x + Math.cos(ang) * dist, y + Math.sin(ang) * dist);
+      if (spot) return spot;
+    }
+  }
+  return randomWalkable(MONSTER_R);
+}
+
+function generalArea(player) {
+  const cell = MONSTER_GENERAL_HUNT_DISTANCE;
+  const x = Math.floor(player.x / cell) * cell + cell / 2;
+  const y = Math.floor(player.y / cell) * cell + cell / 2;
+  return nearWalkable(x, y);
+}
+
+function searchPoint(origin) {
+  const radius = MONSTER_LAST_SEEN_SEARCH_RADIUS;
+  for (let i = 0; i < 12; i++) {
+    const ang = (randomInt(360) * Math.PI) / 180;
+    const dist = 48 + randomInt(Math.max(1, radius - 48));
+    const spot = standable(origin.x + Math.cos(ang) * dist, origin.y + Math.sin(ang) * dist);
+    if (!spot) continue;
+    if (!walkableLine(origin.x, origin.y, spot.x, spot.y, MONSTER_R)) continue;
+    return spot;
+  }
+  return nearWalkable(origin.x, origin.y);
+}
+
+function forgetSeen(m) {
+  m.huntMode = "patrol";
+  m.lastSeen = null;
+  m.seenPlayerId = null;
+  m.searchUntil = 0;
+  m.searchStops = 0;
+  m.seekUntil = 0;
+}
+
+function beginSearch(m, now) {
+  m.huntMode = "search";
+  m.searchUntil = now + MONSTER_SEARCH_DURATION;
+  m.searchStops = MONSTER_SEARCH_STOPS;
+  m.target = searchPoint(m.lastSeen);
+}
+
+function updateMonsterPerception(hh, m, now) {
+  const players = livingPlayers(hh);
+  let seen = null;
+  let seenDist = Infinity;
+  players.forEach((player) => {
+    if (!seesPlayer(m, player)) return;
+    const dist = len(player.x - m.x, player.y - m.y);
+    if (dist < seenDist) {
+      seen = player;
+      seenDist = dist;
+    }
+  });
+  if (seen) {
+    m.huntMode = "chase";
+    m.seenPlayerId = seen.id;
+    m.lastSeen = { x: seen.x, y: seen.y };
+    m.target = { x: seen.x, y: seen.y };
+    m.searchUntil = 0;
+    m.searchStops = 0;
+    m.seekUntil = 0;
+    return;
+  }
+  if ((m.huntMode === "chase" || m.huntMode === "seek") && m.lastSeen) {
+    if (m.huntMode === "chase") {
+      m.huntMode = "seek";
+      m.seekUntil = now + MONSTER_SEARCH_DURATION + 4000;
+      m.target = nearWalkable(m.lastSeen.x, m.lastSeen.y);
+    }
+    const arrived = len(m.x - m.lastSeen.x, m.y - m.lastSeen.y) < 52
+      || (m.target && len(m.x - m.target.x, m.y - m.target.y) < 28);
+    if (now >= (m.seekUntil || 0)) {
+      forgetSeen(m);
+    } else if (arrived) {
+      beginSearch(m, now);
+    }
+    return;
+  }
+  if (m.huntMode === "search" && m.lastSeen) {
+    const arrived = m.target && len(m.x - m.target.x, m.y - m.target.y) < 28;
+    if (now >= (m.searchUntil || 0) || (m.searchStops || 0) <= 0) {
+      forgetSeen(m);
+    } else if (arrived) {
+      m.searchStops -= 1;
+      if (m.searchStops <= 0) forgetSeen(m);
+      else m.target = searchPoint(m.lastSeen);
+    }
+    if (m.huntMode === "search") return;
+  }
+  const nearest = nearestLivingPlayer(m, players);
+  if (nearest && nearest.dist > MONSTER_DETECTION_RANGE) {
+    m.huntMode = "general";
+    m.target = generalArea(nearest.player);
+    return;
+  }
+  m.huntMode = "patrol";
+  if (!m.target || len(m.x - m.target.x, m.y - m.target.y) < 36) {
+    m.target = pickMonsterTarget(m);
+  }
+}
+
 function angerMonster(hh, m, now) {
   if (!m || m.hp <= 0) return;
   const shooter = hh.players[hh.hunterId];
@@ -621,11 +774,13 @@ function stepMonster(hh, dt, io) {
       const from = shooter && !shooter.dead ? shooter : null;
       m.target = pickEscapeTarget(m, from);
       m.escaping = true;
+      m.nextRetargetAt = now + RETARGET_MS;
     } else {
-      m.target = pickMonsterTarget(m);
       m.escaping = false;
+      m.nextPerceptionAt = 0;
+      updateMonsterPerception(hh, m, now);
+      m.nextPerceptionAt = now + MONSTER_AI_INTERVAL;
     }
-    m.nextRetargetAt = now + RETARGET_MS;
     m.lastMovedAt = now;
   }
   unstick(m, MONSTER_R);
@@ -676,9 +831,10 @@ function stepMonster(hh, dt, io) {
   if (m.escaping && !angry) {
     m.escaping = false;
     m.escapeFromId = null;
-    m.target = pickMonsterTarget(m);
-    m.nextRetargetAt = now + RETARGET_MS;
     m.failedTargets = [];
+    m.nextPerceptionAt = 0;
+    updateMonsterPerception(hh, m, now);
+    m.nextPerceptionAt = now + MONSTER_AI_INTERVAL;
   }
   if (m.rushPhase === "idle" && !angry && now >= (m.rushCooldownUntil || 0)) {
     const prey = nearestLiving(hh, m.x, m.y, MONSTER_RUSH_RANGE);
@@ -695,13 +851,6 @@ function stepMonster(hh, dt, io) {
       return;
     }
   }
-  if (now < m.pauseUntil) {
-    m.moving = false;
-    m.lastX = m.x;
-    m.lastY = m.y;
-    m.lastMovedAt = now;
-    return;
-  }
   const movedDist = len(m.x - m.lastX, m.y - m.lastY);
   if (movedDist >= STUCK_DIST) {
     m.lastX = m.x;
@@ -709,14 +858,21 @@ function stepMonster(hh, dt, io) {
     m.lastMovedAt = now;
   }
   const stuck = now - m.lastMovedAt >= STUCK_MS;
-  const targetBad = !m.target
-    || blocked(m.target.x, m.target.y, MONSTER_R)
-    || !walkableLine(m.x, m.y, m.target.x, m.target.y, MONSTER_R);
-  const arrived = m.target && len(m.x - m.target.x, m.y - m.target.y) < 18;
-  const retargetDue = now >= (m.nextRetargetAt || 0);
-  if (stuck || targetBad || arrived || retargetDue) {
-    if (stuck || targetBad) rememberFailedTarget(m, m.target);
-    if (angry) {
+  if (angry) {
+    if (now < m.pauseUntil) {
+      m.moving = false;
+      m.lastX = m.x;
+      m.lastY = m.y;
+      m.lastMovedAt = now;
+      return;
+    }
+    const targetBad = !m.target
+      || blocked(m.target.x, m.target.y, MONSTER_R)
+      || !walkableLine(m.x, m.y, m.target.x, m.target.y, MONSTER_R);
+    const arrived = m.target && len(m.x - m.target.x, m.y - m.target.y) < 18;
+    const retargetDue = now >= (m.nextRetargetAt || 0);
+    if (stuck || targetBad || arrived || retargetDue) {
+      if (stuck || targetBad) rememberFailedTarget(m, m.target);
       const shooter = m.escapeFromId && hh.players[m.escapeFromId];
       const from = shooter && !shooter.dead ? shooter : null;
       const fled = from && len(m.x - from.x, m.y - from.y) >= MONSTER_ESCAPE_DIST * 0.7;
@@ -724,8 +880,9 @@ function stepMonster(hh, dt, io) {
         m.angryUntil = now;
         m.escaping = false;
         m.escapeFromId = null;
-        m.target = pickMonsterTarget(m);
-        m.nextRetargetAt = now + RETARGET_MS;
+        m.nextPerceptionAt = 0;
+        updateMonsterPerception(hh, m, now);
+        m.nextPerceptionAt = now + MONSTER_AI_INTERVAL;
       } else {
         m.target = pickEscapeTarget(m, from);
         m.nextRetargetAt = now + MONSTER_ANGRY_DURATION;
@@ -733,21 +890,37 @@ function stepMonster(hh, dt, io) {
       m.lastMovedAt = now;
       m.lastX = m.x;
       m.lastY = m.y;
-    } else {
-      if (arrived && !stuck && randomInt(100) < 22) {
-        m.moving = false;
-        m.pauseUntil = now + PAUSE_MIN_MS + randomInt(Math.max(1, PAUSE_MAX_MS - PAUSE_MIN_MS));
-        m.lastMovedAt = now;
-        m.nextRetargetAt = m.pauseUntil + RETARGET_MS;
-        return;
-      }
-      m.target = pickMonsterTarget(m);
-      m.nextRetargetAt = now + RETARGET_MS + randomInt(900);
+    }
+  } else if (now < (m.sidestepUntil || 0)) {
+    /* Keep the sidestep chosen by stuck recovery, then resume the hunt. */
+  } else if (stuck) {
+    rememberFailedTarget(m, m.target);
+    m.target = pickMonsterTarget(m);
+    m.sidestepUntil = now + MONSTER_SIDESTEP_MS;
+    m.lastMovedAt = now;
+    m.lastX = m.x;
+    m.lastY = m.y;
+  } else {
+    if (now >= (m.nextPerceptionAt || 0)) {
+      updateMonsterPerception(hh, m, now);
+      m.nextPerceptionAt = now + MONSTER_AI_INTERVAL;
+    }
+    if (m.huntMode === "chase") m.pauseUntil = 0;
+    if (m.huntMode === "patrol" && m.target && len(m.x - m.target.x, m.y - m.target.y) < 18 && randomInt(100) < 22) {
+      m.moving = false;
+      m.pauseUntil = now + PAUSE_MIN_MS + randomInt(Math.max(1, PAUSE_MAX_MS - PAUSE_MIN_MS));
       m.lastMovedAt = now;
+      return;
+    }
+    if (now < m.pauseUntil) {
+      m.moving = false;
       m.lastX = m.x;
       m.lastY = m.y;
+      m.lastMovedAt = now;
+      return;
     }
   }
+  if (!m.target) m.target = pickMonsterTarget(m);
   const stillAngry = now < (m.angryUntil || 0);
   const speed = stillAngry ? MONSTER_ANGRY_SPEED : MONSTER_NORMAL_SPEED;
   const n = norm(m.target.x - m.x, m.target.y - m.y);
