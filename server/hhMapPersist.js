@@ -40,7 +40,27 @@ function sslOption(url) {
   // Render's private database host has no dot (for example dpg-abc-a).
   // Forcing SSL against that host fails the connection.
   if (host.indexOf(".") === -1) return false;
+  // Aiven sslmode=require: encrypt the connection, and do not verify the
+  // certificate chain. Aiven's CA is not in the system trust store.
   return { rejectUnauthorized: false };
+}
+
+function connectionStringForPg(url) {
+  // pg 8 parses sslmode=require in DATABASE_URL as verify-full, warns about
+  // that alias, and then replaces any explicit ssl option. That makes Node
+  // validate Aiven's certificate and fail with SELF_SIGNED_CERT_IN_CHAIN.
+  // Drop sslmode so the ssl option above is the one that is used. TLS stays on.
+  const hashAt = url.indexOf("#");
+  const beforeHash = hashAt === -1 ? url : url.slice(0, hashAt);
+  const fragment = hashAt === -1 ? "" : url.slice(hashAt);
+  const queryAt = beforeHash.indexOf("?");
+  if (queryAt === -1) return url;
+  const kept = beforeHash.slice(queryAt + 1).split("&").filter((part) => {
+    if (!part) return false;
+    const key = part.split("=")[0].toLowerCase();
+    return key !== "sslmode" && key !== "uselibpqcompat";
+  });
+  return beforeHash.slice(0, queryAt) + (kept.length ? "?" + kept.join("&") : "") + fragment;
 }
 
 function safeMessage(err) {
@@ -103,13 +123,15 @@ async function connect() {
     throw err;
   }
   const host = databaseHost(url);
+  const ssl = sslOption(url);
   console.log("[hh-maps] DATABASE_URL is set");
   console.log("[hh-maps] database host: " + host);
+  console.log("[hh-maps] tls: " + (ssl ? "enabled" : "disabled"));
   console.log("[hh-maps] operation: connect");
   console.log("[hh-maps] operation: CREATE TABLE IF NOT EXISTS " + TABLE);
   pool = new Pool({
-    connectionString: url,
-    ssl: sslOption(url),
+    connectionString: connectionStringForPg(url),
+    ssl: ssl,
     max: 4,
     connectionTimeoutMillis: 10000
   });
@@ -121,6 +143,7 @@ async function connect() {
       "CREATE TABLE IF NOT EXISTS hh_maps (id text PRIMARY KEY, document jsonb NOT NULL)"
     );
     await pool.query("SELECT 1");
+    console.log("[hh-maps] database connected");
     console.log("[hh-maps] connection status: connected");
     console.log("[hh-maps] table " + TABLE + ": ready");
     return true;
