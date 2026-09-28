@@ -10,7 +10,7 @@ repo. They are not hotlinked at runtime.
 | --- | --- | --- | --- | --- |
 | Hunter body and feet (`player/hunter/`) | Riley Gombart | Animated Top Down Survivor (`Top_Down_Survivor`, rifle idle/move and feet idle/walk) | CC-BY 3.0 | https://opengameart.org/content/animated-top-down-survivor-player |
 | Tracker body (`player/tracker/`) | Riley Gombart | Animated Top Down Survivor (`Top_Down_Survivor`, handgun idle/move/shoot) | CC-BY 3.0 | https://opengameart.org/content/animated-top-down-survivor-player |
-| Monster (`monster/zombie_idle_*`, `zombie_move_*`, `zombie_attack_*`) | Riley Gombart (ChessMasterRiley) | Animated Top Down Zombie (`tds_zombie.zip`, files exported as `skeleton-*`) | CC0 1.0 | https://opengameart.org/content/animated-top-down-zombie |
+| Monster (`rotmaws/idle-1`, `run-1`, `run-2`, `attack-1`, `spell-lunge`, `death`) | Unofficial fan artist (creator not named in the pack) | Dreadknight Rotmaws 1.0, uploaded as `Dreadknight_Rotmaws_1.0.zip` | Free community asset, non-commercial only. Unofficial fan art inspired by League of Legends. Not affiliated with or endorsed by Riot Games. | Included in this repo |
 | Shelves, tables, crates, barrels, machines, pillars, containers, forklift, vehicle, pallet, door, window (`environment/props/`) | Kenney Vleugels | Top-down Shooter (tiles 166, 171, 180, 197, 206, 224, 289, 333, 342, 359, 386, 433, 436, 456, 465, 474, 476, 492) | CC0 1.0 | https://kenney.nl/assets/top-down-shooter |
 | Gunshot (`audio/weapons/gunshot`) | rubberduck | 25 CC0 bang / firework SFX (`shot_03.ogg`) | CC0 1.0 | https://opengameart.org/content/25-cc0-bang-firework-sfx |
 | Taser fire (`audio/taser/taser-fire`) | Kenney Vleugels | Sci-fi Sounds (`laserSmall_000.ogg`) | CC0 1.0 | https://kenney.nl/assets/sci-fi-sounds |
@@ -20,10 +20,10 @@ repo. They are not hotlinked at runtime.
 | Muzzle flash, stun bolts, vignette | Project original | `hidden-hunter.js` canvas | Original | n/a |
 | HUD / joysticks / crosshair | Project original | `hidden-hunter.css` | Original | n/a |
 
-No League of Legends, Riot, Dead by Daylight, Resident Evil, or other commercial-game assets are used.
+No Dead by Daylight, Resident Evil, or other commercial-game assets are used. The one exception is the monster picture: Dreadknight Rotmaws, an unofficial non-commercial fan asset inspired by League of Legends. It is not a Riot Games asset and is not endorsed by Riot. The older CC0 zombie PNGs remain in `monster/` and are not drawn.
 
 The hunter rifle frame faces right. The barrel is a horizontal tube on the right side of the cell (its axis measures about -0.65 degrees from +X). The torso pivot is the body center, and the same aim angle rotates the body, the feet, and the muzzle. Standing still plays the idle hold. Walking plays the move bob and the feet cycle. Neither clip turns the body toward travel.
 
 The tracker is the same pack's handgun set. The pistol is a horizontal tube on the right of the cell (its axis measures about -0.9 degrees from +X). The torso pivot is the body center, and the existing aim angle rotates the body onto the mouse. Standing still plays the handgun idle. Walking plays the handgun move bob. Firing the taser plays the handgun shoot recoil. None of those clips turn the body toward travel.
 
-The zombie pack is one right-facing pose per animation (the head is on the right of the frame). Idle, move, and attack are the pack's own clips. There is no death clip. The sprite is turned so that right-facing forward follows movement, or the attack target while attacking. It is not spun at random, and it is not the previous red monster.
+Rotmaws frames are 256×256. The standing figure is about 36px tall and sits below the canvas center, near (128, 143). The lunge extends to the right, so the picture faces +X. The renderer scales that body to about 93px and pins (128, 143) on the monster's position. Idle 1, Run 1, Run 2, Attack 1, Spell Lunge, and Death are the clips in use. Crit 1, Attack 2, and Spawn 1 are not used. The sprite turns with the existing facing angle. Taking damage still uses the impact spark; Crit 1 is not a hit reaction.
