@@ -126,9 +126,9 @@
   };
   // Opaque height matches the hunter body (about 60px) without stretching.
   const TRACKER_DRAW_H = 67;
-  function zombieRow(kind, count) {
+  function rotmawsRow(folder, count) {
     const frames = [];
-    for (let i = 0; i < count; i++) frames.push("assets/hidden-hunter/monster/zombie_" + kind + "_" + i + ".png");
+    for (let i = 1; i <= count; i++) frames.push("assets/hidden-hunter/rotmaws/" + folder + "/" + i + ".png");
     return frames;
   }
   // Kenney CC0 top-down sprites. Drawn inside the existing obstacle boxes.
@@ -213,12 +213,15 @@
 
   const SPRITE = {
     player: { hunter: HUNTER_DRAW, tracker: TRACKER_DRAW },
-    // Riley Gombart CC0 zombie. One right-facing pose per animation (head on the right).
-    // Idle 0,3,6,9,12,15 of 17; move the same; attack frames 0-8.
+    // Dreadknight Rotmaws named clips. 256px frames, figure faces right (+X).
+    // Crit 1, Attack 2, and Spawn 1 are not wired: there is no matching state.
     monster: {
-      idle: zombieRow("idle", 6),
-      move: zombieRow("move", 6),
-      attack: zombieRow("attack", 9)
+      idle: rotmawsRow("idle-1", 8),
+      move: rotmawsRow("run-1", 13),
+      moveFast: rotmawsRow("run-2", 17),
+      attack: rotmawsRow("attack-1", 14),
+      lunge: rotmawsRow("spell-lunge", 10),
+      death: rotmawsRow("death", 10)
     },
     props: PROP_SRC
   };
@@ -231,6 +234,7 @@
     scareUntil: 0,
     telegraphUntil: 0,
     monsterFace: { x: 1, y: 0 },
+    monsterFast: false,
     face: Object.create(null),
     lastHp: Object.create(null),
     lastMonster: null
@@ -708,6 +712,34 @@
     return true;
   }
 
+  // Idle body is 36px tall, centered near (128, 143) inside the 256 frame.
+  // The previous monster's visible height at draw width 108 was about 93px.
+  const ROTMAWS_ANCHOR_X = 128 / 256;
+  const ROTMAWS_ANCHOR_Y = 143 / 256;
+  const ROTMAWS_BODY_PX = 36;
+  const ROTMAWS_WORLD_H = 93;
+
+  function drawRotmaws(ctx, im) {
+    if (!spriteReady(im)) return false;
+    const scale = ROTMAWS_WORLD_H / ROTMAWS_BODY_PX;
+    const w = im.naturalWidth * scale;
+    const h = im.naturalHeight * scale;
+    ctx.drawImage(im, -ROTMAWS_ANCHOR_X * w, -ROTMAWS_ANCHOR_Y * h, w, h);
+    return true;
+  }
+
+  // Visual only. Normal cruise is 138 px/s; angry cruise is 228. Rush uses Spell Lunge.
+  function monsterCruiseFast(auth) {
+    const old = prev && prev.monster;
+    if (!old || !prev || !state) return !!vis.monsterFast;
+    const dt = (state.now - prev.now) / 1000;
+    if (!(dt > 0.02) || dt > 0.45) return !!vis.monsterFast;
+    const speed = Math.hypot(auth.x - old.x, auth.y - old.y) / dt;
+    if (speed > 190) vis.monsterFast = true;
+    else if (speed < 165) vis.monsterFast = false;
+    return !!vis.monsterFast;
+  }
+
   function drawAnchored(ctx, im, height, pivotX, pivotY, color) {
     if (!spriteReady(im)) return false;
     const sheet = color ? tintSprite(im, color) : im;
@@ -839,13 +871,36 @@
       if (Math.abs(dx) + Math.abs(dy) > 0.2) vis.monsterFace = { x: dx, y: dy };
     }
     const face = vis.monsterFace || { x: 1, y: 0 };
+    const rushing = !dead && !stunned && !!(auth.windup || auth.rushing);
+    const biting = !dead && !stunned && now < vis.monsterAttackUntil;
+    if (moving && !auth.windup && !auth.rushing) monsterCruiseFast(auth);
     let frames = SPRITE.monster.idle;
     let fps = 6;
-    if (dead || stunned) { frames = [SPRITE.monster.idle[0]]; fps = 1; }
-    else if (attacking) { frames = SPRITE.monster.attack; fps = 12; }
-    else if (moving) { frames = SPRITE.monster.move; fps = 10; }
-    else { frames = SPRITE.monster.idle; fps = 6; }
-    const im = frameOf(frames, fps, 0);
+    let onceSince = 0;
+    if (dead) {
+      frames = SPRITE.monster.death;
+      fps = 10;
+      onceSince = vis.monsterDeathAt || now;
+    } else if (stunned) {
+      frames = [SPRITE.monster.idle[0]];
+      fps = 1;
+    } else if (rushing) {
+      frames = SPRITE.monster.lunge;
+      fps = 12;
+    } else if (biting) {
+      frames = SPRITE.monster.attack;
+      fps = 12;
+    } else if (moving && vis.monsterFast) {
+      frames = SPRITE.monster.moveFast;
+      fps = 12;
+    } else if (moving) {
+      frames = SPRITE.monster.move;
+      fps = 10;
+    } else {
+      frames = SPRITE.monster.idle;
+      fps = 6;
+    }
+    const im = frameOf(frames, fps, onceSince);
     const deathAge = vis.monsterDeathAt ? now - vis.monsterDeathAt : 0;
     ctx.save();
     ctx.translate(s.x, s.y);
@@ -855,7 +910,7 @@
     ctx.imageSmoothingEnabled = true;
     const fade = dead ? Math.max(0.15, 1 - Math.max(0, deathAge - 720) / 800) : 1;
     ctx.globalAlpha = fade;
-    if (!drawSprite(ctx, im, 108)) {
+    if (!drawRotmaws(ctx, im)) {
       ctx.fillStyle = "rgba(90, 40, 36, .8)";
       ctx.beginPath(); ctx.ellipse(0, 0, 22, 18, 0, 0, Math.PI * 2); ctx.fill();
     }
@@ -1001,8 +1056,14 @@
       ctx.fillRect(0, 0, viewW, viewH);
       if (spriteReady(face)) {
         const size = viewH * (0.34 + 0.16 * scareK);
+        const body = size * 0.86;
+        const scale = body / ROTMAWS_BODY_PX;
+        const dw = face.naturalWidth * scale;
+        const dh = face.naturalHeight * scale;
+        const cx = viewW / 2;
+        const cy = (viewH - size) * 0.42 + size * 0.45;
         ctx.globalAlpha = Math.min(1, scareK * 1.25);
-        ctx.drawImage(face, (viewW - size) / 2, (viewH - size) * 0.42, size, size * (face.naturalHeight / face.naturalWidth));
+        ctx.drawImage(face, cx - ROTMAWS_ANCHOR_X * dw, cy - ROTMAWS_ANCHOR_Y * dh, dw, dh);
       }
       ctx.restore();
     }
@@ -1130,6 +1191,7 @@
       vis.shootUntil = vis.taserUntil = vis.muzzleUntil = vis.monsterAttackUntil = vis.monsterDeathAt = 0;
       vis.scareUntil = vis.telegraphUntil = 0;
       vis.monsterFace = { x: 0, y: 1 };
+      vis.monsterFast = false;
       vis.face = Object.create(null);
       vis.lastHp = Object.create(null);
       vis.lastMonster = null;
@@ -1189,6 +1251,7 @@
       vis.shootUntil = vis.taserUntil = vis.muzzleUntil = vis.monsterAttackUntil = vis.monsterDeathAt = 0;
       vis.scareUntil = vis.telegraphUntil = 0;
       vis.monsterFace = { x: 0, y: 1 };
+      vis.monsterFast = false;
       vis.face = Object.create(null);
       vis.lastHp = Object.create(null);
       vis.lastMonster = null;
