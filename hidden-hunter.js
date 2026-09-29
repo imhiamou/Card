@@ -213,7 +213,7 @@
 
   const SPRITE = {
     player: { hunter: HUNTER_DRAW, tracker: TRACKER_DRAW },
-    // Dreadknight Rotmaws named clips. 256px frames, figure faces right (+X).
+    // Dreadknight Rotmaws named clips. Side view: head at the top, figure faces left.
     // Crit 1, Attack 2, and Spawn 1 are not wired: there is no matching state.
     monster: {
       idle: rotmawsRow("idle-1", 8),
@@ -905,8 +905,8 @@
     ctx.save();
     ctx.translate(s.x, s.y);
     if (stunned) ctx.translate(Math.sin(now / 28) * 2.2, 0);
-    // The sheet faces right. Rotate that forward axis onto movement or the attack target.
-    ctx.rotate(Math.atan2(face.y, face.x));
+    // Head stays at the top of the frame. Mirror only when travel is to the right.
+    if (face.x > 0) ctx.scale(-1, 1);
     ctx.imageSmoothingEnabled = true;
     const fade = dead ? Math.max(0.15, 1 - Math.max(0, deathAge - 720) / 800) : 1;
     ctx.globalAlpha = fade;
