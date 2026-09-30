@@ -14,8 +14,13 @@ const DEFAULT_NAV = hhMaps.buildNav(DEFAULT_SNAP);
 const MAP_W = DEFAULT_SNAP.width;
 const MAP_H = DEFAULT_SNAP.height;
 const OBSTACLES = DEFAULT_SNAP.objects;
-const PLAYER_R = 22;
-const MONSTER_R = 26;
+const HUNTER_R = 22;
+const PLAYER_R = HUNTER_R;
+const TRACKER_R = 28;
+const MONSTER_BODY_R = 18;
+const MONSTER_R = MONSTER_BODY_R;
+// Previous body was 26. Taser impact stays at that old reach (26 + 10).
+const MONSTER_TASER_HIT_R = 36;
 const BULLET_R = 5;
 const PLAYER_SPEED = 210;
 const MONSTER_BASE_SPEED = 138;
@@ -54,7 +59,6 @@ const RETARGET_MS = 3800;
 const PAUSE_MIN_MS = 280;
 const PAUSE_MAX_MS = 720;
 const MONSTER_DETECTION_RANGE = 560;
-const MONSTER_GENERAL_HUNT_DISTANCE = 480;
 const MONSTER_LAST_SEEN_SEARCH_RADIUS = 200;
 const MONSTER_SEARCH_DURATION = 6500;
 const MONSTER_AI_INTERVAL = 150;
@@ -96,21 +100,24 @@ function blocked(cx, cy, r) {
   return hhMaps.pointBlocked(navNow(), cx, cy, r);
 }
 
-function tryMove(ent, dx, dy, r) {
+function tryMove(ent, dx, dy, r, blockedExtra) {
   const ox = ent.x;
   const oy = ent.y;
+  function hit(x, y) {
+    return blocked(x, y, r) || (blockedExtra ? blockedExtra(x, y) : false);
+  }
   const nx = ent.x + dx;
   const ny = ent.y + dy;
-  if (!blocked(nx, ny, r)) {
+  if (!hit(nx, ny)) {
     ent.x = nx;
     ent.y = ny;
     return true;
   }
-  if (!blocked(nx, ent.y, r)) {
+  if (!hit(nx, ent.y)) {
     ent.x = nx;
     return true;
   }
-  if (!blocked(ent.x, ny, r)) {
+  if (!hit(ent.x, ny)) {
     ent.y = ny;
     return true;
   }
@@ -118,18 +125,42 @@ function tryMove(ent, dx, dy, r) {
   if (speed > 0.01) {
     const px = -dy / speed;
     const py = dx / speed;
-    if (!blocked(ent.x + px * speed, ent.y + py * speed, r)) {
+    if (!hit(ent.x + px * speed, ent.y + py * speed)) {
       ent.x += px * speed;
       ent.y += py * speed;
       return true;
     }
-    if (!blocked(ent.x - px * speed, ent.y - py * speed, r)) {
+    if (!hit(ent.x - px * speed, ent.y - py * speed)) {
       ent.x -= px * speed;
       ent.y -= py * speed;
       return true;
     }
   }
   return ent.x !== ox || ent.y !== oy;
+}
+
+function bodyRadius(p) {
+  return p && p.role === "tracker" ? TRACKER_R : HUNTER_R;
+}
+
+function circlesOverlap(x, y, r, ox, oy, or) {
+  return len(x - ox, y - oy) < r + or;
+}
+
+function hitsPlayerBody(hh, x, y, r) {
+  const players = hh && hh.players ? Object.values(hh.players) : [];
+  for (let i = 0; i < players.length; i++) {
+    const p = players[i];
+    if (!p || p.dead) continue;
+    if (circlesOverlap(x, y, r, p.x, p.y, bodyRadius(p))) return true;
+  }
+  return false;
+}
+
+function hitsMonsterBody(hh, x, y, r) {
+  const m = hh && hh.monster;
+  if (!m || m.hp <= 0) return false;
+  return circlesOverlap(x, y, r, m.x, m.y, MONSTER_BODY_R);
 }
 
 function unstick(ent, r) {
@@ -276,6 +307,7 @@ function makeMonster(players, spawns) {
     rushPhase: "idle",
     rushDir: { x: 1, y: 0 },
     rushTargetId: null,
+    rushPoint: null,
     windupUntil: 0,
     rushUntil: 0,
     rushRecoverUntil: 0,
@@ -351,10 +383,10 @@ function intentMoving(p) {
 }
 
 function publicPlayer(p, viewerRole) {
-  // The Hunter must not receive the Tracker's aim. The Tracker's own screen
-  // and the Hunter's aim (visible to the Tracker) still sync.
+  // The Hunter must not receive the Tracker's aim payload. Facing is a
+  // separate unit direction so the Hunter can draw which way Lux looks.
   const hideAim = p.role === "tracker" && viewerRole !== "tracker";
-  return {
+  const row = {
     id: p.id,
     name: p.name,
     role: p.role,
@@ -371,6 +403,14 @@ function publicPlayer(p, viewerRole) {
     maxHp: PLAYER_MAX_HEALTH,
     dead: !!p.dead
   };
+  if (p.role === "tracker") {
+    const face = norm(p.aimX || 0, p.aimY || 0);
+    if (len(face.x, face.y) > 0.01) {
+      row.facingX = Math.round(face.x * 1000) / 1000;
+      row.facingY = Math.round(face.y * 1000) / 1000;
+    }
+  }
+  return row;
 }
 
 function publicProjectiles(hh) {
@@ -554,6 +594,7 @@ function endRush(m, now) {
   m.rushRecoverUntil = now + MONSTER_RUSH_RECOVER;
   m.moving = false;
   m.rushTargetId = null;
+  m.rushPoint = null;
 }
 
 function pickEscapeTarget(m, shooter) {
@@ -603,17 +644,18 @@ function seesPlayer(m, player) {
   return walkableLine(m.x, m.y, player.x, player.y, MONSTER_LOS_RADIUS);
 }
 
-function nearestLivingPlayer(m, players) {
+function nearestVisiblePrey(hh, m, maxDist) {
   let best = null;
-  let bestDist = Infinity;
-  players.forEach((player) => {
-    const dist = len(player.x - m.x, player.y - m.y);
-    if (dist < bestDist) {
-      best = player;
-      bestDist = dist;
+  let bestDist = maxDist;
+  Object.values(hh.players).forEach((p) => {
+    if (!seesPlayer(m, p)) return;
+    const d = len(p.x - m.x, p.y - m.y);
+    if (d < bestDist) {
+      best = p;
+      bestDist = d;
     }
   });
-  return best ? { player: best, dist: bestDist } : null;
+  return best;
 }
 
 function standable(x, y) {
@@ -632,13 +674,6 @@ function nearWalkable(x, y) {
     }
   }
   return randomWalkable(MONSTER_R);
-}
-
-function generalArea(player) {
-  const cell = MONSTER_GENERAL_HUNT_DISTANCE;
-  const x = Math.floor(player.x / cell) * cell + cell / 2;
-  const y = Math.floor(player.y / cell) * cell + cell / 2;
-  return nearWalkable(x, y);
 }
 
 function searchPoint(origin) {
@@ -718,12 +753,7 @@ function updateMonsterPerception(hh, m, now) {
     }
     if (m.huntMode === "search") return;
   }
-  const nearest = nearestLivingPlayer(m, players);
-  if (nearest && nearest.dist > MONSTER_DETECTION_RANGE) {
-    m.huntMode = "general";
-    m.target = generalArea(nearest.player);
-    return;
-  }
+  // No line of sight and no last-seen search. Do not read live coordinates.
   m.huntMode = "patrol";
   if (!m.target || len(m.x - m.target.x, m.y - m.target.y) < 36) {
     m.target = pickMonsterTarget(m);
@@ -739,6 +769,7 @@ function angerMonster(hh, m, now) {
   m.escapeFromId = from ? from.id : null;
   m.rushPhase = "idle";
   m.rushTargetId = null;
+  m.rushPoint = null;
   m.pauseUntil = 0;
   m.failedTargets = [];
   m.target = pickEscapeTarget(m, from);
@@ -760,6 +791,7 @@ function stepMonster(hh, dt, io) {
       m.moving = false;
       m.rushPhase = "idle";
       m.rushTargetId = null;
+      m.rushPoint = null;
       m.lastX = m.x;
       m.lastY = m.y;
       m.lastMovedAt = now;
@@ -787,11 +819,12 @@ function stepMonster(hh, dt, io) {
   if (m.rushPhase === "windup") {
     m.moving = false;
     const target = m.rushTargetId && hh.players[m.rushTargetId];
-    if (!target || target.dead) {
+    if (!target || target.dead || !m.rushPoint) {
       endRush(m, now);
       return;
     }
-    const aim = norm(target.x - m.x, target.y - m.y);
+    if (seesPlayer(m, target)) m.rushPoint = { x: target.x, y: target.y };
+    const aim = norm(m.rushPoint.x - m.x, m.rushPoint.y - m.y);
     m.faceX = aim.x;
     m.faceY = aim.y;
     if (now < m.windupUntil) return;
@@ -808,7 +841,7 @@ function stepMonster(hh, dt, io) {
     const step = MONSTER_RUSH_SPEED * dt;
     const nx = m.x + m.rushDir.x * step;
     const ny = m.y + m.rushDir.y * step;
-    if (blocked(nx, ny, MONSTER_R)) {
+    if (blocked(nx, ny, MONSTER_R) || hitsPlayerBody(hh, nx, ny, MONSTER_BODY_R)) {
       endRush(m, now);
       return;
     }
@@ -837,10 +870,11 @@ function stepMonster(hh, dt, io) {
     m.nextPerceptionAt = now + MONSTER_AI_INTERVAL;
   }
   if (m.rushPhase === "idle" && !angry && now >= (m.rushCooldownUntil || 0)) {
-    const prey = nearestLiving(hh, m.x, m.y, MONSTER_RUSH_RANGE);
+    const prey = nearestVisiblePrey(hh, m, MONSTER_RUSH_RANGE);
     if (prey) {
       m.rushPhase = "windup";
       m.rushTargetId = prey.id;
+      m.rushPoint = { x: prey.x, y: prey.y };
       m.windupUntil = now + MONSTER_RUSH_WINDUP;
       m.rushCooldownUntil = now + MONSTER_RUSH_COOLDOWN;
       m.moving = false;
@@ -926,7 +960,7 @@ function stepMonster(hh, dt, io) {
   const n = norm(m.target.x - m.x, m.target.y - m.y);
   const beforeX = m.x;
   const beforeY = m.y;
-  const moved = tryMove(m, n.x * speed * dt, n.y * speed * dt, MONSTER_R);
+  const moved = tryMove(m, n.x * speed * dt, n.y * speed * dt, MONSTER_BODY_R, (x, y) => hitsPlayerBody(hh, x, y, MONSTER_BODY_R));
   m.moving = !!(moved && (m.x !== beforeX || m.y !== beforeY));
   if (moved) {
     m.lastX = m.x;
@@ -967,7 +1001,8 @@ function stepPlayers(hh, dt) {
       p.input.my = 0;
     }
     const n = norm(p.input.mx, p.input.my);
-    tryMove(p, n.x * PLAYER_SPEED * dt, n.y * PLAYER_SPEED * dt, PLAYER_R);
+    const radius = bodyRadius(p);
+    tryMove(p, n.x * PLAYER_SPEED * dt, n.y * PLAYER_SPEED * dt, radius, (x, y) => hitsMonsterBody(hh, x, y, radius));
     if (p.role === "hunter" && p.reloadingUntil && now >= p.reloadingUntil && p.ammo <= 0) {
       p.ammo = MAGAZINE_SIZE;
       p.reloadingUntil = 0;
@@ -992,7 +1027,7 @@ function stepProjectiles(room, io, roomCode, dt) {
       b.x = nx;
       b.y = ny;
       const m = hh.monster;
-      if (m && m.hp > 0 && len(b.x - m.x, b.y - m.y) <= MONSTER_R + BULLET_R) {
+      if (m && m.hp > 0 && len(b.x - m.x, b.y - m.y) <= MONSTER_BODY_R + BULLET_R) {
         const hitAt = Date.now();
         m.hp = Math.max(0, m.hp - DAMAGE);
         m.hitUntil = hitAt + 220;
@@ -1199,7 +1234,7 @@ function registerSocket(socket, io, rooms) {
         endY = y;
         break;
       }
-      if (m && m.hp > 0 && len(x - m.x, y - m.y) <= MONSTER_R + 10) {
+      if (m && m.hp > 0 && len(x - m.x, y - m.y) <= MONSTER_TASER_HIT_R) {
         endX = m.x;
         endY = m.y;
         hit = true;
@@ -1269,6 +1304,10 @@ module.exports = {
   TASER_RANGE,
   STUN_MS,
   PLAYER_MAX_HEALTH,
+  HUNTER_R,
+  TRACKER_R,
+  MONSTER_BODY_R,
+  MONSTER_TASER_HIT_R,
   MONSTER_ATTACK_RANGE,
   MONSTER_DAMAGE,
   MONSTER_ATTACK_COOLDOWN,
