@@ -113,19 +113,24 @@
     muzzleX: (271.63 - 110.44) / 313,
     muzzleY: (152.33 - 116.48) / 207
   };
-  // Riley Gombart handgun survivor. Every cell faces right: the pistol is a
-  // horizontal tube (axis about -0.9 degrees, treated as +X). The same aim
-  // angle used by the hunter turns that tube onto the mouse. No extra offset.
-  // Idle 0,4,8,12,16 of 20; move the same; shoot is the three-frame recoil.
+  function luxRow(folder, count) {
+    const frames = [];
+    for (let i = 1; i <= count; i++) frames.push("assets/hidden-hunter/lux/" + folder + "/" + i + ".png");
+    return frames;
+  }
+  // Dreadknight Lux. Side view: head at the top, feet at the bottom, faces left.
+  // Idle 1 while standing, Run 1 while moving, Attack 1 while the taser fires.
   const TRACKER_DRAW = {
-    idle: numbered("assets/hidden-hunter/player/tracker/idle_", 5),
-    move: numbered("assets/hidden-hunter/player/tracker/move_", 5),
-    shoot: numbered("assets/hidden-hunter/player/tracker/shoot_", 3),
-    pivotX: 92 / 225,
-    pivotY: 87 / 170
+    idle: luxRow("idle-1", 7),
+    move: luxRow("run-1", 11),
+    shoot: luxRow("attack-1", 8)
   };
-  // Opaque height matches the hunter body (about 60px) without stretching.
-  const TRACKER_DRAW_H = 67;
+  // Idle figure is 53px tall inside the 256 frame, centered near (129, 128).
+  // The previous tracker’s visible body was about 61px tall.
+  const LUX_ANCHOR_X = 129 / 256;
+  const LUX_ANCHOR_Y = 128 / 256;
+  const LUX_BODY_PX = 53;
+  const LUX_WORLD_H = 61;
   function rotmawsRow(folder, count) {
     const frames = [];
     for (let i = 1; i <= count; i++) frames.push("assets/hidden-hunter/rotmaws/" + folder + "/" + i + ".png");
@@ -740,6 +745,16 @@
     return !!vis.monsterFast;
   }
 
+  function drawLux(ctx, im, color) {
+    if (!spriteReady(im)) return false;
+    const sheet = color ? tintSprite(im, color) : im;
+    const scale = LUX_WORLD_H / LUX_BODY_PX;
+    const w = im.naturalWidth * scale;
+    const h = im.naturalHeight * scale;
+    ctx.drawImage(sheet, -LUX_ANCHOR_X * w, -LUX_ANCHOR_Y * h, w, h);
+    return true;
+  }
+
   function drawAnchored(ctx, im, height, pivotX, pivotY, color) {
     if (!spriteReady(im)) return false;
     const sheet = color ? tintSprite(im, color) : im;
@@ -779,18 +794,20 @@
         ctx.fillRect(-12, -16, 24, 32);
       }
     } else {
-      // Native pose faces right. ang is the existing aim angle, not a new offset.
-      ctx.rotate(ang);
+      // ang is the existing aim angle and is not applied as a spin.
+      // Lux stands upright and faces left; spinning her puts her head down.
+      // Mirror only when that same aim points right.
+      if (aim.x > 0) ctx.scale(-1, 1);
       const shooting = isMe && !dead && now < vis.taserUntil;
       const bodyFrames = shooting
         ? TRACKER_DRAW.shoot
         : ((!dead && moving) ? TRACKER_DRAW.move : TRACKER_DRAW.idle);
       const im = loadImg(bodyFrames[frameIndex(
         bodyFrames,
-        shooting ? 12 : (moving ? 8 : 6),
+        shooting ? 31 : (moving ? 8 : 6),
         shooting ? vis.taserUntil - 260 : 0
       )]);
-      if (!drawAnchored(ctx, im, TRACKER_DRAW_H, TRACKER_DRAW.pivotX, TRACKER_DRAW.pivotY, color)) {
+      if (!drawLux(ctx, im, color)) {
         ctx.fillStyle = "#7ec8c4";
         ctx.fillRect(-12, -16, 24, 32);
       }
