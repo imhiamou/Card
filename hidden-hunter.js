@@ -126,11 +126,13 @@
     shoot: luxRow("spell-final-spark", 17)
   };
   // Idle figure is 53px tall inside the 256 frame, centered near (129, 128).
-  // Hunter bodies are 82px tall. Lux is larger, and still reads as one character.
+  // The hunter body is 82px. Lux is drawn at about 93% of that height.
+  // Her physical hitbox stays the hunter's radius; only the picture is smaller.
+  const HUNTER_BODY_H = 82;
   const LUX_ANCHOR_X = 129 / 256;
   const LUX_ANCHOR_Y = 128 / 256;
   const LUX_BODY_PX = 53;
-  const LUX_WORLD_H = 104;
+  const LUX_WORLD_H = 76;
   function rotmawsRow(folder, count) {
     const frames = [];
     for (let i = 1; i <= count; i++) frames.push("assets/hidden-hunter/rotmaws/" + folder + "/" + i + ".png");
@@ -541,10 +543,19 @@
     });
   }
 
+  function taserRemainingMs() {
+    if (!state || !state.taser) return Infinity;
+    const recv = state._recvAt || Date.now();
+    return Math.max(0, (state.taser.remainingMs || 0) - (Date.now() - recv));
+  }
+
   function fireWeapon() {
     unlockAudio();
     if (!currentRoom || !state || state.phase !== "playing") return;
     const now = Date.now();
+    // A click while the taser is down is ignored. It does not emit a shot
+    // and it does not start Spell Final Spark.
+    if (myRole === "tracker" && taserRemainingMs() > 0) return;
     if (now - lastShot < 120) return;
     lastShot = now;
     const aim = liveAimVector();
@@ -553,7 +564,11 @@
       vis.muzzleUntil = Date.now() + 90;
       socket.emit("hiddenHunterShoot", { roomCode: currentRoom, aimX: aim.x, aimY: aim.y });
     } else if (myRole === "tracker") {
-      vis.taserUntil = Date.now() + 260;
+      if (state.taser) {
+        state.taser.ready = false;
+        state.taser.remainingMs = state.taser.cooldownMs || 10000;
+        state._recvAt = now;
+      }
       socket.emit("hiddenHunterTaser", { roomCode: currentRoom, aimX: aim.x, aimY: aim.y });
     }
   }
@@ -794,7 +809,7 @@
       const feetList = (!dead && moving) ? HUNTER_DRAW.feetWalk : [HUNTER_DRAW.feetIdle];
       const bodyIm = loadImg(bodyFrames[frameIndex(bodyFrames, moving ? 8 : 6)]);
       const feetIm = loadImg(feetList[frameIndex(feetList, moving ? 10 : 1)]);
-      const bodyH = 82;
+      const bodyH = HUNTER_BODY_H;
       if (spriteReady(bodyIm)) {
         const scale = bodyH / bodyIm.naturalHeight;
         if (spriteReady(feetIm)) {
@@ -826,7 +841,7 @@
     }
     ctx.restore();
     if (role === "hunter" && !dead && now < vis.muzzleUntil) {
-      const bodyH = 82;
+      const bodyH = HUNTER_BODY_H;
       const mx = HUNTER_DRAW.muzzleX * bodyH * (313 / 207);
       const my = HUNTER_DRAW.muzzleY * bodyH;
       const cs = Math.cos(ang);
@@ -1257,7 +1272,10 @@
     });
     socket.on("hiddenHunterTaserFired", (data) => {
       if (!active || myRole !== "tracker") return;
-      vis.taserUntil = Date.now() + 260;
+      const now = Date.now();
+      // One play of Spell Final Spark per accepted shot. A second event
+      // during that clip does not restart it.
+      if (now >= vis.taserUntil) vis.taserUntil = now + 260;
       playSfx("taserFire");
       if (data && data.hit) playSfx("taserHit");
       if (hhTaser && data) {
