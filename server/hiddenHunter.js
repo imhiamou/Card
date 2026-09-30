@@ -3,9 +3,9 @@
  *
  * Loaded by server.js only as a lobby router target. Does not alter
  * Hidden Hunt, Word Chain, Code Breaker, Dominoes, UNO, or Dodge Ball.
- * Each monster's position, facing, animation, and alive state is sent to
- * both players. Monster AI, last-seen positions, and taser data are not
- * sent to the Hunter.
+ * Monster positions, facing, animation, and alive state are sent only to
+ * the Tracker. The Hunter does not receive monster coordinates, AI,
+ * last-seen positions, or taser data.
  */
 
 const { randomInt } = require("crypto");
@@ -617,8 +617,8 @@ function buildStateFor(room, viewerId, roomCode, opts) {
       reloadMs: RELOAD_MS
     }
   };
-  payload.monsters = monsterList(hh).map(publicMonster);
   if (role === "tracker") {
+    payload.monsters = monsterList(hh).map(publicMonster);
     const tracker = hh.players[hh.trackerId];
     payload.taser = {
       cooldownMs: TASER_COOLDOWN,

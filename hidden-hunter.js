@@ -474,10 +474,13 @@
   function applyState(data) {
     if (!data) return;
     data = Object.assign({}, data);
-    data.monsters = Array.isArray(data.monsters) ? data.monsters.map(visibleMonster).filter(Boolean) : [];
     delete data.monster;
-    // Hunter keeps monster render state. Taser beams and tracker aim stay tracker-only.
-    if (!data.you || data.you.role !== "tracker") {
+    const trackerView = data.you && data.you.role === "tracker";
+    data.monsters = trackerView && Array.isArray(data.monsters)
+      ? data.monsters.map(visibleMonster).filter(Boolean)
+      : [];
+    // Only the Tracker keeps monster positions. Taser beams and tracker aim stay tracker-only.
+    if (!trackerView) {
       delete data.taser;
       delete data.taserBeams;
       if (data.players) {
@@ -1067,10 +1070,12 @@
     const layeredText = drawLayered(ctx, map.texts);
     layeredProps.low.forEach((o) => drawObstacle(ctx, o));
     layeredText.low.forEach((t) => drawMapText(ctx, t));
-    (state.monsters || []).forEach((m) => {
-      const oldM = prev && (prev.monsters || []).find((o) => o && o.id === m.id);
-      drawMonster(ctx, interpPos(oldM, m, t) || m);
-    });
+    if (myRole === "tracker") {
+      (state.monsters || []).forEach((m) => {
+        const oldM = prev && (prev.monsters || []).find((o) => o && o.id === m.id);
+        drawMonster(ctx, interpPos(oldM, m, t) || m);
+      });
+    }
     livePlayers.forEach((p) => drawPlayer(ctx, p, p.id === socket.id));
     layeredProps.high.forEach((o) => drawObstacle(ctx, o));
     layeredText.high.forEach((t) => drawMapText(ctx, t));
