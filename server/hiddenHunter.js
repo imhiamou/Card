@@ -3,7 +3,9 @@
  *
  * Loaded by server.js only as a lobby router target. Does not alter
  * Hidden Hunt, Word Chain, Code Breaker, Dominoes, UNO, or Dodge Ball.
- * Monster coordinates are emitted only to the Tracker.
+ * Each monster's position, facing, animation, and alive state is sent to
+ * both players. Monster AI, last-seen positions, and taser data are not
+ * sent to the Hunter.
  */
 
 const { randomInt } = require("crypto");
@@ -40,8 +42,13 @@ const MONSTER_RUSH_DAMAGE = 25;
 const BULLET_SPEED = 640;
 const TICK_MS = 50;
 const MATCH_MS = 5 * 60 * 1000;
-const MONSTER_HP = 100 * 3;
 const DAMAGE = 25;
+// Three hunter bullets (DAMAGE each) reduce one monster from full to 0.
+const MONSTER_HP = DAMAGE * 3;
+// Matches start with this many monsters. A room may set hhMonsterCount
+// before the match starts; the live default stays one monster.
+const INITIAL_MONSTER_COUNT = 1;
+const MONSTER_COUNT_CAP = 16;
 const MAGAZINE_SIZE = 3;
 const FIRE_COOLDOWN_MS = 500;
 const RELOAD_MS = 1500;
@@ -158,10 +165,44 @@ function hitsPlayerBody(hh, x, y, r) {
   return false;
 }
 
-function hitsMonsterBody(hh, x, y, r) {
-  const m = hh && hh.monster;
-  if (!m || m.hp <= 0) return false;
-  return circlesOverlap(x, y, r, m.x, m.y, MONSTER_BODY_R);
+function monsterIsDown(m) {
+  return !m || !!m.dead || m.hp <= 0;
+}
+
+function monsterList(hh) {
+  return (hh && hh.monsters) || [];
+}
+
+function allMonstersDown(hh) {
+  const list = monsterList(hh);
+  return list.length > 0 && list.every(monsterIsDown);
+}
+
+function hitsMonsterBody(hh, x, y, r, ignoreId) {
+  const list = monsterList(hh);
+  for (let i = 0; i < list.length; i++) {
+    const m = list[i];
+    if (monsterIsDown(m)) continue;
+    if (ignoreId && m.id === ignoreId) continue;
+    if (circlesOverlap(x, y, r, m.x, m.y, MONSTER_BODY_R)) return true;
+  }
+  return false;
+}
+
+function closestLivingMonster(hh, x, y, reach) {
+  let best = null;
+  let bestDist = reach;
+  const list = monsterList(hh);
+  for (let i = 0; i < list.length; i++) {
+    const m = list[i];
+    if (monsterIsDown(m)) continue;
+    const d = len(x - m.x, y - m.y);
+    if (d <= bestDist) {
+      best = m;
+      bestDist = d;
+    }
+  }
+  return best;
 }
 
 function unstick(ent, r) {
@@ -277,33 +318,35 @@ function makePlayer(id, name, role, spawns) {
   };
 }
 
-function makeMonster(players, spawns) {
-  const avoid = players ? Object.values(players) : [];
-  let spawn = null;
-  for (let i = 0; i < 50; i++) {
-    const spot = randomWalkable(MONSTER_R);
-    const clear = avoid.every((p) => len(p.x - spot.x, p.y - spot.y) > 380);
-    if (clear) {
-      spawn = spot;
-      break;
-    }
-  }
-  const fallback = (spawns && spawns.monster) || SPAWNS.monster;
-  if (!spawn) spawn = { x: fallback.x, y: fallback.y };
+function monsterCountFor(room) {
+  const raw = room && room.hhMonsterCount != null ? Number(room.hhMonsterCount) : INITIAL_MONSTER_COUNT;
+  const n = Math.floor(raw);
+  if (!Number.isFinite(n) || n < 1) return INITIAL_MONSTER_COUNT;
+  return Math.min(n, MONSTER_COUNT_CAP);
+}
+
+function createMonster(id, x, y) {
+  const now = Date.now();
   const m = {
-    x: spawn.x,
-    y: spawn.y,
+    id: id,
+    x: x,
+    y: y,
+    vx: 0,
+    vy: 0,
     hp: MONSTER_HP,
+    maxHp: MONSTER_HP,
+    dead: false,
     target: null,
     pauseUntil: 0,
     hitUntil: 0,
     stunned: false,
     stunEndTime: 0,
-    lastX: spawn.x,
-    lastY: spawn.y,
-    lastMovedAt: Date.now(),
-    nextRetargetAt: Date.now() + RETARGET_MS,
+    lastX: x,
+    lastY: y,
+    lastMovedAt: now,
+    nextRetargetAt: now + RETARGET_MS,
     attackUntil: 0,
+    biteUntil: 0,
     failedTargets: [],
     rushPhase: "idle",
     rushDir: { x: 1, y: 0 },
@@ -329,6 +372,66 @@ function makeMonster(players, spawns) {
   };
   m.target = pickMonsterTarget(m);
   return m;
+}
+
+function monsterSpotFree(x, y, players, placed, playerClear) {
+  if (!inBounds(x, y, MONSTER_BODY_R) || blocked(x, y, MONSTER_BODY_R)) return false;
+  for (let i = 0; i < players.length; i++) {
+    const p = players[i];
+    const need = playerClear != null ? playerClear : (MONSTER_BODY_R + bodyRadius(p) + 12);
+    if (len(p.x - x, p.y - y) < need) return false;
+  }
+  for (let i = 0; i < placed.length; i++) {
+    if (len(placed[i].x - x, placed[i].y - y) < MONSTER_BODY_R * 2 + 36) return false;
+  }
+  return true;
+}
+
+function firstMonsterSpot(players, spawns) {
+  for (let i = 0; i < 50; i++) {
+    const spot = randomWalkable(MONSTER_R);
+    const clear = players.every((p) => len(p.x - spot.x, p.y - spot.y) > 380);
+    if (clear) return spot;
+  }
+  const fallback = (spawns && spawns.monster) || SPAWNS.monster;
+  return { x: fallback.x, y: fallback.y };
+}
+
+function extraMonsterSpot(anchor, players, placed) {
+  const radii = [140, 220, 300, 420, 560, 760, 980];
+  for (let pass = 0; pass < 2; pass++) {
+    const playerClear = pass === 0 ? 380 : null;
+    for (let ri = 0; ri < radii.length; ri++) {
+      const radius = radii[ri];
+      const steps = 12;
+      const spin = randomInt(steps);
+      for (let s = 0; s < steps; s++) {
+        const ang = ((spin + s) / steps) * Math.PI * 2;
+        const jitter = radius + randomInt(48);
+        const spot = nearWalkable(anchor.x + Math.cos(ang) * jitter, anchor.y + Math.sin(ang) * jitter);
+        if (monsterSpotFree(spot.x, spot.y, players, placed, playerClear)) return spot;
+      }
+    }
+    for (let i = 0; i < 40; i++) {
+      const spot = randomWalkable(MONSTER_BODY_R);
+      if (monsterSpotFree(spot.x, spot.y, players, placed, playerClear)) return spot;
+    }
+  }
+  return null;
+}
+
+function spawnMonsters(players, spawns, count) {
+  const avoid = players ? Object.values(players) : [];
+  const list = [];
+  const first = firstMonsterSpot(avoid, spawns);
+  list.push(createMonster("monster-1", first.x, first.y));
+  const anchor = (spawns && spawns.monster) || first;
+  for (let n = 2; n <= count; n++) {
+    const spot = extraMonsterSpot(anchor, avoid, list) || extraMonsterSpot(first, avoid, list);
+    if (!spot) break;
+    list.push(createMonster("monster-" + n, spot.x, spot.y));
+  }
+  return list;
 }
 
 function initRoomState(room, swapRoles) {
@@ -361,7 +464,7 @@ function initRoomState(room, swapRoles) {
     hunterId,
     trackerId,
     players,
-    monster: makeMonster(players, snap.spawns),
+    monsters: spawnMonsters(players, snap.spawns, monsterCountFor(room)),
     nav: activeNav,
     publicMap: hhMaps.publicView(snap),
     projectiles: [],
@@ -438,18 +541,22 @@ function publicImpacts(hh, now, role) {
 
 function publicMonster(m) {
   const now = Date.now();
+  const down = monsterIsDown(m);
   return {
+    id: m.id,
     x: Math.round(m.x * 10) / 10,
     y: Math.round(m.y * 10) / 10,
     hp: m.hp,
-    maxHp: MONSTER_HP,
-    hit: m.hitUntil > now,
-    stunned: !!m.stunned && now < m.stunEndTime,
-    moving: !!m.moving && m.hp > 0 && !(m.stunned && now < m.stunEndTime),
-    windup: m.rushPhase === "windup",
-    rushing: m.rushPhase === "rush",
+    maxHp: m.maxHp || MONSTER_HP,
+    hit: !down && m.hitUntil > now,
+    stunned: !down && !!m.stunned && now < m.stunEndTime,
+    moving: !down && !!m.moving && !(m.stunned && now < m.stunEndTime),
+    windup: !down && m.rushPhase === "windup",
+    rushing: !down && m.rushPhase === "rush",
     faceX: m.faceX || 0,
-    faceY: m.faceY || 0
+    faceY: m.faceY || 0,
+    dead: down,
+    biting: !down && m.biteUntil > now
   };
 }
 
@@ -500,9 +607,9 @@ function buildStateFor(room, viewerId, roomCode, opts) {
       reloadMs: RELOAD_MS
     }
   };
+  payload.monsters = monsterList(hh).map(publicMonster);
   if (role === "tracker") {
     const tracker = hh.players[hh.trackerId];
-    payload.monster = publicMonster(hh.monster);
     payload.taser = {
       cooldownMs: TASER_COOLDOWN,
       remainingMs: tracker ? Math.max(0, tracker.taserUntil - Date.now()) : 0,
@@ -556,10 +663,17 @@ function endMatch(room, io, roomCode, result) {
   hh.projectiles = [];
   hh.taserBeams = [];
   if (result === "caught") markTeamDead(hh);
-  if (hh.monster) {
-    hh.monster.stunned = false;
-    hh.monster.attackUntil = Number.MAX_SAFE_INTEGER;
-  }
+  monsterList(hh).forEach((m) => {
+    if (!m) return;
+    m.stunned = false;
+    m.moving = false;
+    m.vx = 0;
+    m.vy = 0;
+    m.rushPhase = "idle";
+    m.rushTargetId = null;
+    m.rushPoint = null;
+    m.attackUntil = Number.MAX_SAFE_INTEGER;
+  });
   stopRoom(room);
   io.to(roomCode).emit("hiddenHunterOver", {
     room: roomCode,
@@ -780,12 +894,45 @@ function angerMonster(hh, m, now) {
   m.lastY = m.y;
 }
 
+function killMonster(m) {
+  if (!m) return;
+  m.hp = 0;
+  m.dead = true;
+  m.moving = false;
+  m.vx = 0;
+  m.vy = 0;
+  m.stunned = false;
+  m.rushPhase = "idle";
+  m.rushTargetId = null;
+  m.rushPoint = null;
+  m.attackUntil = Number.MAX_SAFE_INTEGER;
+}
+
 function stepMonster(hh, dt, io) {
-  const m = hh.monster;
-  if (!m || m.hp <= 0) {
-    if (m) m.moving = false;
+  const list = monsterList(hh);
+  for (let i = 0; i < list.length; i++) stepOneMonster(hh, list[i], dt, io);
+}
+
+function stepOneMonster(hh, m, dt, io) {
+  if (!m || monsterIsDown(m)) {
+    if (m) {
+      m.dead = true;
+      m.moving = false;
+      m.vx = 0;
+      m.vy = 0;
+    }
     return;
   }
+  const originX = m.x;
+  const originY = m.y;
+  stepOneMonsterBody(hh, m, dt, io);
+  if (dt > 0) {
+    m.vx = (m.x - originX) / dt;
+    m.vy = (m.y - originY) / dt;
+  }
+}
+
+function stepOneMonsterBody(hh, m, dt, io) {
   const now = Date.now();
   if (m.stunned) {
     if (now < m.stunEndTime) {
@@ -842,7 +989,11 @@ function stepMonster(hh, dt, io) {
     const step = MONSTER_RUSH_SPEED * dt;
     const nx = m.x + m.rushDir.x * step;
     const ny = m.y + m.rushDir.y * step;
-    if (blocked(nx, ny, MONSTER_R) || hitsPlayerBody(hh, nx, ny, MONSTER_BODY_R)) {
+    if (
+      blocked(nx, ny, MONSTER_R)
+      || hitsPlayerBody(hh, nx, ny, MONSTER_BODY_R)
+      || hitsMonsterBody(hh, nx, ny, MONSTER_BODY_R, m.id)
+    ) {
       endRush(m, now);
       return;
     }
@@ -961,9 +1112,20 @@ function stepMonster(hh, dt, io) {
   const n = norm(m.target.x - m.x, m.target.y - m.y);
   const beforeX = m.x;
   const beforeY = m.y;
-  const moved = tryMove(m, n.x * speed * dt, n.y * speed * dt, MONSTER_BODY_R, (x, y) => hitsPlayerBody(hh, x, y, MONSTER_BODY_R));
+  const moved = tryMove(
+    m,
+    n.x * speed * dt,
+    n.y * speed * dt,
+    MONSTER_BODY_R,
+    (x, y) => hitsPlayerBody(hh, x, y, MONSTER_BODY_R) || hitsMonsterBody(hh, x, y, MONSTER_BODY_R, m.id)
+  );
   m.moving = !!(moved && (m.x !== beforeX || m.y !== beforeY));
-  if (moved) {
+  if (m.moving) {
+    const face = norm(m.x - beforeX, m.y - beforeY);
+    if (len(face.x, face.y) > 0.01) {
+      m.faceX = face.x;
+      m.faceY = face.y;
+    }
     m.lastX = m.x;
     m.lastY = m.y;
     m.lastMovedAt = now;
@@ -981,16 +1143,22 @@ function hurtPlayer(room, io, roomCode, player, amount) {
 
 function stepMonsterAttack(room, io, roomCode) {
   const hh = room.hh;
-  const m = hh.monster;
-  if (!m || m.hp <= 0 || hh.phase !== "playing") return;
+  if (!hh || hh.phase !== "playing") return;
   const now = Date.now();
-  if (m.stunned && now < m.stunEndTime) return;
-  if (now < m.attackUntil) return;
-  const closest = nearestLiving(hh, m.x, m.y, MONSTER_ATTACK_RANGE + 0.001);
-  if (!closest) return;
-  const amount = m.rushPhase === "rush" ? MONSTER_RUSH_DAMAGE : MONSTER_DAMAGE;
-  m.attackUntil = now + MONSTER_ATTACK_COOLDOWN;
-  hurtPlayer(room, io, roomCode, closest, amount);
+  const list = monsterList(hh);
+  for (let i = 0; i < list.length; i++) {
+    if (hh.phase !== "playing") return;
+    const m = list[i];
+    if (monsterIsDown(m)) continue;
+    if (m.stunned && now < m.stunEndTime) continue;
+    if (now < m.attackUntil) continue;
+    const closest = nearestLiving(hh, m.x, m.y, MONSTER_ATTACK_RANGE + 0.001);
+    if (!closest) continue;
+    const amount = m.rushPhase === "rush" ? MONSTER_RUSH_DAMAGE : MONSTER_DAMAGE;
+    m.attackUntil = now + MONSTER_ATTACK_COOLDOWN;
+    m.biteUntil = now + 380;
+    hurtPlayer(room, io, roomCode, closest, amount);
+  }
 }
 
 function stepPlayers(hh, dt) {
@@ -1027,30 +1195,30 @@ function stepProjectiles(room, io, roomCode, dt) {
       }
       b.x = nx;
       b.y = ny;
-      const m = hh.monster;
-      if (m && m.hp > 0 && len(b.x - m.x, b.y - m.y) <= MONSTER_BODY_R + BULLET_R) {
+      const m = closestLivingMonster(hh, b.x, b.y, MONSTER_BODY_R + BULLET_R);
+      if (m) {
         const hitAt = Date.now();
         m.hp = Math.max(0, m.hp - DAMAGE);
         m.hitUntil = hitAt + 220;
         if (m.hp > 0) angerMonster(hh, m, hitAt);
+        else killMonster(m);
         addImpact(hh, b.x, b.y, "hit");
         io.to(hh.trackerId).emit("hiddenHunterHit", {
+          monsterId: m.id,
           remainingHp: m.hp,
-          maxHp: MONSTER_HP
+          maxHp: m.maxHp || MONSTER_HP
         });
         io.to(hh.hunterId).emit("hiddenHunterImpact", {
           x: Math.round(b.x),
           y: Math.round(b.y)
         });
-        if (m.hp <= 0) {
-          endMatch(room, io, roomCode, "win");
-        }
+        if (m.hp <= 0 && allMonstersDown(hh)) endMatch(room, io, roomCode, "win");
         return;
       }
     }
     keep.push(b);
   });
-  hh.projectiles = keep;
+  if (hh.phase !== "over") hh.projectiles = keep;
 }
 
 function tick(room, io, roomCode) {
@@ -1226,7 +1394,6 @@ function registerSocket(socket, io, rooms) {
     let endX = origin.x + a.x * TASER_RANGE;
     let endY = origin.y + a.y * TASER_RANGE;
     let hit = false;
-    const m = hh.monster;
     for (let i = 1; i <= steps; i++) {
       const x = origin.x + a.x * (TASER_RANGE * i / steps);
       const y = origin.y + a.y * (TASER_RANGE * i / steps);
@@ -1235,7 +1402,8 @@ function registerSocket(socket, io, rooms) {
         endY = y;
         break;
       }
-      if (m && m.hp > 0 && len(x - m.x, y - m.y) <= MONSTER_TASER_HIT_R) {
+      const m = closestLivingMonster(hh, x, y, MONSTER_TASER_HIT_R);
+      if (m) {
         endX = m.x;
         endY = m.y;
         hit = true;
@@ -1298,6 +1466,7 @@ module.exports = {
   MAP_H,
   MONSTER_HP,
   DAMAGE,
+  INITIAL_MONSTER_COUNT,
   MAGAZINE_SIZE,
   MATCH_MS,
   OBSTACLES,

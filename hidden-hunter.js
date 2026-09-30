@@ -242,6 +242,7 @@
     telegraphUntil: 0,
     monsterFace: { x: 1, y: 0 },
     monsterFast: false,
+    byMonster: Object.create(null),
     face: Object.create(null),
     lastHp: Object.create(null),
     lastMonster: null
@@ -442,12 +443,41 @@
     return (m < 10 ? "0" : "") + m + ":" + (r < 10 ? "0" : "") + r;
   }
 
+  function visibleMonster(m) {
+    if (!m) return null;
+    return {
+      id: m.id,
+      x: m.x,
+      y: m.y,
+      hp: m.hp,
+      maxHp: m.maxHp,
+      hit: !!m.hit,
+      stunned: !!m.stunned,
+      moving: !!m.moving,
+      windup: !!m.windup,
+      rushing: !!m.rushing,
+      faceX: m.faceX,
+      faceY: m.faceY,
+      dead: !!m.dead || m.hp <= 0,
+      biting: !!m.biting
+    };
+  }
+
+  function monsterSlot(id) {
+    const key = id || "monster";
+    if (!vis.byMonster[key]) {
+      vis.byMonster[key] = { deathAt: 0, face: { x: 1, y: 0 }, fast: false };
+    }
+    return vis.byMonster[key];
+  }
+
   function applyState(data) {
     if (!data) return;
-    // Defense in depth: Hunter client must never keep monster or taser-aim state.
+    data = Object.assign({}, data);
+    data.monsters = Array.isArray(data.monsters) ? data.monsters.map(visibleMonster).filter(Boolean) : [];
+    delete data.monster;
+    // Hunter keeps monster render state. Taser beams and tracker aim stay tracker-only.
     if (!data.you || data.you.role !== "tracker") {
-      data = Object.assign({}, data);
-      delete data.monster;
       delete data.taser;
       delete data.taserBeams;
       if (data.players) {
@@ -467,12 +497,14 @@
     if (data.room) currentRoom = data.room;
     myRole = data.you ? data.you.role : myRole;
     (data.players || []).forEach((p) => {
-      const prevHp = vis.lastHp[p.id];
-      if (prevHp != null && p.hp < prevHp) vis.monsterAttackUntil = Date.now() + 380;
       vis.lastHp[p.id] = p.hp;
     });
-    if (data.monster && data.monster.hp <= 0 && !vis.monsterDeathAt) vis.monsterDeathAt = Date.now();
-    if (data.monster && data.monster.hp > 0) vis.monsterDeathAt = 0;
+    data.monsters.forEach((m) => {
+      if (!m.id) return;
+      const slot = monsterSlot(m.id);
+      if (m.dead && !slot.deathAt) slot.deathAt = Date.now();
+      if (!m.dead) slot.deathAt = 0;
+    });
     renderHud();
   }
 
@@ -761,15 +793,15 @@
   }
 
   // Visual only. Normal cruise is 138 px/s; angry cruise is 228. Rush uses Spell Lunge.
-  function monsterCruiseFast(auth) {
-    const old = prev && prev.monster;
-    if (!old || !prev || !state) return !!vis.monsterFast;
+  function monsterCruiseFast(auth, slot) {
+    const old = prev && (prev.monsters || []).find((o) => o && o.id === auth.id);
+    if (!old || !prev || !state) return !!slot.fast;
     const dt = (state.now - prev.now) / 1000;
-    if (!(dt > 0.02) || dt > 0.45) return !!vis.monsterFast;
+    if (!(dt > 0.02) || dt > 0.45) return !!slot.fast;
     const speed = Math.hypot(auth.x - old.x, auth.y - old.y) / dt;
-    if (speed > 190) vis.monsterFast = true;
-    else if (speed < 165) vis.monsterFast = false;
-    return !!vis.monsterFast;
+    if (speed > 190) slot.fast = true;
+    else if (speed < 165) slot.fast = false;
+    return !!slot.fast;
   }
 
   function drawLux(ctx, im, color) {
@@ -897,34 +929,37 @@
   function drawMonster(ctx, m) {
     const s = worldToScreen(ctx, m.x, m.y);
     const now = Date.now();
-    const auth = (state && state.monster) || m;
-    const dead = auth.hp <= 0 || !!vis.monsterDeathAt;
+    const auth = ((state && state.monsters) || []).find((o) => o && o.id === m.id) || m;
+    const slot = monsterSlot(auth.id || m.id);
+    const dead = !!(auth.dead || auth.hp <= 0 || slot.deathAt);
     const stunned = !!auth.stunned && !dead;
     const moving = !dead && !stunned && auth.moving === true;
-    const attacking = !dead && !stunned && (auth.windup || now < vis.monsterAttackUntil);
+    const biting = !dead && !stunned && !!auth.biting;
+    const attacking = !dead && !stunned && (auth.windup || biting);
     if ((auth.windup || auth.rushing) && typeof auth.faceX === "number") {
-      vis.monsterFace = { x: auth.faceX, y: auth.faceY };
+      slot.face = { x: auth.faceX, y: auth.faceY };
     }
-    const old = prev && prev.monster;
+    const old = prev && (prev.monsters || []).find((o) => o && o.id === auth.id);
     if (attacking) {
       const toward = nearestPlayerVec(auth);
-      if (toward && Math.hypot(toward.x, toward.y) > 1) vis.monsterFace = toward;
+      if (toward && Math.hypot(toward.x, toward.y) > 1) slot.face = toward;
     } else if (moving && old) {
       const dx = auth.x - old.x;
       const dy = auth.y - old.y;
-      if (Math.abs(dx) + Math.abs(dy) > 0.2) vis.monsterFace = { x: dx, y: dy };
+      if (Math.abs(dx) + Math.abs(dy) > 0.2) slot.face = { x: dx, y: dy };
+    } else if (typeof auth.faceX === "number" && (auth.faceX || auth.faceY)) {
+      slot.face = { x: auth.faceX, y: auth.faceY };
     }
-    const face = vis.monsterFace || { x: 1, y: 0 };
+    const face = slot.face || { x: 1, y: 0 };
     const rushing = !dead && !stunned && !!(auth.windup || auth.rushing);
-    const biting = !dead && !stunned && now < vis.monsterAttackUntil;
-    if (moving && !auth.windup && !auth.rushing) monsterCruiseFast(auth);
+    if (moving && !auth.windup && !auth.rushing) monsterCruiseFast(auth, slot);
     let frames = SPRITE.monster.idle;
     let fps = 6;
     let onceSince = 0;
     if (dead) {
       frames = SPRITE.monster.death;
       fps = 10;
-      onceSince = vis.monsterDeathAt || now;
+      onceSince = slot.deathAt || now;
     } else if (stunned) {
       frames = [SPRITE.monster.idle[0]];
       fps = 1;
@@ -934,7 +969,7 @@
     } else if (biting) {
       frames = SPRITE.monster.attack;
       fps = 12;
-    } else if (moving && vis.monsterFast) {
+    } else if (moving && slot.fast) {
       frames = SPRITE.monster.moveFast;
       fps = 12;
     } else if (moving) {
@@ -945,7 +980,7 @@
       fps = 6;
     }
     const im = frameOf(frames, fps, onceSince);
-    const deathAge = vis.monsterDeathAt ? now - vis.monsterDeathAt : 0;
+    const deathAge = slot.deathAt ? now - slot.deathAt : 0;
     ctx.save();
     ctx.translate(s.x, s.y);
     if (stunned) ctx.translate(Math.sin(now / 28) * 2.2, 0);
@@ -1032,10 +1067,10 @@
     const layeredText = drawLayered(ctx, map.texts);
     layeredProps.low.forEach((o) => drawObstacle(ctx, o));
     layeredText.low.forEach((t) => drawMapText(ctx, t));
-    if (myRole === "tracker" && state.monster) {
-      const oldM = prev && prev.monster;
-      drawMonster(ctx, interpPos(oldM, state.monster, t) || state.monster);
-    }
+    (state.monsters || []).forEach((m) => {
+      const oldM = prev && (prev.monsters || []).find((o) => o && o.id === m.id);
+      drawMonster(ctx, interpPos(oldM, m, t) || m);
+    });
     livePlayers.forEach((p) => drawPlayer(ctx, p, p.id === socket.id));
     layeredProps.high.forEach((o) => drawObstacle(ctx, o));
     layeredText.high.forEach((t) => drawMapText(ctx, t));
@@ -1074,11 +1109,20 @@
       g.addColorStop(1, "rgba(20,70,90,.28)");
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, vw, vh);
-      if (state.monster) {
+      const monsters = state.monsters || [];
+      if (monsters.length) {
         ctx.fillStyle = "#9ee7ff";
         ctx.font = "12px Arial";
         ctx.textAlign = "left";
-        ctx.fillText("MONSTER HP " + state.monster.hp + "/" + state.monster.maxHp, 16, 22);
+        if (monsters.length === 1) {
+          const m = monsters[0];
+          ctx.fillText("MONSTER HP " + m.hp + "/" + m.maxHp, 16, 22);
+        } else {
+          monsters.forEach((m, i) => {
+            const label = (m.dead || m.hp <= 0) ? "DOWN" : (m.hp + "/" + m.maxHp);
+            ctx.fillText((m.id || ("monster-" + (i + 1))) + "  " + label, 16, 22 + i * 16);
+          });
+        }
       }
     }
     if (vis.telegraphUntil > Date.now()) {
@@ -1236,6 +1280,7 @@
       vis.scareUntil = vis.telegraphUntil = 0;
       vis.monsterFace = { x: 0, y: 1 };
       vis.monsterFast = false;
+      vis.byMonster = Object.create(null);
       vis.face = Object.create(null);
       vis.lastHp = Object.create(null);
       vis.lastMonster = null;
@@ -1253,7 +1298,6 @@
     socket.on("hiddenHunterHurt", () => {
       if (!active) return;
       vis.scareUntil = Date.now() + 420;
-      vis.monsterAttackUntil = Date.now() + 380;
       if (hhFlash) {
         hhFlash.classList.add("show");
         setTimeout(() => { if (hhFlash) hhFlash.classList.remove("show"); }, 280);
@@ -1299,6 +1343,7 @@
       vis.scareUntil = vis.telegraphUntil = 0;
       vis.monsterFace = { x: 0, y: 1 };
       vis.monsterFast = false;
+      vis.byMonster = Object.create(null);
       vis.face = Object.create(null);
       vis.lastHp = Object.create(null);
       vis.lastMonster = null;
