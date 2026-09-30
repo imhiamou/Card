@@ -119,18 +119,18 @@
     return frames;
   }
   // Dreadknight Lux. Side view: head at the top, feet at the bottom, faces left.
-  // Idle 1 while standing, Run 1 while moving, Attack 1 while the taser fires.
+  // Idle 1 while standing, Run 1 while moving, Spell Final Spark while the taser fires.
   const TRACKER_DRAW = {
     idle: luxRow("idle-1", 7),
     move: luxRow("run-1", 11),
-    shoot: luxRow("attack-1", 8)
+    shoot: luxRow("spell-final-spark", 17)
   };
   // Idle figure is 53px tall inside the 256 frame, centered near (129, 128).
-  // The previous tracker’s visible body was about 61px tall.
+  // Hunter bodies are 82px tall. Lux is larger, and still reads as one character.
   const LUX_ANCHOR_X = 129 / 256;
   const LUX_ANCHOR_Y = 128 / 256;
   const LUX_BODY_PX = 53;
-  const LUX_WORLD_H = 61;
+  const LUX_WORLD_H = 104;
   function rotmawsRow(folder, count) {
     const frames = [];
     for (let i = 1; i <= count; i++) frames.push("assets/hidden-hunter/rotmaws/" + folder + "/" + i + ".png");
@@ -298,8 +298,20 @@
         return vis.face[p.id];
       }
     }
-    // Tracker aim is omitted for the Hunter. Do not rebuild it from velocity.
-    if (p && p.role === "tracker") return { x: 0, y: 1 };
+    // The Hunter does not get the Tracker's aim payload. Facing is the unit
+    // direction the server relays. Do not rebuild it from velocity.
+    if (p && p.role === "tracker") {
+      const fx = p.facingX;
+      const fy = p.facingY;
+      if (typeof fx === "number" && typeof fy === "number") {
+        const fd = Math.hypot(fx, fy);
+        if (fd > 0.05) {
+          vis.face[p.id] = { x: fx / fd, y: fy / fd };
+          return vis.face[p.id];
+        }
+      }
+      return vis.face[p.id] || { x: 0, y: 1 };
+    }
     return (p && vis.face[p.id]) || { x: 0, y: 1 };
   }
 
@@ -718,11 +730,11 @@
   }
 
   // Idle body is 36px tall, centered near (128, 143) inside the 256 frame.
-  // The previous monster's visible height at draw width 108 was about 93px.
+  // Hunter bodies are 82px tall. Rotmaws is smaller, and the clips stay readable.
   const ROTMAWS_ANCHOR_X = 128 / 256;
   const ROTMAWS_ANCHOR_Y = 143 / 256;
   const ROTMAWS_BODY_PX = 36;
-  const ROTMAWS_WORLD_H = 93;
+  const ROTMAWS_WORLD_H = 68;
 
   function drawRotmaws(ctx, im) {
     if (!spriteReady(im)) return false;
@@ -804,7 +816,7 @@
         : ((!dead && moving) ? TRACKER_DRAW.move : TRACKER_DRAW.idle);
       const im = loadImg(bodyFrames[frameIndex(
         bodyFrames,
-        shooting ? 31 : (moving ? 8 : 6),
+        shooting ? 62 : (moving ? 8 : 6),
         shooting ? vis.taserUntil - 260 : 0
       )]);
       if (!drawLux(ctx, im, color)) {
