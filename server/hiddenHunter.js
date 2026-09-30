@@ -16,7 +16,8 @@ const MAP_H = DEFAULT_SNAP.height;
 const OBSTACLES = DEFAULT_SNAP.objects;
 const HUNTER_R = 22;
 const PLAYER_R = HUNTER_R;
-const TRACKER_R = 28;
+// Lux's picture is smaller than the hunter. Her body radius is the same.
+const TRACKER_R = HUNTER_R;
 const MONSTER_BODY_R = 18;
 const MONSTER_R = MONSTER_BODY_R;
 // Previous body was 26. Taser impact stays at that old reach (26 + 10).
