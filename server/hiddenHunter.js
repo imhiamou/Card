@@ -45,9 +45,9 @@ const MATCH_MS = 5 * 60 * 1000;
 const DAMAGE = 25;
 // Three hunter bullets (DAMAGE each) reduce one monster from full to 0.
 const MONSTER_HP = DAMAGE * 3;
-// Easy lobby difficulty. Normal is 2, Hard is 3. A room may still set hhMonsterCount.
-const INITIAL_MONSTER_COUNT = 1;
-const MONSTER_DIFFICULTY_COUNTS = { easy: 1, normal: 2, hard: 3 };
+// Easy lobby difficulty. Normal is 6, Hard is 10. A room may still set hhMonsterCount.
+const INITIAL_MONSTER_COUNT = 3;
+const MONSTER_DIFFICULTY_COUNTS = { easy: 3, normal: 6, hard: 10 };
 const MONSTER_COUNT_CAP = 16;
 const MAGAZINE_SIZE = 3;
 const FIRE_COOLDOWN_MS = 500;

@@ -153,7 +153,7 @@ let selectedHhDifficulty="easy";
 
 function hhDifficultyLabel(difficulty,count){
 const key=difficulty==="hard"?"hard":difficulty==="normal"?"normal":"easy";
-const n=count||(key==="hard"?3:key==="normal"?2:1);
+const n=count||(key==="hard"?10:key==="normal"?6:3);
 const name=key==="hard"?"Hard":key==="normal"?"Normal":"Easy";
 return name+" · "+n+" monster"+(n===1?"":"s");
 }
