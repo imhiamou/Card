@@ -867,6 +867,9 @@ io.on("connection", (socket) => {
         socket.emit("errorMessage", hhMaps.LOAD_FAIL);
         return;
       }
+      const difficulty = hiddenHunter.normalizeMonsterDifficulty(data && data.difficulty);
+      rooms[roomCode].hhDifficulty = difficulty;
+      rooms[roomCode].hhMonsterCount = hiddenHunter.monsterCountForDifficulty(difficulty);
     }
 
     socket.join(roomCode);
@@ -880,7 +883,9 @@ io.on("connection", (socket) => {
         ? domino.publicLobbyPlayers(rooms[roomCode])
         : undefined,
       mapId: rooms[roomCode].hhMapSnapshot ? rooms[roomCode].hhMapSnapshot.id : undefined,
-      mapName: rooms[roomCode].hhMapSnapshot ? rooms[roomCode].hhMapSnapshot.name : undefined
+      mapName: rooms[roomCode].hhMapSnapshot ? rooms[roomCode].hhMapSnapshot.name : undefined,
+      difficulty: rooms[roomCode].hhDifficulty,
+      monsterCount: rooms[roomCode].hhMonsterCount
     });
     if (gameMode === "dominoes" && maxPlayers === 4) {
       domino.emitDominoLobbyUpdate(rooms[roomCode], io, roomCode);

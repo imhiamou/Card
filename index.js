@@ -149,6 +149,14 @@ const unoMaxPlayersWrap=document.getElementById("unoMaxPlayersWrap");
 const botFillWrap=document.getElementById("botFillWrap");
 const startBotsBtn=document.getElementById("startBotsBtn");
 let selectedDominoTeam="A";
+let selectedHhDifficulty="easy";
+
+function hhDifficultyLabel(difficulty,count){
+const key=difficulty==="hard"?"hard":difficulty==="normal"?"normal":"easy";
+const n=count||(key==="hard"?3:key==="normal"?2:1);
+const name=key==="hard"?"Hard":key==="normal"?"Normal":"Easy";
+return name+" · "+n+" monster"+(n===1?"":"s");
+}
 
 function getSelectedDominoTeam(){
 const picked=dominoTeamSelect&&dominoTeamSelect.querySelector(".charOption.selected");
@@ -168,11 +176,10 @@ const hhEditorGate=document.getElementById("hhEditorGate");
 if(hhMapPick)hhMapPick.classList.toggle("hidden",game!=="hidden-hunter");
 if(hhEditorGate)hhEditorGate.classList.toggle("hidden",game!=="hidden-hunter");
 if(game==="hidden-hunter"&&window.HiddenHunterEditor)HiddenHunterEditor.refreshMaps();
-// Team pick: shown for Dominoes so creators (4p) and joiners can choose.
-// 2–3 player lobbies ignore the pick on the server.
+// Team A / Team B only for Dominoes. Hidden Hunter uses map and difficulty.
 const showTeam=game==="dominoes";
 if(dominoTeamWrap)dominoTeamWrap.classList.toggle("hidden",!showTeam);
-if(!showTeam&&dominoLobbyTeams)dominoLobbyTeams.classList.add("hidden");
+if(game!=="dominoes"&&dominoLobbyTeams)dominoLobbyTeams.classList.add("hidden");
 }
 
 function renderDominoLobbyTeams(data){
@@ -240,6 +247,16 @@ syncMaxPlayersVisibility();
 if(dominoMaxPlayersEl){
 dominoMaxPlayersEl.addEventListener("change",syncMaxPlayersVisibility);
 }
+const hhDifficultyChoices=document.getElementById("hhDifficultyChoices");
+if(hhDifficultyChoices){
+hhDifficultyChoices.querySelectorAll("button").forEach((btn)=>{
+btn.onclick=()=>{
+hhDifficultyChoices.querySelectorAll("button").forEach((b)=>b.classList.remove("selected"));
+btn.classList.add("selected");
+selectedHhDifficulty=btn.dataset.difficulty==="hard"?"hard":btn.dataset.difficulty==="normal"?"normal":"easy";
+};
+});
+}
 
 // Creator-only: fill the remaining seats with server bots and start.
 if(startBotsBtn){
@@ -279,8 +296,9 @@ if(game==="dominoes"||game==="uno"){
 const botEl=document.getElementById("botFillCheck");
 payload.fillBots=!!(botEl&&botEl.checked);
 }
-if(game==="hidden-hunter"&&window.HiddenHunterEditor){
-payload.mapId=HiddenHunterEditor.selectedMapId();
+if(game==="hidden-hunter"){
+if(window.HiddenHunterEditor)payload.mapId=HiddenHunterEditor.selectedMapId();
+payload.difficulty=selectedHhDifficulty;
 }
 socket.emit("createLobby",payload);
 status.textContent="Creating lobby...";
@@ -309,7 +327,8 @@ if(data.game==="dominoes"||data.game==="uno"){
 const max=data.maxPlayers||2;
 status.textContent="Waiting for players (1/"+max+")...";
 }else if(data.game==="hidden-hunter"){
-status.textContent="Waiting for another player..."+(data.mapName?" Map: "+data.mapName+".":"");
+const mapBit=data.mapName?" Map: "+data.mapName+".":"";
+status.textContent="Waiting for another player..."+mapBit+" "+hhDifficultyLabel(data.difficulty,data.monsterCount)+".";
 }else{
 status.textContent="Waiting for Player 2...";
 }

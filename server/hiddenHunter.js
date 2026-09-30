@@ -45,9 +45,9 @@ const MATCH_MS = 5 * 60 * 1000;
 const DAMAGE = 25;
 // Three hunter bullets (DAMAGE each) reduce one monster from full to 0.
 const MONSTER_HP = DAMAGE * 3;
-// Matches start with this many monsters. A room may set hhMonsterCount
-// before the match starts; the live default stays one monster.
+// Easy lobby difficulty. Normal is 2, Hard is 3. A room may still set hhMonsterCount.
 const INITIAL_MONSTER_COUNT = 1;
+const MONSTER_DIFFICULTY_COUNTS = { easy: 1, normal: 2, hard: 3 };
 const MONSTER_COUNT_CAP = 16;
 const MAGAZINE_SIZE = 3;
 const FIRE_COOLDOWN_MS = 500;
@@ -316,6 +316,16 @@ function makePlayer(id, name, role, spawns) {
     dead: false,
     input: { mx: 0, my: 0, aimX: 1, aimY: 0, at: 0 }
   };
+}
+
+function normalizeMonsterDifficulty(difficulty) {
+  const key = typeof difficulty === "string" ? difficulty.trim().toLowerCase() : "";
+  if (Object.prototype.hasOwnProperty.call(MONSTER_DIFFICULTY_COUNTS, key)) return key;
+  return "easy";
+}
+
+function monsterCountForDifficulty(difficulty) {
+  return MONSTER_DIFFICULTY_COUNTS[normalizeMonsterDifficulty(difficulty)];
 }
 
 function monsterCountFor(room) {
@@ -1467,6 +1477,8 @@ module.exports = {
   MONSTER_HP,
   DAMAGE,
   INITIAL_MONSTER_COUNT,
+  normalizeMonsterDifficulty,
+  monsterCountForDifficulty,
   MAGAZINE_SIZE,
   MATCH_MS,
   OBSTACLES,

@@ -109,6 +109,10 @@ margin:12px 0;
 text-align:left;
 }
 
+.dominoLobbyTeams.hidden{
+display:none;
+}
+
 .domLobbyTeamCol{
 background:#2a3142;
 border:1px solid #3d4860;
