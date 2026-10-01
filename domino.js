@@ -1707,6 +1707,16 @@
   }
 
   function wireControls() {
+    const volumeSlider = $("domVolume");
+    if (volumeSlider) {
+      if (!volumeSlider.dataset.wired) {
+        volumeSlider.dataset.wired = "1";
+        volumeSlider.addEventListener("input", () => {
+          applyBgmVolume(Number(volumeSlider.value) / 100, true);
+        });
+      }
+      applyBgmVolume(currentBgmVolume(), false);
+    }
     if (!domDrawBtn || domDrawBtn.dataset.wired) return;
     domDrawBtn.dataset.wired = "1";
     domDrawBtn.onclick = () => {
@@ -1734,17 +1744,6 @@
     if (domMuteBtn && !domMuteBtn.dataset.wired) {
       domMuteBtn.dataset.wired = "1";
       domMuteBtn.onclick = () => setBgmMuted(!isBgmMuted());
-    }
-    const volumeSlider = $("domVolume");
-    if (volumeSlider) {
-      volumeSlider.value = String(Math.round(currentBgmVolume() * 100));
-      if (!volumeSlider.dataset.wired) {
-        volumeSlider.dataset.wired = "1";
-        volumeSlider.addEventListener("input", () => {
-          applyBgmVolume(Number(volumeSlider.value) / 100, true);
-        });
-      }
-      applyBgmVolume(Number(volumeSlider.value) / 100, false);
     }
     applyBotSpeed(currentBotSpeed(), false);
     updateMuteButton();
