@@ -3,10 +3,9 @@ Dominoes background music
 
 The generated calm-loop.wav track has been removed.
 
-Dominoes plays the files named in playlist.json, in that order, from this folder.
-Each entry is a filename only, for example "song.mp3".
-When one track ends, the next one starts. After the last track, the first starts again.
+Dominoes plays the files named in playlist.json, in that order, from this folder:
+alex-morgan-lofi-midnight-club-568164.mp3, zephiramusic-lofi-reel-588906.mp3,
+then zephiramusic-tokyo-lofi-604786.mp3, then back to the first.
+Each entry is a filename only. When one track ends, the next one starts.
 The Mute button on the Dominoes screen pauses and resumes this playlist only.
-Volume stays low so it does not cover the game sound effects.
-
-playlist.json is empty until the three Dominoes tracks are in this folder and listed here.
+Music starts from the click that opens the match, and stays quieter than the tile sounds.
