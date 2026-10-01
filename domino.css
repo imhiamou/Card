@@ -841,8 +841,12 @@ padding:3px 8px;
 .domTopTools{
 display:flex;
 align-items:center;
+flex-wrap:wrap;
 gap:6px;
-flex:0 0 auto;
+flex:1 1 220px;
+justify-content:flex-end;
+max-width:100%;
+min-width:0;
 }
 .domBotSpeed{
 display:flex;
