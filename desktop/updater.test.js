@@ -188,7 +188,7 @@ describe("release configuration", () => {
   const rootPackage = require("../package.json");
 
   it("publishes the desktop app to the public Card GitHub Releases", () => {
-    assert.equal(desktopPackage.version, "1.0.0");
+    assert.equal(desktopPackage.version, "1.0.1");
     assert.equal(desktopPackage.dependencies["electron-updater"], "6.6.2");
     assert.equal(desktopPackage.devDependencies["electron-updater"], undefined);
     assert.equal(desktopPackage.scripts.dist, "electron-builder --win --publish never");

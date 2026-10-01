@@ -13,10 +13,13 @@
 </head>
 <body>
 
-<!-- Lobby screen: name → game → lobby code (character is chosen later for Hidden Hunt) -->
+<!-- Lobby screen: name and game on the left, setup in the center, create/join on the right.
+     Character is chosen later for Hidden Hunt. -->
 <div class="box" id="lobbyScreen">
 <h1>Hidden Duel</h1>
+<div class="lobbyColumns">
 
+<section class="lobbyCol lobbyIdentity">
 <h3>Name</h3>
 <input id="playerName" placeholder="Enter your name (2-16 characters)" maxlength="16" autocomplete="nickname">
 
@@ -27,6 +30,10 @@
 <option value="uno">UNO</option>
 <option value="hidden-hunter">Hidden Hunter</option>
 </select>
+</section>
+
+<section class="lobbyCol lobbyConfig">
+<p class="lobbyConfigEmpty">No extra setup for this game.</p>
 <div id="hiddenHunterHint" class="hidden hhLobbyCard">
 <strong>HIDDEN HUNTER</strong>
 <p>2 players required</p>
@@ -100,23 +107,26 @@
 <div id="botFillWrap" class="hidden">
 <label class="botFillLabel"><input type="checkbox" id="botFillCheck"> Fill empty slots with bots</label>
 </div>
+</section>
 
-<!-- The lobby creator chooses their own code (4-8 letters/numbers) -->
+<section class="lobbyCol lobbyActions">
+<h3>Create lobby</h3>
 <input id="createCode" placeholder="Choose Lobby Code (4-8 letters/numbers)" maxlength="8">
-
 <button id="createBtn">Create Lobby</button>
 
-<hr>
-
+<h3>Join lobby</h3>
 <input id="roomCode" placeholder="Lobby Code" maxlength="8">
-
 <button id="joinBtn">Join Lobby</button>
+</section>
 
+</div>
+
+<div class="lobbyFeedback">
 <h2 id="status"></h2>
 <h3 id="code"></h3>
-
 <!-- Shown to the creator of a bots-enabled Dominoes/UNO lobby -->
 <button id="startBotsBtn" class="hidden">Start Now (fill empty seats with bots)</button>
+</div>
 
 </div>
 

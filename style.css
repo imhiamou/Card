@@ -499,3 +499,128 @@ margin:0 0 4px;
 flex-direction:column;
 }
 }
+
+/* Desktop lobby: identity, game setup, and create/join sit side by side.
+   Narrow windows stack the same controls. */
+#lobbyScreen.box{
+width:min(1360px, calc(100vw - 40px));
+max-width:calc(100vw - 24px);
+margin:0;
+padding:18px 20px 14px;
+}
+body:has(#lobbyScreen:not(.hidden)){
+box-sizing:border-box;
+align-items:center;
+align-items:safe center;
+padding:8px 12px;
+}
+#lobbyScreen h1{
+margin:0 0 14px;
+text-align:center;
+font-size:32px;
+letter-spacing:.03em;
+}
+#lobbyScreen h3{
+margin:0 0 6px;
+font-size:13px;
+font-weight:700;
+color:#b7c4d8;
+}
+#lobbyScreen .lobbyColumns{
+display:grid;
+grid-template-columns:minmax(0,.9fr) minmax(0,1.25fr) minmax(0,.95fr);
+gap:14px;
+align-items:stretch;
+}
+#lobbyScreen .lobbyCol{
+background:#232a38;
+border:1px solid #3a4458;
+border-radius:10px;
+padding:14px 14px 4px;
+min-width:0;
+}
+#lobbyScreen .lobbyIdentity input,
+#lobbyScreen .lobbyIdentity select,
+#lobbyScreen .lobbyActions input,
+#lobbyScreen .lobbyActions button,
+#lobbyScreen .lobbyConfig select{
+margin:0 0 12px;
+font-size:15px;
+}
+#lobbyScreen #createBtn,
+#lobbyScreen #joinBtn{
+border:none;
+border-radius:8px;
+font-weight:bold;
+padding:11px;
+}
+#lobbyScreen #createBtn{
+background:#4f9cff;
+color:#0b1220;
+}
+#lobbyScreen #joinBtn{
+background:#31537a;
+color:#fff;
+border:1px solid #6aabff;
+}
+#lobbyScreen .lobbyConfigEmpty{
+margin:4px 0 12px;
+color:#9aabc4;
+font-size:14px;
+line-height:1.4;
+}
+#lobbyScreen .lobbyConfig:has(> :not(.hidden):not(.lobbyConfigEmpty)) > .lobbyConfigEmpty{
+display:none;
+}
+#lobbyScreen #hhMapPreview{
+height:108px;
+}
+#lobbyScreen #hhMapChoices{
+max-height:68px;
+overflow-y:auto;
+}
+#lobbyScreen #hiddenHunterHint.hhLobbyCard,
+#lobbyScreen #hhMapPick.hhLobbyCard,
+#lobbyScreen #hhEditorGate.hhLobbyCard{
+margin-top:0;
+margin-bottom:8px;
+padding:8px 10px;
+}
+#lobbyScreen .lobbyFeedback{
+min-height:0;
+}
+#lobbyScreen #status,
+#lobbyScreen #code{
+text-align:center;
+margin:8px 0 0;
+text-transform:none;
+letter-spacing:0;
+color:#fff;
+}
+#lobbyScreen #status{
+font-size:16px;
+}
+#lobbyScreen #code{
+font-size:18px;
+}
+#lobbyScreen #status:empty,
+#lobbyScreen #code:empty{
+display:none;
+margin:0;
+}
+#lobbyScreen #startBotsBtn:not(.hidden){
+width:min(420px,100%);
+display:block;
+margin:10px auto 0;
+}
+@media(max-width:900px){
+#lobbyScreen.box{
+width:min(460px, calc(100vw - 20px));
+}
+#lobbyScreen .lobbyColumns{
+grid-template-columns:1fr;
+}
+#lobbyScreen .lobbyConfig:not(:has(> :not(.hidden):not(.lobbyConfigEmpty))){
+display:none;
+}
+}
