@@ -1,0 +1,13 @@
+{
+  "name": "hidden-hunter-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Electron shell for Hidden Hunter. Serves the local frontend and connects to the Render multiplayer server.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "35.7.5"
+  }
+}

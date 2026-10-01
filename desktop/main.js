@@ -1,0 +1,76 @@
+/*
+ * Hidden Hunter desktop shell.
+ *
+ * Serves the existing frontend on 127.0.0.1 and opens it in a window.
+ * Multiplayer stays on https://cardb-2uys.onrender.com. This process does
+ * not start Express, Socket.IO, or PostgreSQL.
+ */
+
+const { app, BrowserWindow, Menu } = require("electron");
+const path = require("path");
+const { startStaticServer } = require("./staticServer");
+
+const FRONTEND_ROOT = path.resolve(__dirname, "..");
+
+let staticServer = null;
+
+function attachGuards(win, origin) {
+  function allow(target) {
+    try {
+      return new URL(target).origin === origin;
+    } catch (err) {
+      return false;
+    }
+  }
+  win.webContents.on("will-navigate", (event, target) => {
+    if (!allow(target)) event.preventDefault();
+  });
+  win.webContents.on("will-redirect", (event, target) => {
+    if (!allow(target)) event.preventDefault();
+  });
+  win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+}
+
+function createWindow(url) {
+  const win = new BrowserWindow({
+    width: 1280,
+    height: 800,
+    minWidth: 1024,
+    minHeight: 680,
+    title: "Hidden Hunter",
+    backgroundColor: "#181c24",
+    fullscreen: false,
+    fullscreenable: true,
+    resizable: true,
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false
+    }
+  });
+  Menu.setApplicationMenu(null);
+  win.setMenuBarVisibility(false);
+  win.on("page-title-updated", (event) => {
+    event.preventDefault();
+  });
+  win.setTitle("Hidden Hunter");
+  attachGuards(win, new URL(url).origin);
+  win.loadURL(url);
+  return win;
+}
+
+app.whenReady().then(async () => {
+  staticServer = await startStaticServer({ root: FRONTEND_ROOT });
+  const url = "http://" + staticServer.host + ":" + staticServer.port + "/index.html";
+  console.log("Hidden Hunter desktop frontend: " + url);
+  createWindow(url);
+});
+
+app.on("window-all-closed", () => {
+  if (staticServer) staticServer.close();
+  app.quit();
+});
