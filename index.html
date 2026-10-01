@@ -5,12 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Hidden Duel</title>
 <link rel="stylesheet" href="style.css">
-<link rel="stylesheet" href="wordchain.css">
-<link rel="stylesheet" href="codebreaker.css">
 <link rel="stylesheet" href="domino.css">
 <link rel="stylesheet" href="uno.css">
-<link rel="stylesheet" href="dodge-ball.css">
-<link rel="stylesheet" href="coin-flip.css">
 <link rel="stylesheet" href="hidden-hunter.css">
 <link rel="stylesheet" href="hidden-hunter-editor.css">
 <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
@@ -27,12 +23,8 @@
 <h3>Game</h3>
 <select id="gameSelect">
 <option value="hidden-hunt" selected>Hidden Hunt</option>
-<option value="word-chain">Word Chain</option>
-<option value="code-breaker">Code Breaker</option>
 <option value="dominoes">Dominoes</option>
 <option value="uno">UNO</option>
-<option value="dodge-ball">Dodge Ball</option>
-<option value="coin-flip">Coin Flip</option>
 <option value="hidden-hunter">Hidden Hunter</option>
 </select>
 <div id="hiddenHunterHint" class="hidden hhLobbyCard">
@@ -205,35 +197,19 @@
 </div>
 </div>
 
-<!-- Word Chain screen (mounted by wordchain.js; unused for Hidden Hunt) -->
-<div class="box hidden" id="wordChainScreen"></div>
-
-<!-- Code Breaker screen (mounted by codebreaker.js; unused for other games) -->
-<div class="box hidden" id="codeBreakerScreen"></div>
-
 <!-- Dominoes screen (mounted by domino.js; unused for other games) -->
 <div class="box hidden" id="dominoScreen"></div>
 
 <!-- UNO screen (mounted by uno.js; unused for other games) -->
 <div class="box hidden" id="unoScreen"></div>
 
-<!-- Dodge Ball screen (mounted by dodge-ball.js; unused for other games) -->
-<div class="box hidden" id="dodgeBallScreen"></div>
-
-<!-- Coin Flip screen (mounted by coin-flip.js; unused for other games) -->
-<div class="box hidden" id="coinFlipScreen"></div>
-
 <!-- Hidden Hunter screen (mounted by hidden-hunter.js; unused for other games) -->
 <div class="box hidden" id="hiddenHunterScreen"></div>
 <div id="hhEditorScreen" class="hidden"></div>
 
 <script src="game-sfx.js"></script>
-<script src="wordchain.js"></script>
-<script src="codebreaker.js"></script>
 <script src="domino.js"></script>
 <script src="uno.js"></script>
-<script src="dodge-ball.js"></script>
-<script src="coin-flip.js"></script>
 <script src="hidden-hunter.js"></script>
 <script src="hidden-hunter-editor.js"></script>
 <script src="index.js"></script>

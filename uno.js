@@ -84,7 +84,7 @@
   let lastTurnId = null;
   let challengeRefreshTimer = null;
 
-  let lobbyScreen, placementScreen, gameScreen, wordChainScreen, codeBreakerScreen, dominoScreen;
+  let lobbyScreen, placementScreen, gameScreen, dominoScreen;
   let unoScreen, unoTableArena, unoTurnIndicator, unoDrawPile, unoDiscardPile, unoDrawLabel;
   let unoColorDot, unoColorText, unoDirText, unoPenaltyText, unoHand, unoMsg;
   let unoDrawBtn, unoCallBtn, unoColorPicker, unoScoreboard, unoEndButtons, unoPlayAgainBtn, unoMeta;
@@ -96,8 +96,6 @@
     lobbyScreen = $("lobbyScreen");
     placementScreen = $("placementScreen");
     gameScreen = $("gameScreen");
-    wordChainScreen = $("wordChainScreen");
-    codeBreakerScreen = $("codeBreakerScreen");
     dominoScreen = $("dominoScreen");
     unoScreen = $("unoScreen");
     if (!unoScreen) return false;
@@ -197,7 +195,7 @@
 
   function showUnoScreen() {
     active = true;
-    [lobbyScreen, placementScreen, gameScreen, wordChainScreen, codeBreakerScreen, dominoScreen]
+    [lobbyScreen, placementScreen, gameScreen, dominoScreen]
       .forEach((el) => { if (el) el.classList.add("hidden"); });
     unoScreen.classList.remove("hidden");
   }

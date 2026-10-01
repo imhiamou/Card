@@ -2,7 +2,7 @@
  * UNO — isolated multiplayer game mode (2–5 players).
  *
  * Loaded by server.js only as a lobby router target. Does not alter
- * Hidden Hunt, Word Chain, Code Breaker, or Dominoes handlers.
+ * Hidden Hunt, Dominoes, or Hidden Hunter handlers.
  * Uses its own Socket.IO events exclusively.
  *
  * Rules highlight: stacking (+2 on +2, +4 on +4, +4 on +2; never +2 on +4),

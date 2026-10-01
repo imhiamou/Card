@@ -1,4 +1,4 @@
-/* Dominoes — client module (isolated from Hidden Hunt / Word Chain / Code Breaker). */
+/* Dominoes — client module (isolated from Hidden Hunt, UNO, and Hidden Hunter). */
 (function () {
   const PIP_LAYOUTS = {
     0: [],
@@ -89,8 +89,6 @@
   let lobbyScreen;
   let placementScreen;
   let gameScreen;
-  let wordChainScreen;
-  let codeBreakerScreen;
   let dominoScreen;
   let domTableArena;
   let domTurnIndicator;
@@ -120,8 +118,6 @@
     lobbyScreen = $("lobbyScreen");
     placementScreen = $("placementScreen");
     gameScreen = $("gameScreen");
-    wordChainScreen = $("wordChainScreen");
-    codeBreakerScreen = $("codeBreakerScreen");
     dominoScreen = $("dominoScreen");
     if (!dominoScreen) return false;
     if (!dominoScreen.dataset.ready) {
@@ -225,8 +221,6 @@
     if (lobbyScreen) lobbyScreen.classList.add("hidden");
     if (placementScreen) placementScreen.classList.add("hidden");
     if (gameScreen) gameScreen.classList.add("hidden");
-    if (wordChainScreen) wordChainScreen.classList.add("hidden");
-    if (codeBreakerScreen) codeBreakerScreen.classList.add("hidden");
     dominoScreen.classList.remove("hidden");
     syncMobileLayout();
     requestAnimationFrame(() => {
