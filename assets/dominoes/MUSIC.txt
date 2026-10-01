@@ -10,4 +10,5 @@ Each entry is a filename only. When one track ends, the next one starts.
 The Mute button on the Dominoes screen pauses and resumes this playlist only.
 Music starts from the click that opens the match.
 Volume − and Volume + on the Dominoes screen set how loud these songs are.
+Each click moves 10% until the level reaches 10%, then 1% at a time.
 Mute still pauses and resumes the playlist without changing that level.

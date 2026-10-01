@@ -1144,10 +1144,12 @@
 
   function stepBgmVolume(direction) {
     const current = Math.round(currentBgmVolume() * 100);
-    const next = direction > 0
-      ? Math.min(100, Math.floor(current / 10) * 10 + 10)
-      : Math.max(0, Math.ceil(current / 10) * 10 - 10);
-    applyBgmVolume(next / 100, true);
+    let next;
+    // 10% is still loud, so from there each click moves 1%.
+    if (current < 10 || (current === 10 && direction < 0)) next = current + direction;
+    else if (direction > 0) next = Math.floor(current / 10) * 10 + 10;
+    else next = Math.ceil(current / 10) * 10 - 10;
+    applyBgmVolume(Math.min(100, Math.max(0, next)) / 100, true);
   }
 
   function bgmAssetUrl(file) {
