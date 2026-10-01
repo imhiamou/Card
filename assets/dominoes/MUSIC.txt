@@ -1,11 +1,12 @@
 Dominoes background music
 ==========================
 
-File: assets/dominoes/calm-loop.wav
-Title: Calm loop
-Source: Original tone, synthesized for this project. It is not a commercial recording and it does not sample anyone else's music.
-License: CC0 1.0 Universal — public domain. You can copy, modify, and use it for any purpose.
+The generated calm-loop.wav track has been removed.
 
-The loop is an 8-second mono 22050 Hz WAV of soft sine partials (110, 165, 220, 330, and 440 Hz) with a slow tremolo. Every partial completes a whole number of cycles in 8 seconds so the loop joins without a click.
+Dominoes plays the files named in playlist.json, in that order, from this folder.
+Each entry is a filename only, for example "song.mp3".
+When one track ends, the next one starts. After the last track, the first starts again.
+The Mute button on the Dominoes screen pauses and resumes this playlist only.
+Volume stays low so it does not cover the game sound effects.
 
-Playback is Dominoes-only, low volume, and optional. The Mute button on the Dominoes screen pauses and resumes this track only.
+playlist.json is empty until the three Dominoes tracks are in this folder and listed here.
