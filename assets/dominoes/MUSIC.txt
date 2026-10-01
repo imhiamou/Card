@@ -1,0 +1,11 @@
+Dominoes background music
+==========================
+
+File: assets/dominoes/calm-loop.wav
+Title: Calm loop
+Source: Original tone, synthesized for this project. It is not a commercial recording and it does not sample anyone else's music.
+License: CC0 1.0 Universal — public domain. You can copy, modify, and use it for any purpose.
+
+The loop is an 8-second mono 22050 Hz WAV of soft sine partials (110, 165, 220, 330, and 440 Hz) with a slow tremolo. Every partial completes a whole number of cycles in 8 seconds so the loop joins without a click.
+
+Playback is Dominoes-only, low volume, and optional. The Mute button on the Dominoes screen pauses and resumes this track only.

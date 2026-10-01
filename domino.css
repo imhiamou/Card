@@ -6,6 +6,9 @@ max-width:98vw;
 box-sizing:border-box;
 padding:16px 18px 20px;
 }
+#dominoScreen.hidden{
+display:none !important;
+}
 
 .domTitleRow{
 display:flex;
@@ -267,15 +270,25 @@ font-size:15px;
 color:#c5d2e8;
 }
 
+.domHandLabel{
+margin:0 0 4px;
+font-size:13px;
+color:#c5d2e8;
+}
+
 .domHand{
 display:flex;
-flex-wrap:wrap;
-gap:8px;
-justify-content:center;
+flex-wrap:nowrap;
+gap:10px;
+justify-content:flex-start;
+align-items:flex-end;
 min-height:72px;
+max-height:128px;
 padding:8px;
 background:#1e2430;
 border-radius:10px;
+overflow-x:auto;
+overflow-y:hidden;
 }
 
 .domTile{
@@ -308,7 +321,13 @@ cursor:default;
 }
 
 .domTile.inHand{
-cursor:pointer;
+cursor:grab;
+touch-action:none;
+}
+
+.domTile.inHand.draggingSource{
+opacity:0.35;
+cursor:grabbing;
 }
 
 .domTile.inHand:hover{
@@ -370,7 +389,16 @@ flex:1;
 margin:0;
 }
 
-#domDrawBtn{
+#domDrawBtn.domDrawFloat{
+position:absolute;
+left:50%;
+bottom:10px;
+transform:translateX(-50%);
+z-index:4;
+width:auto;
+min-width:108px;
+margin:0;
+padding:8px 18px;
 background:#2e5d43;
 color:#fff;
 border:none;
@@ -405,7 +433,8 @@ border-radius:8px;
 
 .domScoreDock{
 position:relative;
-margin-top:8px;
+margin:0;
+height:0;
 }
 
 .domScoreToggle{
@@ -780,5 +809,192 @@ height:76px;
 }
 .domPlayerChip .domName{
 font-size:10px;
+}
+}
+
+.domTopBar{
+display:flex;
+flex-wrap:wrap;
+align-items:center;
+gap:8px 12px;
+flex:0 0 auto;
+margin-bottom:4px;
+}
+.domTopBar h2{
+margin:0;
+font-size:1.2rem;
+}
+.domScoreStrip{
+display:flex;
+flex-wrap:wrap;
+gap:4px 10px;
+flex:1 1 160px;
+min-width:0;
+font-size:13px;
+color:#ffd866;
+}
+.domStripItem{
+background:#1e2430;
+border-radius:999px;
+padding:3px 8px;
+}
+.domTopTools{
+display:flex;
+align-items:center;
+gap:6px;
+flex:0 0 auto;
+}
+.domBotSpeed{
+display:flex;
+align-items:center;
+gap:4px;
+}
+.domBotSpeedLabel{
+font-size:11px;
+letter-spacing:.04em;
+text-transform:uppercase;
+color:#9db2d0;
+}
+.domBotSpeed button,
+#domMuteBtn,
+.domScoreToggle{
+width:auto;
+margin:0;
+padding:5px 8px;
+border-radius:7px;
+border:1px solid #3d4860;
+background:#1e2430;
+color:#fff;
+font-size:12px;
+cursor:pointer;
+}
+.domBotSpeed button.active{
+background:#31537a;
+border-color:#6aabff;
+}
+#domMuteBtn{
+background:#31537a;
+min-width:64px;
+}
+
+.domGhost{
+position:fixed;
+z-index:80;
+margin:0;
+pointer-events:none;
+opacity:0.45;
+filter:drop-shadow(0 8px 12px rgba(0,0,0,.4));
+}
+.domGhost.snapped{
+opacity:0.62;
+}
+.domGhost.hidden{
+display:none !important;
+}
+
+/* Desktop: the whole table fits the window. Scrolling stays inside the hand. */
+html.domino-desk-play,
+body.domino-desk-play{
+overflow:hidden;
+height:100%;
+min-height:0;
+align-items:stretch;
+justify-content:stretch;
+padding:0;
+}
+body.domino-desk-play #dominoScreen{
+width:100%;
+max-width:none;
+height:100vh;
+max-height:100vh;
+margin:0;
+border-radius:0;
+padding:8px 12px 6px;
+display:flex;
+flex-direction:column;
+overflow:hidden;
+box-sizing:border-box;
+}
+body.domino-desk-play .domTableArena{
+flex:1 1 auto;
+min-height:0;
+width:100%;
+margin:0;
+grid-template-rows:auto minmax(0,1fr);
+align-items:stretch;
+}
+body.domino-desk-play .domTableArena .seat-bottom{
+display:none;
+}
+body.domino-desk-play .domTableCenter{
+display:flex;
+flex-direction:column;
+min-height:0;
+height:100%;
+}
+body.domino-desk-play #domTurnIndicator{
+flex:0 0 auto;
+font-size:15px;
+margin:0 0 4px;
+}
+body.domino-desk-play .domBoardWrap{
+flex:1 1 auto;
+height:auto;
+min-height:0;
+}
+body.domino-desk-play .domEnds{
+flex:0 0 auto;
+margin:4px 0 0;
+}
+body.domino-desk-play .domHandSection{
+flex:0 0 auto;
+margin-top:4px;
+min-height:0;
+}
+body.domino-desk-play .domTile.inHand{
+width:52px;
+height:104px;
+}
+body.domino-desk-play .domScoreboard{
+top:8px;
+bottom:auto;
+left:0;
+right:auto;
+width:min(440px,72vw);
+}
+body.domino-desk-play #domMsg{
+flex:0 0 auto;
+margin:4px 0 0;
+min-height:1.2em;
+white-space:nowrap;
+overflow:hidden;
+text-overflow:ellipsis;
+}
+body.domino-desk-play .domEndButtons{
+flex:0 0 auto;
+margin-top:4px;
+}
+
+@media(max-width:720px){
+.domTopBar h2{
+font-size:1rem;
+}
+.domBotSpeedLabel{
+display:none;
+}
+.domScoreStrip{
+font-size:11px;
+flex-basis:100%;
+}
+.domHandLabel{
+font-size:11px;
+margin:0;
+}
+#domDrawBtn.domDrawFloat{
+bottom:30px;
+padding:10px 16px;
+}
+.domGhost{
+opacity:0.5;
 }
 }

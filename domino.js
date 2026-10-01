@@ -11,9 +11,23 @@
   };
 
   const SCREEN_HTML =
-    '<div class="domTitleRow">' +
+    '<div class="domTopBar">' +
       '<h2>Dominoes</h2>' +
+      '<div class="domScoreStrip" id="domScoreStrip" aria-label="Scoreboard"></div>' +
       '<div class="domMeta" id="domMeta"></div>' +
+      '<div class="domTopTools">' +
+        '<div class="domBotSpeed" id="domBotSpeed" role="group" aria-label="Bot speed">' +
+          '<span class="domBotSpeedLabel">Bot speed</span>' +
+          '<button type="button" data-speed="slow">Slow</button>' +
+          '<button type="button" data-speed="normal">Normal</button>' +
+          '<button type="button" data-speed="fast">Fast</button>' +
+        '</div>' +
+        '<button type="button" id="domMuteBtn" aria-pressed="false">Mute</button>' +
+        '<button type="button" id="domScoreToggle" class="domScoreToggle hidden">Score</button>' +
+      '</div>' +
+    '</div>' +
+    '<div class="domScoreDock">' +
+      '<div id="domScoreboard" class="domScoreboard hidden"></div>' +
     '</div>' +
     '<div class="domTableArena" id="domTableArena" data-count="2">' +
       '<div class="domSeat seat-top" data-seat="top"></div>' +
@@ -27,6 +41,7 @@
         '<h2 id="domTurnIndicator"></h2>' +
         '<div class="domBoardWrap" id="domBoardWrap">' +
           '<div class="domBoardInner" id="domBoardInner"></div>' +
+          '<button type="button" id="domDrawBtn" class="domDrawFloat" disabled>Draw</button>' +
         '</div>' +
         '<div class="domEnds">' +
           '<span id="domLeftEnd">Left: —</span>' +
@@ -37,21 +52,10 @@
       '<div class="domSeat seat-bottom" data-seat="bottom"></div>' +
     '</div>' +
     '<div class="domHandSection">' +
-      '<h3>Your hand</h3>' +
+      '<div class="domHandLabel" id="domHandLabel">Your hand</div>' +
       '<div class="domHand" id="domHand"></div>' +
     '</div>' +
-    '<div class="domSidePicker" id="domSidePicker">' +
-      '<button type="button" id="domPlayLeft">Play Left</button>' +
-      '<button type="button" id="domPlayRight">Play Right</button>' +
-    '</div>' +
-    '<div class="domActions">' +
-      '<button type="button" id="domDrawBtn" disabled>Draw</button>' +
-    '</div>' +
     '<p id="domMsg"></p>' +
-    '<div class="domScoreDock">' +
-      '<button type="button" id="domScoreToggle" class="domScoreToggle hidden">Score</button>' +
-      '<div id="domScoreboard" class="domScoreboard hidden"></div>' +
-    '</div>' +
     '<div id="domEndButtons" class="domEndButtons hidden">' +
       '<button type="button" id="domPlayAgainBtn">Play Again</button>' +
     '</div>';
@@ -85,6 +89,13 @@
   let boardSize = { w: 200, h: 200 };
   /** After the player pans/zooms, leave the camera alone until the next round. */
   let lockView = false;
+  /** Last natural-chain layout, used to snap the drag preview. */
+  let lastLayout = null;
+  /** Active hand drag. Null when the player is not holding a domino. */
+  let tileDrag = null;
+  let ghostKey = "";
+  let bgm = null;
+  let bgmStarted = false;
 
   let lobbyScreen;
   let placementScreen;
@@ -100,10 +111,10 @@
   let domHand;
   let domMsg;
   let domDrawBtn;
-  let domSidePicker;
-  let domPlayLeft;
-  let domPlayRight;
   let domScoreboard;
+  let domScoreStrip;
+  let domHandLabel;
+  let domMuteBtn;
   let domScoreToggle;
   let domEndButtons;
   let domPlayAgainBtn;
@@ -134,10 +145,10 @@
     domHand = $("domHand");
     domMsg = $("domMsg");
     domDrawBtn = $("domDrawBtn");
-    domSidePicker = $("domSidePicker");
-    domPlayLeft = $("domPlayLeft");
-    domPlayRight = $("domPlayRight");
     domScoreboard = $("domScoreboard");
+    domScoreStrip = $("domScoreStrip");
+    domHandLabel = $("domHandLabel");
+    domMuteBtn = $("domMuteBtn");
     domScoreToggle = $("domScoreToggle");
     domEndButtons = $("domEndButtons");
     domPlayAgainBtn = $("domPlayAgainBtn");
@@ -214,6 +225,8 @@
     dominoScreen.classList.toggle("dom-touch", phone);
     document.documentElement.classList.toggle("domino-phone-play", phone && active);
     document.body.classList.toggle("domino-phone-play", phone && active);
+    document.documentElement.classList.toggle("domino-desk-play", !phone && active);
+    document.body.classList.toggle("domino-desk-play", !phone && active);
   }
 
   function showDominoScreen() {
@@ -231,6 +244,8 @@
 
   function hideDominoScreen() {
     active = false;
+    endTileDrag(false);
+    pauseBgm();
     clearScoreboard();
     hideEndButtons();
     if (dominoScreen) {
@@ -239,6 +254,8 @@
     }
     document.documentElement.classList.remove("domino-phone-play");
     document.body.classList.remove("domino-phone-play");
+    document.documentElement.classList.remove("domino-desk-play");
+    document.body.classList.remove("domino-desk-play");
   }
 
   function applyPan() {
@@ -624,6 +641,7 @@
       domBoardWrap.classList.add("dragging");
     };
     const onMove = (clientX, clientY) => {
+      if (tileDrag) return;
       if (!dragging || !dragStart) return;
       const nx = dragStart.panX + (clientX - dragStart.x);
       const ny = dragStart.panY + (clientY - dragStart.y);
@@ -914,6 +932,7 @@
   function renderBoard(animateId) {
     if (!domBoardInner || !board) return;
     const layout = layoutNaturalChain(board.chain || []);
+    lastLayout = layout;
     boardSize = { w: layout.width, h: layout.height };
     domBoardInner.style.width = layout.width + "px";
     domBoardInner.style.height = layout.height + "px";
@@ -966,7 +985,10 @@
           (animateDrawId && tile.id === animateDrawId ? " drawAnim" : ""),
         tileId: tile.id
       });
-      el.onclick = () => onHandClick(tile.id);
+      el.addEventListener("pointerdown", onTilePointerDown);
+      el.addEventListener("pointermove", onTilePointerMove);
+      el.addEventListener("pointerup", onTilePointerUp);
+      el.addEventListener("pointercancel", onTilePointerCancel);
       domHand.appendChild(el);
     });
   }
@@ -993,9 +1015,12 @@
       domDrawBtn.disabled = !canDraw || !myTurn || gameOver;
     }
     if (!myTurn || gameOver) hideSidePicker();
+    renderScoreStrip();
+    renderHandLabel();
   }
 
   function applyState(data, opts) {
+    if (tileDrag) endTileDrag(false);
     const options = opts || {};
     currentRoom = data.room || currentRoom;
     players = data.players || players;
@@ -1029,55 +1054,359 @@
     }
   }
 
-  /* ---- Interaction ---- */
+  /* ---- Score strip, music, drag preview ---- */
 
-  function hideSidePicker() {
-    if (domSidePicker) domSidePicker.classList.remove("show");
+  function renderScoreStrip() {
+    if (!domScoreStrip) return;
+    const rows = matchScoreboard || [];
+    if (!rows.length) {
+      domScoreStrip.textContent = "Scoreboard";
+      return;
+    }
+    const teamRows = rows[0] && rows[0].team;
+    domScoreStrip.innerHTML = rows.map((row) => {
+      const label = teamRows ? "Team " + row.team : (row.name || "Player");
+      const score = row.score != null ? row.score : 0;
+      return '<span class="domStripItem">' + label + " · " + score + "</span>";
+    }).join("");
+  }
+
+  function renderHandLabel() {
+    if (!domHandLabel) return;
+    const me = players.find((p) => socket && p.id === socket.id);
+    const count = hand.length;
+    let text = (me && me.name ? me.name : "You") + " · " + count +
+      (count === 1 ? " domino" : " dominoes");
+    if (teamMode && myTeam) text += " · Team " + myTeam;
+    domHandLabel.textContent = text;
+  }
+
+  function isBgmMuted() {
+    try { return localStorage.getItem("dominoBgmMuted") === "1"; } catch (err) { return false; }
+  }
+
+  function ensureBgm() {
+    if (bgm) return bgm;
+    bgm = new Audio("assets/dominoes/calm-loop.wav");
+    bgm.loop = true;
+    bgm.preload = "auto";
+    bgm.volume = 0.15;
+    return bgm;
+  }
+
+  function updateMuteButton() {
+    if (!domMuteBtn) return;
+    const muted = isBgmMuted();
+    domMuteBtn.textContent = muted ? "Unmute" : "Mute";
+    domMuteBtn.setAttribute("aria-pressed", muted ? "true" : "false");
+  }
+
+  function pauseBgm() {
+    if (bgm) bgm.pause();
+  }
+
+  function tryStartBgm() {
+    if (!active || isBgmMuted()) return;
+    const audio = ensureBgm();
+    if (!audio.paused && bgmStarted) return;
+    const pending = audio.play();
+    if (pending && pending.then) {
+      pending.then(() => { bgmStarted = true; }).catch(() => { bgmStarted = false; });
+    }
+  }
+
+  function setBgmMuted(muted) {
+    try { localStorage.setItem("dominoBgmMuted", muted ? "1" : "0"); } catch (err) { /* ignore */ }
+    updateMuteButton();
+    if (muted) pauseBgm();
+    else tryStartBgm();
+  }
+
+  function currentBotSpeed() {
+    try {
+      const saved = localStorage.getItem("dominoBotSpeed");
+      if (saved === "slow" || saved === "fast" || saved === "normal") return saved;
+    } catch (err) { /* ignore */ }
+    return "normal";
+  }
+
+  function applyBotSpeed(speed, emit) {
+    const next = speed === "slow" || speed === "fast" ? speed : "normal";
+    try { localStorage.setItem("dominoBotSpeed", next); } catch (err) { /* ignore */ }
+    const box = $("domBotSpeed");
+    if (box) {
+      box.querySelectorAll("button").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.speed === next);
+      });
+    }
+    if (emit && socket && currentRoom) {
+      socket.emit("dominoSetBotSpeed", { roomCode: currentRoom, speed: next });
+    }
+  }
+
+  function boardLocalToClient(lx, ly) {
+    const wrap = domBoardWrap.getBoundingClientRect();
+    return {
+      x: wrap.left + wrap.width / 2 + panX + lx * scale,
+      y: wrap.top + wrap.height / 2 + panY + ly * scale
+    };
+  }
+
+  function openEndLocal(placed, which) {
+    if (!placed || !placed.length) return null;
+    const tile = which === "right" ? placed[placed.length - 1] : placed[0];
+    let dir = tile.dir;
+    if (placed.length === 1 && which === "left") dir = (dir + 2) % 4;
+    const gap = 2;
+    if (dir === 0) return { x: tile.x + tile.w + gap, y: tile.y + tile.h / 2 };
+    if (dir === 1) return { x: tile.x + tile.w / 2, y: tile.y + tile.h + gap };
+    if (dir === 2) return { x: tile.x - gap, y: tile.y + tile.h / 2 };
+    return { x: tile.x + tile.w / 2, y: tile.y - gap };
+  }
+
+  function pointerInBoard(x, y) {
+    if (!domBoardWrap) return false;
+    const rect = domBoardWrap.getBoundingClientRect();
+    const pad = 48;
+    return x >= rect.left - pad && x <= rect.right + pad && y >= rect.top - pad && y <= rect.bottom + pad;
+  }
+
+  function previewEntry(tile, side) {
+    const isDouble = tile.a === tile.b;
+    if (!board || !board.chain || !board.chain.length || side === "center") {
+      return { id: tile.id, a: tile.a, b: tile.b, leftPip: tile.a, rightPip: tile.b, isDouble: isDouble };
+    }
+    if (side === "left") {
+      const end = board.leftEnd;
+      let leftPip;
+      let rightPip;
+      if (tile.a === end && tile.b === end) {
+        leftPip = end;
+        rightPip = end;
+      } else if (tile.a === end) {
+        rightPip = tile.a;
+        leftPip = tile.b;
+      } else if (tile.b === end) {
+        rightPip = tile.b;
+        leftPip = tile.a;
+      } else return null;
+      return { id: tile.id, a: tile.a, b: tile.b, leftPip: leftPip, rightPip: rightPip, isDouble: isDouble };
+    }
+    if (side === "right") {
+      const end = board.rightEnd;
+      let leftPip;
+      let rightPip;
+      if (tile.a === end && tile.b === end) {
+        leftPip = end;
+        rightPip = end;
+      } else if (tile.a === end) {
+        leftPip = tile.a;
+        rightPip = tile.b;
+      } else if (tile.b === end) {
+        leftPip = tile.b;
+        rightPip = tile.a;
+      } else return null;
+      return { id: tile.id, a: tile.a, b: tile.b, leftPip: leftPip, rightPip: rightPip, isDouble: isDouble };
+    }
+    return null;
+  }
+
+  function previewPlacement(tile, side) {
+    const entry = previewEntry(tile, side);
+    if (!entry || !board) return null;
+    const chain = board.chain || [];
+    if (!chain.length || side === "center") {
+      const vertical = tile.a === tile.b;
+      const w = vertical ? 44 : 88;
+      const h = vertical ? 88 : 44;
+      return {
+        x: boardSize.w / 2 - w / 2,
+        y: boardSize.h / 2 - h / 2,
+        w: w,
+        h: h,
+        vertical: vertical,
+        left: tile.a,
+        right: tile.b
+      };
+    }
+    const nextChain = chain.slice();
+    if (side === "left") nextChain.unshift(entry);
+    else nextChain.push(entry);
+    const next = layoutNaturalChain(nextChain);
+    const placed = next.placed.find((item) => item.tile && item.tile.id === tile.id);
+    if (!placed) return null;
+    const anchorId = side === "left" ? chain[0].id : chain[chain.length - 1].id;
+    const oldAnchor = lastLayout && lastLayout.placed.find((item) => item.tile && item.tile.id === anchorId);
+    const newAnchor = next.placed.find((item) => item.tile && item.tile.id === anchorId);
+    if (!oldAnchor || !newAnchor) return placed;
+    return {
+      x: placed.x - newAnchor.x + oldAnchor.x,
+      y: placed.y - newAnchor.y + oldAnchor.y,
+      w: placed.w,
+      h: placed.h,
+      vertical: placed.vertical,
+      left: placed.left,
+      right: placed.right
+    };
+  }
+
+  function chooseSnap(tile, x, y) {
+    const moves = movesForTile(tile.id);
+    if (!moves.length || !pointerInBoard(x, y)) return null;
+    if (moves.length === 1) return moves[0].side;
+    if (!lastLayout || !lastLayout.placed.length) return moves[0].side;
+    let best = null;
+    let bestDist = Infinity;
+    moves.forEach((move) => {
+      const local = openEndLocal(lastLayout.placed, move.side === "left" ? "left" : "right");
+      if (!local) return;
+      const point = boardLocalToClient(local.x, local.y);
+      const dist = Math.hypot(point.x - x, point.y - y);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = move.side;
+      }
+    });
+    return best || moves[0].side;
+  }
+
+  function ensureGhost() {
+    let ghost = document.getElementById("domGhost");
+    if (!ghost) {
+      ghost = document.createElement("div");
+      ghost.id = "domGhost";
+      ghost.className = "domGhost hidden";
+      document.body.appendChild(ghost);
+    }
+    return ghost;
+  }
+
+  function hideGhost() {
+    ghostKey = "";
+    const ghost = document.getElementById("domGhost");
+    if (!ghost) return;
+    ghost.classList.add("hidden");
+    ghost.classList.remove("snapped");
+    ghost.innerHTML = "";
+  }
+
+  function updateGhost(clientX, clientY) {
+    if (!tileDrag) return;
+    const tile = hand.find((item) => item.id === tileDrag.tileId);
+    const ghost = ensureGhost();
+    if (!tile) {
+      hideGhost();
+      return;
+    }
+    const side = chooseSnap(tile, clientX, clientY);
+    tileDrag.snapSide = side;
+    ghost.classList.remove("hidden");
+    if (side) {
+      const placed = previewPlacement(tile, side);
+      if (placed) {
+        const origin = boardLocalToClient(placed.x, placed.y);
+        const w = Math.max(8, placed.w * scale);
+        const h = Math.max(8, placed.h * scale);
+        const key = "snap:" + side + ":" + placed.vertical + ":" + placed.left + ":" + placed.right;
+        if (key !== ghostKey) {
+          ghostKey = key;
+          ghost.innerHTML = "";
+          const el = makeTileEl(placed.left, placed.right, { vertical: placed.vertical, extraClass: "ghostTile" });
+          el.style.width = "100%";
+          el.style.height = "100%";
+          ghost.appendChild(el);
+        }
+        ghost.classList.add("snapped");
+        ghost.style.left = origin.x + "px";
+        ghost.style.top = origin.y + "px";
+        ghost.style.width = w + "px";
+        ghost.style.height = h + "px";
+        if (domMsg) {
+          domMsg.textContent = side === "center" ? "Release to play." : "Release to play on the " + side + ".";
+        }
+        return;
+      }
+    }
+    const w = isPhoneLayout() ? 42 : 52;
+    const h = isPhoneLayout() ? 84 : 104;
+    const key = "follow:" + tile.id;
+    if (key !== ghostKey) {
+      ghostKey = key;
+      ghost.innerHTML = "";
+      const el = makeTileEl(tile.a, tile.b, { vertical: true, extraClass: "ghostTile" });
+      el.style.width = "100%";
+      el.style.height = "100%";
+      ghost.appendChild(el);
+    }
+    ghost.classList.remove("snapped");
+    ghost.style.width = w + "px";
+    ghost.style.height = h + "px";
+    ghost.style.left = (clientX - w / 2) + "px";
+    ghost.style.top = (clientY - h - 8) + "px";
+    if (domMsg) {
+      domMsg.textContent = movesForTile(tile.id).length
+        ? "Drag onto the board to play."
+        : "That domino cannot be played right now.";
+    }
+  }
+
+  function endTileDrag(commit) {
+    if (!tileDrag) {
+      hideGhost();
+      return;
+    }
+    const drag = tileDrag;
+    tileDrag = null;
+    hideGhost();
+    if (domHand) {
+      domHand.querySelectorAll(".draggingSource, .selected").forEach((el) => {
+        el.classList.remove("draggingSource", "selected");
+      });
+    }
+    if (commit && drag.snapSide && myTurn && !gameOver) {
+      socket.emit("dominoPlayTile", {
+        roomCode: currentRoom,
+        tileId: drag.tileId,
+        side: drag.snapSide
+      });
+    }
     selectedTileId = null;
   }
 
-  function showSidePicker() {
-    if (domSidePicker) domSidePicker.classList.add("show");
-  }
-
-  function onHandClick(tileId) {
-    if (!myTurn || gameOver) return;
-    const moves = movesForTile(tileId);
-    if (!moves.length) {
-      domMsg.textContent = "That domino cannot be played right now.";
-      return;
-    }
+  function onTilePointerDown(event) {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    if (!myTurn || gameOver || tileDrag) return;
+    const tileId = event.currentTarget.dataset.tileId;
+    if (!tileId) return;
+    event.preventDefault();
+    event.stopPropagation();
     selectedTileId = tileId;
-    renderHand();
-
-    if (moves.length === 1 && moves[0].side === "center") {
-      // "dominoPlayTile" — Dominoes only.
-      socket.emit("dominoPlayTile", { roomCode: currentRoom, tileId, side: "center" });
-      hideSidePicker();
-      return;
-    }
-
-    const sides = new Set(moves.map((m) => m.side));
-    if (sides.size === 1) {
-      const side = moves[0].side;
-      socket.emit("dominoPlayTile", { roomCode: currentRoom, tileId, side });
-      hideSidePicker();
-      return;
-    }
-
-    // Fits both ends — ask which side.
-    showSidePicker();
-    domMsg.textContent = "This domino fits both ends. Choose a side.";
+    tileDrag = { tileId: tileId, pointerId: event.pointerId, snapSide: null };
+    event.currentTarget.classList.add("selected", "draggingSource");
+    try { event.currentTarget.setPointerCapture(event.pointerId); } catch (err) { /* ignore */ }
+    updateGhost(event.clientX, event.clientY);
   }
 
-  function playSelectedSide(side) {
-    if (!selectedTileId || !myTurn || gameOver) return;
-    socket.emit("dominoPlayTile", {
-      roomCode: currentRoom,
-      tileId: selectedTileId,
-      side
-    });
-    hideSidePicker();
+  function onTilePointerMove(event) {
+    if (!tileDrag || event.pointerId !== tileDrag.pointerId) return;
+    updateGhost(event.clientX, event.clientY);
+  }
+
+  function onTilePointerUp(event) {
+    if (!tileDrag || event.pointerId !== tileDrag.pointerId) return;
+    endTileDrag(true);
+  }
+
+  function onTilePointerCancel(event) {
+    if (!tileDrag || event.pointerId !== tileDrag.pointerId) return;
+    endTileDrag(false);
+  }
+
+  /* ---- Interaction ---- */
+
+  function hideSidePicker() {
+    if (tileDrag) return;
+    selectedTileId = null;
   }
 
   function wireControls() {
@@ -1088,8 +1417,6 @@
       // "dominoDraw" — Dominoes only.
       socket.emit("dominoDraw", { roomCode: currentRoom });
     };
-    domPlayLeft.onclick = () => playSelectedSide("left");
-    domPlayRight.onclick = () => playSelectedSide("right");
     domPlayAgainBtn.onclick = () => {
       if (!currentRoom || !gameOver) return;
       // "dominoPlayAgain" — Dominoes only.
@@ -1100,6 +1427,19 @@
     if (domScoreToggle) {
       domScoreToggle.onclick = () => setScoreOpen(!scoreOpen);
     }
+    const speedBox = $("domBotSpeed");
+    if (speedBox && !speedBox.dataset.wired) {
+      speedBox.dataset.wired = "1";
+      speedBox.querySelectorAll("button").forEach((btn) => {
+        btn.onclick = () => applyBotSpeed(btn.dataset.speed, true);
+      });
+    }
+    if (domMuteBtn && !domMuteBtn.dataset.wired) {
+      domMuteBtn.dataset.wired = "1";
+      domMuteBtn.onclick = () => setBgmMuted(!isBgmMuted());
+    }
+    applyBotSpeed(currentBotSpeed(), false);
+    updateMuteButton();
     wireBoardPan();
   }
 
@@ -1130,6 +1470,9 @@
       msg += " Team mode — your teammate is " + data.teammate.name + ".";
     }
     domMsg.textContent = msg;
+    applyBotSpeed(currentBotSpeed(), true);
+    updateMuteButton();
+    tryStartBgm();
   }
 
   function init(sharedSocket) {
@@ -1276,6 +1619,17 @@
     });
 
     if (bindDom()) wireControls();
+
+    document.addEventListener("pointerdown", () => {
+      if (active) tryStartBgm();
+    }, true);
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && tileDrag) {
+        event.preventDefault();
+        endTileDrag(false);
+      }
+      if (active && event.key !== "Escape") tryStartBgm();
+    });
   }
 
   function isActive() {
@@ -1284,6 +1638,13 @@
 
   function showError(msg) {
     if (!active || !domMsg) return false;
+    endTileDrag(false);
+    if (domPlayAgainBtn && domPlayAgainBtn.disabled) {
+      domPlayAgainBtn.disabled = false;
+      if (String(domPlayAgainBtn.textContent).indexOf("Waiting") === 0) {
+        domPlayAgainBtn.textContent = "Play Again";
+      }
+    }
     domMsg.textContent = msg;
     return true;
   }

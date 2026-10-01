@@ -546,14 +546,21 @@
       return;
     }
     const outside = outsideItems(width, height);
+    const applySize = () => {
+      pushUndo();
+      doc.width = width;
+      doc.height = height;
+      setStatus("Map is " + width + "×" + height);
+    };
     if ((width < doc.width || height < doc.height) && outside.length) {
-      const ok = window.confirm("Shrinking the map leaves " + outside.length + " item(s) outside the new boundaries. They will be kept so you can move them back. Continue?");
-      if (!ok) return;
+      const msg = "Shrinking the map leaves " + outside.length + " item(s) outside the new boundaries. They will be kept so you can move them back. Continue?";
+      if (window.AppNotice) {
+        window.AppNotice.confirm(msg).then((ok) => { if (ok) applySize(); });
+        return;
+      }
+      if (!window.confirm(msg)) return;
     }
-    pushUndo();
-    doc.width = width;
-    doc.height = height;
-    setStatus("Map is " + width + "×" + height);
+    applySize();
   }
 
   function fitMap() {
@@ -1261,13 +1268,23 @@
       textInput: $("hheTextTool")
     };
     $("hheNew").onclick = () => {
-      if (doc && doc.objects.length && !window.confirm("Start a new map? Unsaved changes on this map stay only in this editor until you save.")) return;
-      const w = Math.round(Number(ui.width.value)) || 2000;
-      const h = Math.round(Number(ui.height.value)) || 1500;
-      adoptMap(blankMap(w, h), true);
-      doc.isNew = true;
-      doc.version = 0;
-      setStatus("New map " + doc.width + "×" + doc.height);
+      const startNew = () => {
+        const w = Math.round(Number(ui.width.value)) || 2000;
+        const h = Math.round(Number(ui.height.value)) || 1500;
+        adoptMap(blankMap(w, h), true);
+        doc.isNew = true;
+        doc.version = 0;
+        setStatus("New map " + doc.width + "×" + doc.height);
+      };
+      if (doc && doc.objects.length) {
+        const msg = "Start a new map? Unsaved changes on this map stay only in this editor until you save.";
+        if (window.AppNotice) {
+          window.AppNotice.confirm(msg).then((ok) => { if (ok) startNew(); });
+          return;
+        }
+        if (!window.confirm(msg)) return;
+      }
+      startNew();
     };
     $("hheOpen").onclick = openExisting;
     $("hheSave").onclick = openSave;
