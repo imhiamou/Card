@@ -1,15 +1,11 @@
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
-const wordchain = require("./wordchain");
-const codebreaker = require("./codebreaker");
 const domino = require("./domino");
 const uno = require("./uno");
-const dodgeBall = require("./dodgeBall");
 const hiddenHunter = require("./hiddenHunter");
 const hhMaps = require("./hhMapStore");
 const hhEditor = require("./hhEditor");
-const coinFlip = require("./coinFlip");
 const { createBotSocket } = require("./bots/botSocket");
 
 const app = express();
@@ -779,21 +775,13 @@ function discardCard(game, playerId, cardIndex) {
 
 io.on("connection", (socket) => {
 
-  // Word Chain socket handlers (no-ops unless the lobby gameMode is word-chain).
-  wordchain.registerSocket(socket, io, rooms);
-  // Code Breaker socket handlers (no-ops unless the lobby gameMode is code-breaker).
-  codebreaker.registerSocket(socket, io, rooms);
   // Dominoes socket handlers (no-ops unless the lobby gameMode is dominoes).
   domino.registerSocket(socket, io, rooms);
   // UNO socket handlers (no-ops unless the lobby gameMode is uno).
   uno.registerSocket(socket, io, rooms);
-  // Dodge Ball socket handlers (no-ops unless the lobby gameMode is dodge-ball).
-  dodgeBall.registerSocket(socket, io, rooms);
   // Hidden Hunter socket handlers (no-ops unless the lobby gameMode is hidden-hunter).
   hiddenHunter.registerSocket(socket, io, rooms);
   hhEditor.register(socket);
-  // Coin Flip socket handlers (no-ops unless the lobby gameMode is coin-flip).
-  coinFlip.registerSocket(socket, io, rooms);
 
   /*
    * "createLobby" — a player creates a new lobby with a code THEY
@@ -806,12 +794,8 @@ io.on("connection", (socket) => {
     const name = normalizePlayerName(data && data.name);
     const roomCode = data && typeof data.room === "string" ? data.room.trim().toUpperCase() : "";
     // Lobby game mode: default Hidden Hunt. Other modes launch those games only.
-    const gameMode = data && data.game === "word-chain" ? "word-chain"
-      : data && data.game === "code-breaker" ? "code-breaker"
-      : data && data.game === "dominoes" ? "dominoes"
+    const gameMode = data && data.game === "dominoes" ? "dominoes"
       : data && data.game === "uno" ? "uno"
-      : data && data.game === "dodge-ball" ? "dodge-ball"
-      : data && data.game === "coin-flip" ? "coin-flip"
       : data && data.game === "hidden-hunter" ? "hidden-hunter"
       : "hidden-hunt";
     // Dominoes 2–4 / UNO 2–5; every other game stays at 2.
@@ -952,8 +936,8 @@ io.on("connection", (socket) => {
    * "joinLobby" — a player joins an existing lobby.
    * Payload: { name, room }
    * On success emits "gameStart" { room, players } for Hidden Hunt
-   * (placement next), starts Word Chain / Code Breaker at 2 players,
-   * or Dominoes / UNO when the chosen seat count is full.
+   * (placement next), or Dominoes / UNO when the chosen seat count is full,
+   * or Hidden Hunter at 2 players.
    * Character is still null for Hidden Hunt until placeCharacter.
    */
   socket.on("joinLobby", (data) => {
@@ -987,16 +971,6 @@ io.on("connection", (socket) => {
     room.players.push({ id: socket.id, name, character: null, dominoTeam: null });
     socket.join(roomCode);
 
-    // Router: Word Chain lobbies never enter Hidden Hunt placement.
-    if (room.gameMode === "word-chain") {
-      wordchain.onBothPlayersJoined(room, io, roomCode);
-      return;
-    }
-    // Router: Code Breaker lobbies never enter Hidden Hunt or Word Chain.
-    if (room.gameMode === "code-breaker") {
-      codebreaker.onBothPlayersJoined(room, io, roomCode);
-      return;
-    }
     // Router: Dominoes waits until every chosen seat is filled.
     if (room.gameMode === "dominoes") {
       const max = room.maxPlayers || 2;
@@ -1033,22 +1007,11 @@ io.on("connection", (socket) => {
       uno.onLobbyFull(room, io, roomCode);
       return;
     }
-    // Router: Dodge Ball starts at exactly 2 players (never Hidden Hunt).
-    if (room.gameMode === "dodge-ball") {
-      dodgeBall.onBothPlayersJoined(room, io, roomCode);
-      return;
-    }
     // Router: Hidden Hunter starts at exactly 2 players (never Hidden Hunt).
     if (room.gameMode === "hidden-hunter") {
       hiddenHunter.onBothPlayersJoined(room, io, roomCode);
       return;
     }
-    // Router: Coin Flip starts at exactly 2 players (never Hidden Hunt).
-    if (room.gameMode === "coin-flip") {
-      coinFlip.onBothPlayersJoined(room, io, roomCode);
-      return;
-    }
-
     // Both players are in — start the placement phase on both clients.
     io.to(roomCode).emit("gameStart", {
       room: roomCode,
@@ -1078,7 +1041,7 @@ io.on("connection", (socket) => {
       socket.emit("errorMessage", "You are not in this lobby.");
       return;
     }
-    if (room.gameMode === "word-chain" || room.gameMode === "code-breaker" || room.gameMode === "dominoes" || room.gameMode === "uno" || room.gameMode === "dodge-ball" || room.gameMode === "coin-flip" || room.gameMode === "hidden-hunter") {
+    if (room.gameMode === "dominoes" || room.gameMode === "uno" || room.gameMode === "hidden-hunter") {
       socket.emit("errorMessage", "This lobby is not a Hidden Hunt game.");
       return;
     }
@@ -1393,7 +1356,7 @@ io.on("connection", (socket) => {
     const room = rooms[roomCode];
     if (!room || !room.players.some((p) => p.id === socket.id)) return;
     if (!room.game || !room.game.over) return;
-    if (room.gameMode === "word-chain" || room.gameMode === "code-breaker" || room.gameMode === "dominoes" || room.gameMode === "uno" || room.gameMode === "dodge-ball" || room.gameMode === "coin-flip" || room.gameMode === "hidden-hunter") return;
+    if (room.gameMode === "dominoes" || room.gameMode === "uno" || room.gameMode === "hidden-hunter") return;
 
     const opponent = getOpponent(room, socket.id);
     if (!opponent) return;
@@ -1467,9 +1430,7 @@ io.on("connection", (socket) => {
     if (room) {
       if (room.dominoBotTimer) clearTimeout(room.dominoBotTimer);
       if (room.unoBotTimer) clearTimeout(room.unoBotTimer);
-      if (room.db) dodgeBall.stopRoom(room);
       if (room.hh) hiddenHunter.stopRoom(room);
-      if (room.cf) coinFlip.stopRoom(room);
     }
 
     socket.to(roomCode).emit("playerLeft");

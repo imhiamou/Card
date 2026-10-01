@@ -274,12 +274,8 @@ if(!isValidPlayerName(name)){alert("Enter a name (2-16 letters, numbers, spaces,
 const room=document.getElementById("createCode").value.trim().toUpperCase();
 if(!ROOM_CODE_PATTERN.test(room)){alert("Lobby code must be 4-8 letters or numbers");return;}
 const selectedGame=document.getElementById("gameSelect").value;
-const game=selectedGame==="word-chain"?"word-chain"
-:selectedGame==="code-breaker"?"code-breaker"
-:selectedGame==="dominoes"?"dominoes"
+const game=selectedGame==="dominoes"?"dominoes"
 :selectedGame==="uno"?"uno"
-:selectedGame==="dodge-ball"?"dodge-ball"
-:selectedGame==="coin-flip"?"coin-flip"
 :selectedGame==="hidden-hunter"?"hidden-hunter"
 :"hidden-hunt";
 const payload={name,room,game};
@@ -384,19 +380,11 @@ if(dominoLobbyTeams)dominoLobbyTeams.classList.add("hidden");
 });
 
 socket.on("errorMessage",(msg)=>{
-// Word Chain handles its own rejected-word messages when active.
-if(window.WordChain&&WordChain.isActive()&&WordChain.showError(msg))return;
-// Code Breaker handles its own rejected-guess messages when active.
-if(window.CodeBreaker&&CodeBreaker.isActive()&&CodeBreaker.showError(msg))return;
 // Dominoes handles its own rule messages when active.
 if(window.Dominoes&&Dominoes.isActive()&&Dominoes.showError(msg))return;
 // UNO handles its own rule messages when active.
 if(window.Uno&&Uno.isActive()&&Uno.showError(msg))return;
-// Dodge Ball handles its own messages when active.
-if(window.DodgeBall&&DodgeBall.isActive()&&DodgeBall.showError(msg))return;
 if(window.HiddenHunter&&HiddenHunter.isActive()&&HiddenHunter.showError(msg))return;
-// Coin Flip handles its own messages when active.
-if(window.CoinFlip&&CoinFlip.isActive()&&CoinFlip.showError(msg))return;
 // During the game, a rejected play (e.g. an invalid Dash target) must
 // NOT freeze the match: unlock the hand so the player can try again,
 // and show the reason on screen instead of an alert.
@@ -1414,18 +1402,10 @@ oppScanned:[...oppScanned]
 }
 }
 
-// Wire Word Chain to the shared lobby socket (no Hidden Hunt gameplay changes).
-if(window.WordChain)WordChain.init(socket);
-// Wire Code Breaker to the shared lobby socket (isolated from other games).
-if(window.CodeBreaker)CodeBreaker.init(socket);
 // Wire Dominoes to the shared lobby socket (isolated from other games).
 if(window.Dominoes)Dominoes.init(socket);
 // Wire UNO to the shared lobby socket (isolated from other games).
 if(window.Uno)Uno.init(socket);
-// Wire Dodge Ball to the shared lobby socket (isolated from other games).
-if(window.DodgeBall)DodgeBall.init(socket);
-// Wire Coin Flip to the shared lobby socket (isolated from other games).
-if(window.CoinFlip)CoinFlip.init(socket);
 if(window.HiddenHunter)HiddenHunter.init(socket);
 if(window.HiddenHunterEditor)HiddenHunterEditor.init(socket);
 socket.on("connect",()=>{

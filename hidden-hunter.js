@@ -322,8 +322,8 @@
     return im && im.complete && im.naturalWidth > 0;
   }
 
-  let lobbyScreen, placementScreen, gameScreen, wordChainScreen, codeBreakerScreen;
-  let dominoScreen, unoScreen, dodgeBallScreen, coinFlipScreen, hiddenHunterScreen;
+  let lobbyScreen, placementScreen, gameScreen;
+  let dominoScreen, unoScreen, hiddenHunterScreen;
   let hhCanvas, hhRole, hhPartner, hhTimer, hhAmmo, hhMsg, hhBanner, hhCrosshair;
   let hhShootBtn, hhTaserBtn, hhTaser, hhHealthFill, hhHealthLabel, hhFlash;
   let hhJoyAim, hhEndButtons, hhPlayAgainBtn, hhLobbyBtn, hhFsBtn, hhStage;
@@ -334,12 +334,8 @@
     lobbyScreen = $("lobbyScreen");
     placementScreen = $("placementScreen");
     gameScreen = $("gameScreen");
-    wordChainScreen = $("wordChainScreen");
-    codeBreakerScreen = $("codeBreakerScreen");
     dominoScreen = $("dominoScreen");
     unoScreen = $("unoScreen");
-    dodgeBallScreen = $("dodgeBallScreen");
-    coinFlipScreen = $("coinFlipScreen");
     hiddenHunterScreen = $("hiddenHunterScreen");
     if (!hiddenHunterScreen) return false;
     if (!hiddenHunterScreen.dataset.ready) {
@@ -370,7 +366,7 @@
   }
 
   function otherScreens() {
-    return [lobbyScreen, placementScreen, gameScreen, wordChainScreen, codeBreakerScreen, dominoScreen, unoScreen, dodgeBallScreen, coinFlipScreen];
+    return [lobbyScreen, placementScreen, gameScreen, dominoScreen, unoScreen];
   }
 
   function preferTouch() {

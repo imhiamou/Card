@@ -2,7 +2,7 @@
  * Hidden Hunter — isolated 2-player coop (server-authoritative).
  *
  * Loaded by server.js only as a lobby router target. Does not alter
- * Hidden Hunt, Word Chain, Code Breaker, Dominoes, UNO, or Dodge Ball.
+ * Hidden Hunt, Dominoes, or UNO.
  * Monster positions, facing, animation, and alive state are sent only to
  * the Tracker. The Hunter does not receive monster coordinates, AI,
  * last-seen positions, or taser data.

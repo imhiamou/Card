@@ -2,7 +2,7 @@
  * Dominoes — isolated multiplayer game mode (2–4 players).
  *
  * Loaded by server.js only as a lobby router target. Does not alter
- * Hidden Hunt, Word Chain, or Code Breaker handlers. Uses its own
+ * Hidden Hunt, UNO, or Hidden Hunter handlers. Uses its own
  * Socket.IO events so it cannot collide with existing game traffic.
  *
  * Rules: standard international double-six. Server is authoritative for
@@ -886,7 +886,7 @@ function endBlocked(room, io, roomCode) {
 
 /**
  * Called when a Dominoes lobby reaches its chosen player count.
- * Never called for Hidden Hunt / Word Chain / Code Breaker.
+ * Never called for Hidden Hunt, UNO, or Hidden Hunter.
  */
 function onLobbyFull(room, io, roomCode) {
   // Honor lobby team picks: partners sit opposite before dealing.
