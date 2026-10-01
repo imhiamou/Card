@@ -1099,6 +1099,11 @@
     const muted = isBgmMuted();
     domMuteBtn.textContent = muted ? "Unmute" : "Mute";
     domMuteBtn.setAttribute("aria-pressed", muted ? "true" : "false");
+    if (bgm) {
+      domMuteBtn.dataset.paused = bgm.paused ? "1" : "0";
+      domMuteBtn.dataset.loop = bgm.loop ? "1" : "0";
+      domMuteBtn.dataset.volume = String(bgm.volume);
+    }
   }
 
   function pauseBgm() {
@@ -1111,15 +1116,23 @@
     if (!audio.paused && bgmStarted) return;
     const pending = audio.play();
     if (pending && pending.then) {
-      pending.then(() => { bgmStarted = true; }).catch(() => { bgmStarted = false; });
+      pending.then(() => {
+        bgmStarted = true;
+        updateMuteButton();
+      }).catch(() => {
+        bgmStarted = false;
+        updateMuteButton();
+      });
+    } else {
+      updateMuteButton();
     }
   }
 
   function setBgmMuted(muted) {
     try { localStorage.setItem("dominoBgmMuted", muted ? "1" : "0"); } catch (err) { /* ignore */ }
-    updateMuteButton();
     if (muted) pauseBgm();
     else tryStartBgm();
+    updateMuteButton();
   }
 
   function currentBotSpeed() {
