@@ -1081,17 +1081,30 @@
     domHandLabel.textContent = text;
   }
 
+  /** Tracks listed in assets/dominoes/playlist.json, played in order. */
+  let bgmTracks = [];
+  let bgmTracksPromise = null;
+  let bgmIndex = 0;
+  let bgmFailStreak = 0;
+  let bgmStarting = false;
+
   function isBgmMuted() {
     try { return localStorage.getItem("dominoBgmMuted") === "1"; } catch (err) { return false; }
   }
 
-  function ensureBgm() {
-    if (bgm) return bgm;
-    bgm = new Audio("assets/dominoes/calm-loop.wav");
-    bgm.loop = true;
-    bgm.preload = "auto";
-    bgm.volume = 0.15;
-    return bgm;
+  function loadBgmTracks() {
+    if (bgmTracksPromise) return bgmTracksPromise;
+    bgmTracksPromise = fetch("assets/dominoes/playlist.json")
+      .then((res) => res.ok ? res.json() : [])
+      .then((list) => {
+        bgmTracks = (Array.isArray(list) ? list : []).filter((name) => typeof name === "string" && name.length);
+        return bgmTracks;
+      })
+      .catch(() => {
+        bgmTracks = [];
+        return bgmTracks;
+      });
+    return bgmTracksPromise;
   }
 
   function updateMuteButton() {
@@ -1101,8 +1114,11 @@
     domMuteBtn.setAttribute("aria-pressed", muted ? "true" : "false");
     if (bgm) {
       domMuteBtn.dataset.paused = bgm.paused ? "1" : "0";
-      domMuteBtn.dataset.loop = bgm.loop ? "1" : "0";
       domMuteBtn.dataset.volume = String(bgm.volume);
+    }
+    domMuteBtn.dataset.loop = bgmTracks && bgmTracks.length ? "1" : "0";
+    if (bgmTracks && bgmTracks.length) {
+      domMuteBtn.dataset.track = String(bgmIndex + 1) + "/" + bgmTracks.length;
     }
   }
 
@@ -1110,22 +1126,76 @@
     if (bgm) bgm.pause();
   }
 
-  function tryStartBgm() {
-    if (!active || isBgmMuted()) return;
-    const audio = ensureBgm();
-    if (!audio.paused && bgmStarted) return;
-    const pending = audio.play();
+  function startBgmTrack() {
+    if (bgmStarting || !bgmTracks.length || !active || isBgmMuted()) return;
+    bgmStarting = true;
+    const name = bgmTracks[bgmIndex];
+    if (bgm) {
+      bgm.onended = null;
+      bgm.onerror = null;
+      bgm.pause();
+    }
+    bgm = new Audio("assets/dominoes/" + name);
+    bgm.loop = false;
+    bgm.preload = "auto";
+    bgm.volume = 0.15;
+    bgm.onended = () => {
+      bgmStarting = false;
+      bgmStarted = false;
+      bgmFailStreak = 0;
+      bgmIndex = (bgmIndex + 1) % bgmTracks.length;
+      if (active && !isBgmMuted()) startBgmTrack();
+      else updateMuteButton();
+    };
+    bgm.onerror = () => {
+      bgmStarting = false;
+      bgmStarted = false;
+      bgmFailStreak += 1;
+      if (!bgmTracks.length || bgmFailStreak >= bgmTracks.length) {
+        updateMuteButton();
+        return;
+      }
+      bgmIndex = (bgmIndex + 1) % bgmTracks.length;
+      if (active && !isBgmMuted()) startBgmTrack();
+    };
+    const pending = bgm.play();
     if (pending && pending.then) {
       pending.then(() => {
+        bgmStarting = false;
         bgmStarted = true;
+        bgmFailStreak = 0;
         updateMuteButton();
       }).catch(() => {
+        bgmStarting = false;
         bgmStarted = false;
         updateMuteButton();
       });
     } else {
+      bgmStarting = false;
       updateMuteButton();
     }
+  }
+
+  function tryStartBgm() {
+    if (!active || isBgmMuted()) return;
+    loadBgmTracks().then(() => {
+      if (!active || isBgmMuted() || !bgmTracks.length || bgmStarting) return;
+      if (bgm && !bgm.paused && bgmStarted) return;
+      if (bgm && bgm.paused && bgm.currentTime > 0 && !bgm.ended) {
+        const pending = bgm.play();
+        if (pending && pending.then) {
+          pending.then(() => {
+            bgmStarted = true;
+            updateMuteButton();
+          }).catch(() => {
+            bgmStarted = false;
+            updateMuteButton();
+          });
+        }
+        return;
+      }
+      startBgmTrack();
+    });
   }
 
   function setBgmMuted(muted) {
