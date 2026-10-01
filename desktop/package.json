@@ -2,12 +2,68 @@
   "name": "hidden-hunter-desktop",
   "version": "1.0.0",
   "private": true,
+  "author": "Hidden Hunter",
   "description": "Electron shell for Hidden Hunter. Serves the local frontend and connects to the Render multiplayer server.",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "dist": "electron-builder --win"
   },
   "devDependencies": {
-    "electron": "35.7.5"
+    "electron": "35.7.5",
+    "electron-builder": "26.0.12"
+  },
+  "build": {
+    "appId": "com.hiddenhunter.desktop",
+    "productName": "Hidden Hunter",
+    "copyright": "Hidden Hunter",
+    "npmRebuild": false,
+    "asar": true,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "staticServer.js",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "..",
+        "to": "frontend",
+        "filter": [
+          "index.html",
+          "index.js",
+          "style.css",
+          "hidden-hunter.js",
+          "hidden-hunter.css",
+          "hidden-hunter-editor.js",
+          "hidden-hunter-editor.css",
+          "domino.js",
+          "domino.css",
+          "domino.html",
+          "uno.js",
+          "uno.css",
+          "uno.html",
+          "game-sfx.js",
+          "assets/**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "Hidden-Hunter-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Hidden Hunter"
+    }
   }
 }

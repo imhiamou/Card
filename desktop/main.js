@@ -10,7 +10,13 @@ const { app, BrowserWindow, Menu } = require("electron");
 const path = require("path");
 const { startStaticServer } = require("./staticServer");
 
-const FRONTEND_ROOT = path.resolve(__dirname, "..");
+function frontendRoot() {
+  // Development serves the repository root. The installer copies that same
+  // frontend to resources/frontend so the static server is not reading file://
+  // or the asar archive.
+  if (app.isPackaged) return path.join(process.resourcesPath, "frontend");
+  return path.resolve(__dirname, "..");
+}
 
 let staticServer = null;
 
@@ -64,7 +70,7 @@ function createWindow(url) {
 }
 
 app.whenReady().then(async () => {
-  staticServer = await startStaticServer({ root: FRONTEND_ROOT });
+  staticServer = await startStaticServer({ root: frontendRoot() });
   const url = "http://" + staticServer.host + ":" + staticServer.port + "/index.html";
   console.log("Hidden Hunter desktop frontend: " + url);
   createWindow(url);
