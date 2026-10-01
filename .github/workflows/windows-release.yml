@@ -1,20 +1,34 @@
 name: Publish Hidden Hunter Windows release
 
+# Production updates come only from a published GitHub Release whose tag
+# matches desktop/package.json (v1.0.2 for version 1.0.2).
+# Drafts and pre-releases do not publish installers.
+# workflow_dispatch builds the selected commit and attaches the installer
+# to the already-published release for that same version. Use it to repair
+# v1.0.2 after this workflow is on main. It does not delete that release.
+
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Published release tag that should receive the installer, for example v1.0.2"
+        required: true
+        type: string
 
 permissions:
   contents: write
 
 jobs:
   publish-windows:
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.release.draft == false && github.event.release.prerelease == false) }}
     runs-on: windows-latest
     steps:
-      - name: Checkout release tag
+      - name: Checkout the released commit
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -28,16 +42,15 @@ jobs:
         working-directory: desktop
         run: npm ci
 
+      - name: Test desktop update flow
+        working-directory: desktop
+        run: npm test
+
       - name: Require the release tag to match the desktop version
         shell: bash
-        run: |
-          VERSION=$(node -p "require('./desktop/package.json').version")
-          TAG="${GITHUB_REF_NAME}"
-          if [ "$TAG" != "v$VERSION" ]; then
-            echo "Release tag $TAG does not match desktop version v$VERSION."
-            echo "Bump desktop/package.json, merge it, then publish a GitHub Release tagged v plus that version."
-            exit 1
-          fi
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.event.release.tag_name }}
+        run: node desktop/release-tag.js
 
       - name: Build and publish Windows installer
         working-directory: desktop
@@ -47,55 +60,13 @@ jobs:
           EP_GH_IGNORE_TIME: true
         run: npm run dist:publish
 
-      - name: Confirm installer and update metadata
+      - name: Check local update metadata
+        shell: bash
+        run: node desktop/verify-dist.js
+
+      - name: Confirm the GitHub Release has the installer
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          node <<'NODE'
-          const https = require("https");
-          const version = require("./desktop/package.json").version;
-          const tag = process.env.GITHUB_REF_NAME;
-          const token = process.env.GH_TOKEN;
-          const names = [
-            "latest.yml",
-            "Hidden-Hunter-Setup-" + version + ".exe",
-            "Hidden-Hunter-Setup-" + version + ".exe.blockmap"
-          ];
-          const req = https.request(
-            {
-              hostname: "api.github.com",
-              path: "/repos/imhiamou/Card/releases/tags/" + encodeURIComponent(tag),
-              headers: {
-                "User-Agent": "hidden-hunter-release-check",
-                Accept: "application/vnd.github+json",
-                Authorization: "Bearer " + token
-              }
-            },
-            (res) => {
-              let body = "";
-              res.on("data", (chunk) => {
-                body += chunk;
-              });
-              res.on("end", () => {
-                if (res.statusCode !== 200) {
-                  console.error("Release lookup failed with status " + res.statusCode);
-                  process.exit(1);
-                }
-                const release = JSON.parse(body);
-                const have = new Set((release.assets || []).map((asset) => asset.name));
-                const missing = names.filter((name) => !have.has(name));
-                if (missing.length) {
-                  console.error("Release " + tag + " is missing: " + missing.join(", "));
-                  process.exit(1);
-                }
-                console.log("Published " + names.join(", "));
-              });
-            }
-          );
-          req.on("error", (err) => {
-            console.error(err.message);
-            process.exit(1);
-          });
-          req.end();
-          NODE
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.event.release.tag_name }}
+        run: node desktop/verify-release-assets.js

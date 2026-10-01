@@ -6,6 +6,9 @@ const { EventEmitter } = require("events");
 const fs = require("fs");
 const path = require("path");
 const { createUpdateController, UPDATE_MESSAGE, UPDATE_NOW, LATER } = require("./updater");
+const { releaseTagMatches } = require("./release-tag");
+const { verifyDist } = require("./verify-dist");
+const { missingReleaseAssets, releaseAssetNames } = require("./verify-release-assets");
 
 function flush() {
   return new Promise((resolve) => setImmediate(resolve));
@@ -188,7 +191,10 @@ describe("release configuration", () => {
   const rootPackage = require("../package.json");
 
   it("publishes the desktop app to the public Card GitHub Releases", () => {
-    assert.equal(desktopPackage.version, "1.0.1");
+    assert.equal(desktopPackage.version, "1.0.2");
+    assert.equal(desktopPackage.build.files.includes("release-tag.js"), false);
+    assert.equal(desktopPackage.build.files.includes("verify-dist.js"), false);
+    assert.equal(desktopPackage.build.files.includes("verify-release-assets.js"), false);
     assert.equal(desktopPackage.dependencies["electron-updater"], "6.6.2");
     assert.equal(desktopPackage.devDependencies["electron-updater"], undefined);
     assert.equal(desktopPackage.scripts.dist, "electron-builder --win --publish never");
@@ -226,15 +232,114 @@ describe("release configuration", () => {
     const workflow = fs.readFileSync(path.join(root, ".github/workflows/windows-release.yml"), "utf8");
     const installer = fs.readFileSync(path.join(root, ".github/workflows/windows-installer.yml"), "utf8");
     assert.match(workflow, /types: \[published\]/);
+    assert.equal(workflow.includes("types: [created]"), false);
+    assert.equal(workflow.includes("pull_request:"), false);
+    assert.equal(/^\s*push:/m.test(workflow), false);
+    assert.match(workflow, /github\.event\.release\.draft == false/);
+    assert.match(workflow, /github\.event\.release\.prerelease == false/);
     assert.match(workflow, /contents: write/);
+    assert.match(workflow, /node-version: 22/);
+    assert.match(workflow, /npm test/);
+    assert.match(workflow, /node desktop\/release-tag\.js/);
     assert.match(workflow, /npm run dist:publish/);
     assert.match(workflow, /GH_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}/);
     assert.match(workflow, /CSC_IDENTITY_AUTO_DISCOVERY: false/);
-    assert.match(workflow, /latest\.yml/);
-    assert.match(workflow, /Hidden-Hunter-Setup-/);
+    assert.match(workflow, /node desktop\/verify-dist\.js/);
+    assert.match(workflow, /node desktop\/verify-release-assets\.js/);
+    assert.match(workflow, /github\.event\.release\.tag_name/);
     assert.equal(workflow.includes("DATABASE_URL"), false);
+    assert.equal(workflow.includes("ghp_"), false);
+    assert.match(installer, /pull_request:/);
+    assert.match(installer, /branches: \[main\]/);
     assert.match(installer, /npm test/);
-    assert.match(installer, /npm run dist/);
+    assert.match(installer, /npm run dist\b/);
+    assert.equal(installer.includes("dist:publish"), false);
+    assert.equal(installer.includes("GH_TOKEN"), false);
     assert.match(installer, /contents: read/);
+    assert.match(installer, /node desktop\/verify-dist\.js/);
+    assert.match(installer, /upload-artifact@v4/);
+  });
+});
+
+describe("release tag gate", () => {
+  it("accepts only v plus the exact desktop version", () => {
+    assert.equal(releaseTagMatches("v1.0.2", "1.0.2"), true);
+    assert.equal(releaseTagMatches("v1.0.1", "1.0.2"), false);
+    assert.equal(releaseTagMatches("1.0.2", "1.0.2"), false);
+    assert.equal(releaseTagMatches("v1.0.2-beta", "1.0.2"), false);
+    assert.equal(releaseTagMatches("v1.0.2", "1.0.2-beta"), false);
+    assert.equal(releaseTagMatches("", "1.0.2"), false);
+  });
+});
+
+describe("local Windows dist", () => {
+  const os = require("os");
+
+  function fixture(mutate) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hh-dist-"));
+    const resources = path.join(dir, "win-unpacked", "resources");
+    const frontend = path.join(resources, "frontend");
+    fs.mkdirSync(frontend, { recursive: true });
+    fs.writeFileSync(path.join(dir, "Hidden-Hunter-Setup-1.0.2.exe"), "exe");
+    fs.writeFileSync(path.join(dir, "Hidden-Hunter-Setup-1.0.2.exe.blockmap"), "map");
+    fs.writeFileSync(path.join(dir, "latest.yml"), [
+      "version: 1.0.2",
+      "path: Hidden-Hunter-Setup-1.0.2.exe",
+      ""
+    ].join("\n"));
+    fs.writeFileSync(path.join(resources, "app-update.yml"), [
+      "provider: github",
+      "owner: imhiamou",
+      "repo: Card",
+      ""
+    ].join("\n"));
+    fs.writeFileSync(path.join(frontend, "index.js"), 'const SERVER="https://cardb-2uys.onrender.com";\n');
+    if (mutate) mutate(dir);
+    return dir;
+  }
+
+  it("accepts the installer, blockmap, and GitHub updater metadata", () => {
+    assert.deepEqual(verifyDist(fixture(), "1.0.2"), []);
+  });
+
+  it("rejects a packaged server directory, a secret, and a missing blockmap", () => {
+    const withServer = fixture((dir) => {
+      fs.mkdirSync(path.join(dir, "win-unpacked", "resources", "frontend", "server"));
+    });
+    assert.ok(verifyDist(withServer, "1.0.2").some((error) => error.includes("server/")));
+
+    const withSecret = fixture((dir) => {
+      fs.appendFileSync(path.join(dir, "latest.yml"), "token: secret\n");
+    });
+    assert.ok(verifyDist(withSecret, "1.0.2").some((error) => error.includes("secret")));
+
+    const noMap = fixture((dir) => {
+      fs.unlinkSync(path.join(dir, "Hidden-Hunter-Setup-1.0.2.exe.blockmap"));
+    });
+    assert.ok(verifyDist(noMap, "1.0.2").some((error) => error.includes("blockmap")));
+  });
+});
+
+describe("published release assets", () => {
+  it("requires the installer, blockmap, and latest.yml on a full release", () => {
+    assert.deepEqual(releaseAssetNames("1.0.2"), [
+      "latest.yml",
+      "Hidden-Hunter-Setup-1.0.2.exe",
+      "Hidden-Hunter-Setup-1.0.2.exe.blockmap"
+    ]);
+    const release = {
+      draft: false,
+      prerelease: false,
+      assets: releaseAssetNames("1.0.2").map((name) => ({ name, size: 10 }))
+    };
+    assert.deepEqual(missingReleaseAssets(release, "1.0.2"), []);
+    assert.ok(missingReleaseAssets({ draft: true, assets: [] }, "1.0.2").length > 0);
+    assert.ok(missingReleaseAssets({ draft: false, prerelease: true, assets: [] }, "1.0.2").length > 0);
+    const empty = {
+      draft: false,
+      prerelease: false,
+      assets: [{ name: "latest.yml", size: 0 }]
+    };
+    assert.ok(missingReleaseAssets(empty, "1.0.2").some((error) => error.includes("empty") || error.includes("Hidden-Hunter-Setup-1.0.2.exe")));
   });
 });
