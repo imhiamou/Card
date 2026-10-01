@@ -28,11 +28,35 @@ jobs:
         working-directory: desktop
         run: npm ci
 
+      - name: Test desktop update flow
+        working-directory: desktop
+        run: npm test
+
       - name: Build Windows installer
         working-directory: desktop
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
         run: npm run dist
+
+      - name: Check local update metadata
+        shell: bash
+        run: |
+          test -f desktop/dist/latest.yml
+          test -f desktop/dist/win-unpacked/resources/app-update.yml
+          test -f desktop/dist/win-unpacked/resources/frontend/index.js
+          if [ -e desktop/dist/win-unpacked/resources/frontend/server ]; then
+            echo "server/ was packaged into the desktop app"
+            exit 1
+          fi
+          if grep -E -n -i "token:|DATABASE_URL|PRIVATE KEY|ghp_" desktop/dist/latest.yml desktop/dist/win-unpacked/resources/app-update.yml; then
+            echo "Update metadata contains a secret"
+            exit 1
+          fi
+          grep -q "provider: github" desktop/dist/win-unpacked/resources/app-update.yml
+          grep -q "owner: imhiamou" desktop/dist/win-unpacked/resources/app-update.yml
+          grep -q "repo: Card" desktop/dist/win-unpacked/resources/app-update.yml
+          grep -q "^version:" desktop/dist/latest.yml
+          grep -q 'const SERVER="https://cardb-2uys.onrender.com"' desktop/dist/win-unpacked/resources/frontend/index.js
 
       - name: Upload Windows installer
         uses: actions/upload-artifact@v4
