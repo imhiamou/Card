@@ -8,4 +8,6 @@ alex-morgan-lofi-midnight-club-568164.mp3, zephiramusic-lofi-reel-588906.mp3,
 then zephiramusic-tokyo-lofi-604786.mp3, then back to the first.
 Each entry is a filename only. When one track ends, the next one starts.
 The Mute button on the Dominoes screen pauses and resumes this playlist only.
-Music starts from the click that opens the match, and stays quieter than the tile sounds.
+Music starts from the click that opens the match.
+The Volume slider on the Dominoes screen sets how loud these songs are.
+Mute still pauses and resumes the playlist without changing that level.
