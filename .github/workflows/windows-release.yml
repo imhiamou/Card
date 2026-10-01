@@ -1,0 +1,101 @@
+name: Publish Hidden Hunter Windows release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  publish-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: npm ci
+
+      - name: Require the release tag to match the desktop version
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./desktop/package.json').version")
+          TAG="${GITHUB_REF_NAME}"
+          if [ "$TAG" != "v$VERSION" ]; then
+            echo "Release tag $TAG does not match desktop version v$VERSION."
+            echo "Bump desktop/package.json, merge it, then publish a GitHub Release tagged v plus that version."
+            exit 1
+          fi
+
+      - name: Build and publish Windows installer
+        working-directory: desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EP_GH_IGNORE_TIME: true
+        run: npm run dist:publish
+
+      - name: Confirm installer and update metadata
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node <<'NODE'
+          const https = require("https");
+          const version = require("./desktop/package.json").version;
+          const tag = process.env.GITHUB_REF_NAME;
+          const token = process.env.GH_TOKEN;
+          const names = [
+            "latest.yml",
+            "Hidden-Hunter-Setup-" + version + ".exe",
+            "Hidden-Hunter-Setup-" + version + ".exe.blockmap"
+          ];
+          const req = https.request(
+            {
+              hostname: "api.github.com",
+              path: "/repos/imhiamou/Card/releases/tags/" + encodeURIComponent(tag),
+              headers: {
+                "User-Agent": "hidden-hunter-release-check",
+                Accept: "application/vnd.github+json",
+                Authorization: "Bearer " + token
+              }
+            },
+            (res) => {
+              let body = "";
+              res.on("data", (chunk) => {
+                body += chunk;
+              });
+              res.on("end", () => {
+                if (res.statusCode !== 200) {
+                  console.error("Release lookup failed with status " + res.statusCode);
+                  process.exit(1);
+                }
+                const release = JSON.parse(body);
+                const have = new Set((release.assets || []).map((asset) => asset.name));
+                const missing = names.filter((name) => !have.has(name));
+                if (missing.length) {
+                  console.error("Release " + tag + " is missing: " + missing.join(", "));
+                  process.exit(1);
+                }
+                console.log("Published " + names.join(", "));
+              });
+            }
+          );
+          req.on("error", (err) => {
+            console.error(err.message);
+            process.exit(1);
+          });
+          req.end();
+          NODE

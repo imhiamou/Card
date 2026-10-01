@@ -6,9 +6,11 @@
  * not start Express, Socket.IO, or PostgreSQL.
  */
 
-const { app, BrowserWindow, Menu } = require("electron");
+const { app, BrowserWindow, Menu, dialog } = require("electron");
 const path = require("path");
+const { autoUpdater } = require("electron-updater");
 const { startStaticServer } = require("./staticServer");
+const { createUpdateController } = require("./updater");
 
 function frontendRoot() {
   // Development serves the repository root. The installer copies that same
@@ -73,7 +75,13 @@ app.whenReady().then(async () => {
   staticServer = await startStaticServer({ root: frontendRoot() });
   const url = "http://" + staticServer.host + ":" + staticServer.port + "/index.html";
   console.log("Hidden Hunter desktop frontend: " + url);
-  createWindow(url);
+  const win = createWindow(url);
+  createUpdateController({
+    autoUpdater,
+    dialog,
+    getWindow: () => win,
+    isPackaged: app.isPackaged
+  }).start();
 });
 
 app.on("window-all-closed", () => {
