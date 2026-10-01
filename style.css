@@ -624,3 +624,53 @@ grid-template-columns:1fr;
 display:none;
 }
 }
+
+/* In-page notice. .hidden must remove it completely so it cannot eat clicks. */
+.appNotice{
+position:fixed;
+inset:0;
+z-index:10000;
+display:flex;
+align-items:center;
+justify-content:center;
+background:rgba(8,12,18,.55);
+padding:16px;
+box-sizing:border-box;
+}
+.appNotice.hidden{
+display:none !important;
+pointer-events:none !important;
+}
+.appNoticeCard{
+width:min(440px,100%);
+background:#2a3140;
+border:1px solid #3d4860;
+border-radius:12px;
+padding:16px 16px 12px;
+box-shadow:0 16px 40px rgba(0,0,0,.45);
+}
+#appNoticeText{
+margin:0 0 14px;
+white-space:pre-wrap;
+line-height:1.4;
+}
+.appNoticeActions{
+display:flex;
+justify-content:flex-end;
+gap:8px;
+}
+.appNoticeActions button{
+width:auto;
+margin:0;
+padding:8px 16px;
+border:none;
+border-radius:8px;
+background:#31537a;
+color:#fff;
+cursor:pointer;
+}
+#appNoticeOk{
+background:#4f9cff;
+color:#0b1a2a;
+font-weight:bold;
+}

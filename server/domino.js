@@ -21,10 +21,14 @@ const ALLOWED_MAX_PLAYERS = [2, 3, 4];
 // Set by registerSocket so bot timers can verify a room still exists.
 let roomsRef = null;
 
-/** Bot "thinking" delay (ms). Fast-forwarded in automated tests. */
-function botDelayMs() {
+/** Bot "thinking" delay (ms). Fast-forwarded in automated tests.
+ *  Speed only changes the pause. Move choice is unchanged.
+ *  normal: existing 2.4–4.2s. slow: longer. fast: shorter, still readable. */
+function botDelayMs(room) {
   if (process.env.BOT_TEST_FAST) return 5;
-  // Deliberate pause so bots feel like they are thinking (~2.4–4.2s).
+  const speed = room && room.dominoBotSpeed;
+  if (speed === "slow") return 5200 + Math.floor(Math.random() * 1800);
+  if (speed === "fast") return 900 + Math.floor(Math.random() * 500);
   return 2400 + Math.floor(Math.random() * 1800);
 }
 
@@ -664,7 +668,7 @@ function scheduleBotTurn(room, io, roomCode) {
   room.dominoBotTimer = setTimeout(() => {
     room.dominoBotTimer = null;
     runBotTurn(room, io, roomCode, botId);
-  }, botDelayMs());
+  }, botDelayMs(room));
 }
 
 /** Execute one bot decision (play one tile, or draw one tile). */
@@ -712,7 +716,7 @@ function scheduleBotRematchVotes(room, io, roomCode) {
       const botSocket = room.botSockets && room.botSockets[bot.id];
       if (!botSocket || !botSocket.handlers["dominoPlayAgain"]) return;
       botSocket.handlers["dominoPlayAgain"]({ roomCode });
-    }, botDelayMs() + i * 200);
+    }, botDelayMs(room) + i * 200);
   });
 }
 
@@ -934,6 +938,27 @@ function registerSocket(socket, io, rooms) {
    * "dominoPlayTile" — Dominoes only.
    * Payload: { roomCode, tileId, side: "left"|"right"|"center" }
    */
+  /*
+   * "dominoSetBotSpeed" — Dominoes only.
+   * Local preference for how long bots wait before acting.
+   * Does not change legality, turn order, or which tile a bot chooses.
+   * Payload: { roomCode, speed: "slow"|"normal"|"fast" }
+   */
+  socket.on("dominoSetBotSpeed", (data) => {
+    const roomCode = data && typeof data.roomCode === "string" ? data.roomCode.trim().toUpperCase() : "";
+    const room = rooms[roomCode];
+    if (!room || room.gameMode !== "dominoes") return;
+    if (!room.players.some((p) => p.id === socket.id)) return;
+    const speed = data && data.speed;
+    if (speed !== "slow" && speed !== "normal" && speed !== "fast") return;
+    room.dominoBotSpeed = speed;
+    if (room.dominoBotTimer) {
+      clearTimeout(room.dominoBotTimer);
+      room.dominoBotTimer = null;
+      scheduleBotTurn(room, io, roomCode);
+    }
+  });
+
   socket.on("dominoPlayTile", (data) => {
     const roomCode = data && typeof data.roomCode === "string" ? data.roomCode.trim().toUpperCase() : "";
     const room = rooms[roomCode];
@@ -1176,5 +1201,6 @@ module.exports = {
   emitDominoLobbyUpdate,
   ALLOWED_MAX_PLAYERS,
   HAND_SIZE,
-  MAX_PIP
+  MAX_PIP,
+  botDelayMs
 };

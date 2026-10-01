@@ -268,11 +268,66 @@ startBotsBtn.textContent="Starting...";
 };
 }
 
+let lastLobbyAction="create";
+let lobbyWaitTimer=null;
+let connectNoticeShown=false;
+
+function endLobbyWait(){
+if(lobbyWaitTimer){clearTimeout(lobbyWaitTimer);lobbyWaitTimer=null;}
+}
+function beginLobbyWait(){
+endLobbyWait();
+lobbyWaitTimer=setTimeout(()=>{
+lobbyWaitTimer=null;
+const waiting=status&&(status.textContent==="Creating lobby..."||status.textContent==="Joining...");
+if(!waiting)return;
+status.textContent="The server did not respond. Try again.";
+releaseWaitingControls();
+showAppNotice("The server did not respond. You can try again.",lastLobbyAction==="join"?"roomCode":"createCode");
+},20000);
+}
+function showAppNotice(msg,focusId){
+if(window.AppNotice)window.AppNotice.alert(msg,focusId||null);
+else alert(msg);
+}
+function releaseWaitingControls(){
+if(startBotsBtn&&startBotsBtn.disabled){
+startBotsBtn.disabled=false;
+if(String(startBotsBtn.textContent).indexOf("Starting")===0){
+startBotsBtn.textContent="Start Now (fill empty seats with bots)";
+}
+}
+if(playAgainBtn&&playAgainBtn.disabled&&!playAgainBtn.classList.contains("hidden")){
+playAgainBtn.disabled=false;
+if(String(playAgainBtn.textContent).indexOf("Waiting")===0)playAgainBtn.textContent="Play Again";
+}
+const placementOpen=placementScreen&&!placementScreen.classList.contains("hidden")&&gameScreen.classList.contains("hidden");
+if(placementOpen&&boardEl&&boardEl.classList.contains("disabled")){
+boardEl.classList.remove("disabled");
+updateConfirmEnabled();
+}
+["playerName","createCode","roomCode"].forEach((id)=>{
+const el=document.getElementById(id);
+if(!el)return;
+el.disabled=false;
+el.readOnly=false;
+});
+}
+function lobbyFocusFor(msg){
+const text=String(msg||"").toLowerCase();
+if(text.indexOf("name")!==-1)return "playerName";
+if(text.indexOf("code")!==-1||text.indexOf("lobby")!==-1||text.indexOf("room")!==-1||text.indexOf("taken")!==-1){
+return lastLobbyAction==="join"?"roomCode":"createCode";
+}
+return null;
+}
+
 document.getElementById("createBtn").onclick=()=>{
 const name=getPlayerName();
-if(!isValidPlayerName(name)){alert("Enter a name (2-16 letters, numbers, spaces, - or _)");return;}
+lastLobbyAction="create";
+if(!isValidPlayerName(name)){showAppNotice("Enter a name (2-16 letters, numbers, spaces, - or _)","playerName");return;}
 const room=document.getElementById("createCode").value.trim().toUpperCase();
-if(!ROOM_CODE_PATTERN.test(room)){alert("Lobby code must be 4-8 letters or numbers");return;}
+if(!ROOM_CODE_PATTERN.test(room)){showAppNotice("Lobby code must be 4-8 letters or numbers","createCode");return;}
 const selectedGame=document.getElementById("gameSelect").value;
 const game=selectedGame==="dominoes"?"dominoes"
 :selectedGame==="uno"?"uno"
@@ -298,13 +353,15 @@ payload.difficulty=selectedHhDifficulty;
 }
 socket.emit("createLobby",payload);
 status.textContent="Creating lobby...";
+beginLobbyWait();
 };
 
 document.getElementById("joinBtn").onclick=()=>{
 const name=getPlayerName();
-if(!isValidPlayerName(name)){alert("Enter a name (2-16 letters, numbers, spaces, - or _)");return;}
+lastLobbyAction="join";
+if(!isValidPlayerName(name)){showAppNotice("Enter a name (2-16 letters, numbers, spaces, - or _)","playerName");return;}
 const room=document.getElementById("roomCode").value.trim().toUpperCase();
-if(!room){alert("Enter lobby code");return;}
+if(!room){showAppNotice("Enter lobby code","roomCode");return;}
 const payload={name,room};
 // Preferred team for 4-player Dominoes (ignored by other modes / 2–3p).
 if(gameSelectEl&&gameSelectEl.value==="dominoes"){
@@ -314,9 +371,22 @@ socket.emit("joinLobby",payload);
 // Remember the code we tried to join; confirmed once "gameStart" arrives.
 currentRoom=room;
 status.textContent="Joining...";
+beginLobbyWait();
 };
 
+socket.on("connect",()=>{connectNoticeShown=false;});
+socket.on("connect_error",()=>{
+const waiting=status&&(status.textContent==="Creating lobby..."||status.textContent==="Joining..."||(startBotsBtn&&startBotsBtn.disabled));
+if(!waiting||connectNoticeShown)return;
+connectNoticeShown=true;
+endLobbyWait();
+releaseWaitingControls();
+if(status)status.textContent="Could not reach the server.";
+showAppNotice("Could not reach the server. Check your connection and try again.",lastLobbyAction==="join"?"roomCode":"createCode");
+});
+
 socket.on("lobbyCreated",(data)=>{
+endLobbyWait();
 currentRoom=data.room;
 code.textContent="Lobby Code: "+data.room;
 if(data.game==="dominoes"||data.game==="uno"){
@@ -343,6 +413,7 @@ dominoLobbyTeams.classList.add("hidden");
 });
 
 socket.on("dominoLobbyUpdate",(data)=>{
+endLobbyWait();
 if(!data)return;
 if(data.room)currentRoom=data.room;
 if(code&&data.room)code.textContent="Lobby Code: "+data.room;
@@ -357,6 +428,7 @@ renderDominoLobbyTeams(data);
 // Carries the public player list (id, name, character) used to
 // render the player information panel during the game.
 socket.on("gameStart",(data)=>{
+endLobbyWait();
 if(data&&data.room)currentRoom=data.room;
 if(data&&data.players)lobbyPlayers=data.players;
 status.textContent="Player joined! Starting game...";
@@ -380,6 +452,12 @@ if(dominoLobbyTeams)dominoLobbyTeams.classList.add("hidden");
 });
 
 socket.on("errorMessage",(msg)=>{
+endLobbyWait();
+releaseWaitingControls();
+if(lobbyScreen&&!lobbyScreen.classList.contains("hidden")&&status&&
+(status.textContent==="Creating lobby..."||status.textContent==="Joining...")){
+status.textContent=msg;
+}
 // Dominoes handles its own rule messages when active.
 if(window.Dominoes&&Dominoes.isActive()&&Dominoes.showError(msg))return;
 // UNO handles its own rule messages when active.
@@ -397,7 +475,7 @@ renderHand();
 renderAbility();
 return;
 }
-alert(msg);
+showAppNotice(msg,lobbyFocusFor(msg));
 });
 
 /* ============================================================
