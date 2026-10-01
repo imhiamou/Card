@@ -1081,30 +1081,278 @@
     domHandLabel.textContent = text;
   }
 
-  /** Tracks listed in assets/dominoes/playlist.json, played in order. */
+  /**
+   * Tracks listed in assets/dominoes/playlist.json, played in order.
+   * Each file is fetched and played as audio/mpeg. GitHub Pages labels
+   * these uploads audio/mp3, which several browsers will not decode.
+   * play() is called from the click that starts the match, not from the
+   * later socket message, so autoplay rules do not drop the song.
+   */
+  const BGM_VOLUME = 0.4;
   let bgmTracks = [];
   let bgmTracksPromise = null;
   let bgmIndex = 0;
   let bgmFailStreak = 0;
-  let bgmStarting = false;
+  let bgmUrls = Object.create(null);
+  let bgmLoading = Object.create(null);
+  let bgmArm = false;
+  let bgmToken = 0;
+  let bgmLaunchToken = 0;
+  let bgmGestureSync = false;
+  let bgmContinue = false;
 
   function isBgmMuted() {
     try { return localStorage.getItem("dominoBgmMuted") === "1"; } catch (err) { return false; }
   }
 
+  function bgmAssetUrl(file) {
+    return new URL("assets/dominoes/" + encodeURIComponent(file), document.baseURI).href;
+  }
+
   function loadBgmTracks() {
     if (bgmTracksPromise) return bgmTracksPromise;
-    bgmTracksPromise = fetch("assets/dominoes/playlist.json")
+    bgmTracksPromise = fetch(bgmAssetUrl("playlist.json"), { cache: "no-store" })
       .then((res) => res.ok ? res.json() : [])
       .then((list) => {
-        bgmTracks = (Array.isArray(list) ? list : []).filter((name) => typeof name === "string" && name.length);
+        bgmTracks = (Array.isArray(list) ? list : []).filter((name) => {
+          return typeof name === "string" && name.length > 0 &&
+            name.indexOf("/") === -1 && name.indexOf("\\") === -1 && name.indexOf("..") === -1;
+        });
+        if (!bgmTracks.length) {
+          bgmTracksPromise = null;
+          updateMuteButton();
+          return bgmTracks;
+        }
+        preloadUpcoming();
+        updateMuteButton();
+        if (bgmArm && (active || bgmLaunchToken)) playCurrent();
         return bgmTracks;
       })
       .catch(() => {
         bgmTracks = [];
+        bgmTracksPromise = null;
         return bgmTracks;
       });
     return bgmTracksPromise;
+  }
+
+  function preloadUpcoming() {
+    if (!bgmTracks.length) return;
+    preloadBgm(bgmTracks[bgmIndex]);
+    preloadBgm(bgmTracks[(bgmIndex + 1) % bgmTracks.length]);
+  }
+
+  function preloadBgm(name) {
+    if (!name || bgmUrls[name] || bgmLoading[name]) return bgmLoading[name] || Promise.resolve(bgmUrls[name]);
+    const job = fetch(bgmAssetUrl(name))
+      .then((res) => {
+        if (!res.ok) throw new Error(String(res.status));
+        return res.arrayBuffer();
+      })
+      .then((buf) => {
+        const blob = new Blob([buf], { type: "audio/mpeg" });
+        bgmUrls[name] = URL.createObjectURL(blob);
+        if (bgmLoading[name] === job) delete bgmLoading[name];
+        // Leave a file URL that is already playing alone. Swapping in the
+        // blob would abort that play() and drop the user gesture.
+        if (bgmTracks[bgmIndex] === name && (!bgm || bgm.dataset.trackName !== name)) attachCurrent();
+        if (bgmArm && !bgmStarted && !isBgmMuted() && bgmTracks[bgmIndex] === name && (active || bgmLaunchToken)) {
+          playCurrent();
+        }
+        return bgmUrls[name];
+      })
+      .catch(() => {
+        if (bgmLoading[name] === job) delete bgmLoading[name];
+        bgmFailStreak += 1;
+        if (bgmTracks[bgmIndex] === name && bgmTracks.length && bgmFailStreak < bgmTracks.length) {
+          bgmIndex = (bgmIndex + 1) % bgmTracks.length;
+          preloadUpcoming();
+          if (bgmArm && !isBgmMuted() && (active || bgmLaunchToken)) playCurrent();
+        } else {
+          updateMuteButton();
+        }
+        return null;
+      });
+    bgmLoading[name] = job;
+    return job;
+  }
+
+  function ensureBgmEl() {
+    if (bgm) return bgm;
+    bgm = document.createElement("audio");
+    bgm.id = "domBgm";
+    bgm.preload = "auto";
+    bgm.loop = false;
+    bgm.volume = BGM_VOLUME;
+    bgm.setAttribute("playsinline", "");
+    bgm.setAttribute("aria-hidden", "true");
+    bgm.style.cssText = "position:absolute;width:1px;height:1px;left:-9999px;top:0;opacity:0;pointer-events:none";
+    bgm.addEventListener("ended", () => {
+      if (!bgmTracks.length || !active || isBgmMuted()) {
+        bgmStarted = false;
+        updateMuteButton();
+        return;
+      }
+      bgmStarted = false;
+      bgmFailStreak = 0;
+      bgmIndex = (bgmIndex + 1) % bgmTracks.length;
+      bgmArm = true;
+      bgmContinue = true;
+      try { playCurrent(); } finally { bgmContinue = false; }
+    });
+    bgm.addEventListener("error", () => {
+      if (!bgm || !bgm.error || bgm.error.code === 1) return;
+      const name = bgm.dataset.trackName;
+      // The page host may label mp3 files as audio/mp3. Keep the same track
+      // and retry through the audio/mpeg blob instead of skipping it.
+      if (name && bgm.src.indexOf("blob:") !== 0) {
+        bgmStarted = false;
+        bgmArm = true;
+        bgm.dataset.trackName = "";
+        if (bgmUrls[name]) playCurrent();
+        else preloadBgm(name);
+        return;
+      }
+      bgmStarted = false;
+      bgmFailStreak += 1;
+      if (!bgmTracks.length || bgmFailStreak >= bgmTracks.length) {
+        updateMuteButton();
+        return;
+      }
+      bgmIndex = (bgmIndex + 1) % bgmTracks.length;
+      if (active && !isBgmMuted()) {
+        bgmArm = true;
+        playCurrent();
+      } else {
+        updateMuteButton();
+      }
+    });
+    document.body.appendChild(bgm);
+    return bgm;
+  }
+
+  function attachCurrent() {
+    const name = bgmTracks[bgmIndex];
+    const url = name && bgmUrls[name];
+    if (!url) return false;
+    const el = ensureBgmEl();
+    if (el.dataset.trackName !== name) {
+      el.dataset.trackName = name;
+      el.src = url;
+    }
+    el.volume = BGM_VOLUME;
+    return true;
+  }
+
+  function startDirect(name) {
+    const el = ensureBgmEl();
+    const url = bgmAssetUrl(name);
+    if (el.dataset.trackName !== name || el.src !== url) {
+      el.dataset.trackName = name;
+      el.src = url;
+    }
+    el.volume = BGM_VOLUME;
+    const token = ++bgmToken;
+    const pending = el.play();
+    if (pending && pending.then) {
+      pending.then(() => {
+        if (token !== bgmToken) return;
+        bgmStarted = true;
+        bgmFailStreak = 0;
+        bgmArm = false;
+        updateMuteButton();
+      }).catch(() => {
+        if (token !== bgmToken) return;
+        bgmStarted = false;
+        bgmArm = true;
+        updateMuteButton();
+      });
+    }
+  }
+
+  function playCurrent() {
+    if (isBgmMuted() || !bgmTracks.length) return;
+    if (!active && !bgmArm) return;
+    const name = bgmTracks[bgmIndex];
+    if (!bgmUrls[name]) {
+      bgmArm = true;
+      preloadUpcoming();
+      // A click has to call play() now. Waiting for the download loses it.
+      if (bgmGestureSync || bgmStarted || bgmContinue) startDirect(name);
+      return;
+    }
+    if (bgm && !bgm.paused && bgmStarted && bgm.dataset.trackName === name) {
+      updateMuteButton();
+      return;
+    }
+    if (!attachCurrent()) return;
+    const token = ++bgmToken;
+    const pending = bgm.play();
+    if (pending && pending.then) {
+      pending.then(() => {
+        if (token !== bgmToken) return;
+        bgmStarted = true;
+        bgmFailStreak = 0;
+        bgmArm = false;
+        preloadUpcoming();
+        updateMuteButton();
+      }).catch(() => {
+        if (token !== bgmToken) return;
+        bgmStarted = false;
+        bgmArm = true;
+        updateMuteButton();
+      });
+    } else {
+      bgmStarted = true;
+      bgmArm = false;
+      updateMuteButton();
+    }
+  }
+
+  function tryStartBgm() {
+    if (!active || isBgmMuted()) return;
+    bgmArm = true;
+    if (!bgmTracks.length) {
+      loadBgmTracks().then(() => {
+        if (active && !isBgmMuted()) playCurrent();
+      });
+      return;
+    }
+    playCurrent();
+  }
+
+  function bgmLaunchClick(event) {
+    if (active) return false;
+    const target = event && event.target && event.target.closest ? event.target.closest("#startBotsBtn") : null;
+    if (!target) return false;
+    const game = document.getElementById("gameSelect");
+    return !!(game && game.value === "dominoes");
+  }
+
+  function onBgmGesture(event) {
+    if (isBgmMuted()) return;
+    const launching = bgmLaunchClick(event);
+    if (!active && !launching) return;
+    bgmArm = true;
+    if (launching) {
+      const token = ++bgmLaunchToken;
+      setTimeout(() => {
+        if (token === bgmLaunchToken && !active) {
+          bgmArm = false;
+          pauseBgm();
+        }
+      }, 12000);
+    }
+    bgmGestureSync = true;
+    try {
+      if (!bgmTracks.length) {
+        loadBgmTracks();
+        return;
+      }
+      playCurrent();
+    } finally {
+      bgmGestureSync = false;
+    }
   }
 
   function updateMuteButton() {
@@ -1115,6 +1363,7 @@
     if (bgm) {
       domMuteBtn.dataset.paused = bgm.paused ? "1" : "0";
       domMuteBtn.dataset.volume = String(bgm.volume);
+      if (bgm.dataset.trackName) domMuteBtn.dataset.file = bgm.dataset.trackName;
     }
     domMuteBtn.dataset.loop = bgmTracks && bgmTracks.length ? "1" : "0";
     if (bgmTracks && bgmTracks.length) {
@@ -1123,85 +1372,18 @@
   }
 
   function pauseBgm() {
+    bgmArm = false;
     if (bgm) bgm.pause();
-  }
-
-  function startBgmTrack() {
-    if (bgmStarting || !bgmTracks.length || !active || isBgmMuted()) return;
-    bgmStarting = true;
-    const name = bgmTracks[bgmIndex];
-    if (bgm) {
-      bgm.onended = null;
-      bgm.onerror = null;
-      bgm.pause();
-    }
-    bgm = new Audio("assets/dominoes/" + name);
-    bgm.loop = false;
-    bgm.preload = "auto";
-    bgm.volume = 0.15;
-    bgm.onended = () => {
-      bgmStarting = false;
-      bgmStarted = false;
-      bgmFailStreak = 0;
-      bgmIndex = (bgmIndex + 1) % bgmTracks.length;
-      if (active && !isBgmMuted()) startBgmTrack();
-      else updateMuteButton();
-    };
-    bgm.onerror = () => {
-      bgmStarting = false;
-      bgmStarted = false;
-      bgmFailStreak += 1;
-      if (!bgmTracks.length || bgmFailStreak >= bgmTracks.length) {
-        updateMuteButton();
-        return;
-      }
-      bgmIndex = (bgmIndex + 1) % bgmTracks.length;
-      if (active && !isBgmMuted()) startBgmTrack();
-    };
-    const pending = bgm.play();
-    if (pending && pending.then) {
-      pending.then(() => {
-        bgmStarting = false;
-        bgmStarted = true;
-        bgmFailStreak = 0;
-        updateMuteButton();
-      }).catch(() => {
-        bgmStarting = false;
-        bgmStarted = false;
-        updateMuteButton();
-      });
-    } else {
-      bgmStarting = false;
-      updateMuteButton();
-    }
-  }
-
-  function tryStartBgm() {
-    if (!active || isBgmMuted()) return;
-    loadBgmTracks().then(() => {
-      if (!active || isBgmMuted() || !bgmTracks.length || bgmStarting) return;
-      if (bgm && !bgm.paused && bgmStarted) return;
-      if (bgm && bgm.paused && bgm.currentTime > 0 && !bgm.ended) {
-        const pending = bgm.play();
-        if (pending && pending.then) {
-          pending.then(() => {
-            bgmStarted = true;
-            updateMuteButton();
-          }).catch(() => {
-            bgmStarted = false;
-            updateMuteButton();
-          });
-        }
-        return;
-      }
-      startBgmTrack();
-    });
   }
 
   function setBgmMuted(muted) {
     try { localStorage.setItem("dominoBgmMuted", muted ? "1" : "0"); } catch (err) { /* ignore */ }
     if (muted) pauseBgm();
-    else tryStartBgm();
+    else {
+      bgmArm = true;
+      bgmGestureSync = true;
+      try { playCurrent(); } finally { bgmGestureSync = false; }
+    }
     updateMuteButton();
   }
 
@@ -1702,16 +1884,15 @@
     });
 
     if (bindDom()) wireControls();
+    loadBgmTracks();
 
-    document.addEventListener("pointerdown", () => {
-      if (active) tryStartBgm();
-    }, true);
+    document.addEventListener("pointerdown", onBgmGesture, true);
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape" && tileDrag) {
         event.preventDefault();
         endTileDrag(false);
       }
-      if (active && event.key !== "Escape") tryStartBgm();
+      if (event.key !== "Escape") onBgmGesture(event);
     });
   }
 
