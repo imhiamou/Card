@@ -22,6 +22,11 @@
           '<button type="button" data-speed="normal">Normal</button>' +
           '<button type="button" data-speed="fast">Fast</button>' +
         '</div>' +
+        '<label class="domVolume">' +
+          '<span class="domBotSpeedLabel">Volume</span>' +
+          '<input type="range" id="domVolume" min="0" max="100" step="1" value="40" aria-label="Song volume">' +
+          '<span id="domVolumeReadout">40%</span>' +
+        '</label>' +
         '<button type="button" id="domMuteBtn" aria-pressed="false">Mute</button>' +
         '<button type="button" id="domScoreToggle" class="domScoreToggle hidden">Score</button>' +
       '</div>' +
@@ -1088,7 +1093,7 @@
    * play() is called from the click that starts the match, not from the
    * later socket message, so autoplay rules do not drop the song.
    */
-  const BGM_VOLUME = 0.4;
+  const BGM_VOLUME_DEFAULT = 0.4;
   let bgmTracks = [];
   let bgmTracksPromise = null;
   let bgmIndex = 0;
@@ -1103,6 +1108,33 @@
 
   function isBgmMuted() {
     try { return localStorage.getItem("dominoBgmMuted") === "1"; } catch (err) { return false; }
+  }
+
+  function currentBgmVolume() {
+    try {
+      const saved = localStorage.getItem("dominoBgmVolume");
+      if (saved == null || saved === "") return BGM_VOLUME_DEFAULT;
+      const n = Number(saved);
+      if (!Number.isFinite(n)) return BGM_VOLUME_DEFAULT;
+      return Math.min(1, Math.max(0, n));
+    } catch (err) {
+      return BGM_VOLUME_DEFAULT;
+    }
+  }
+
+  function applyBgmVolume(value, persist) {
+    const next = Math.min(1, Math.max(0, Number(value)));
+    const level = Number.isFinite(next) ? next : BGM_VOLUME_DEFAULT;
+    if (persist) {
+      try { localStorage.setItem("dominoBgmVolume", String(level)); } catch (err) { /* ignore */ }
+    }
+    if (bgm) bgm.volume = level;
+    const slider = $("domVolume");
+    const percent = String(Math.round(level * 100));
+    if (slider && slider.value !== percent) slider.value = percent;
+    const readout = $("domVolumeReadout");
+    if (readout) readout.textContent = percent + "%";
+    if (domMuteBtn) domMuteBtn.dataset.volume = String(level);
   }
 
   function bgmAssetUrl(file) {
@@ -1183,7 +1215,7 @@
     bgm.id = "domBgm";
     bgm.preload = "auto";
     bgm.loop = false;
-    bgm.volume = BGM_VOLUME;
+    bgm.volume = currentBgmVolume();
     bgm.setAttribute("playsinline", "");
     bgm.setAttribute("aria-hidden", "true");
     bgm.style.cssText = "position:absolute;width:1px;height:1px;left:-9999px;top:0;opacity:0;pointer-events:none";
@@ -1240,7 +1272,7 @@
       el.dataset.trackName = name;
       el.src = url;
     }
-    el.volume = BGM_VOLUME;
+    el.volume = currentBgmVolume();
     return true;
   }
 
@@ -1251,7 +1283,7 @@
       el.dataset.trackName = name;
       el.src = url;
     }
-    el.volume = BGM_VOLUME;
+    el.volume = currentBgmVolume();
     const token = ++bgmToken;
     const pending = el.play();
     if (pending && pending.then) {
@@ -1702,6 +1734,17 @@
     if (domMuteBtn && !domMuteBtn.dataset.wired) {
       domMuteBtn.dataset.wired = "1";
       domMuteBtn.onclick = () => setBgmMuted(!isBgmMuted());
+    }
+    const volumeSlider = $("domVolume");
+    if (volumeSlider) {
+      volumeSlider.value = String(Math.round(currentBgmVolume() * 100));
+      if (!volumeSlider.dataset.wired) {
+        volumeSlider.dataset.wired = "1";
+        volumeSlider.addEventListener("input", () => {
+          applyBgmVolume(Number(volumeSlider.value) / 100, true);
+        });
+      }
+      applyBgmVolume(Number(volumeSlider.value) / 100, false);
     }
     applyBotSpeed(currentBotSpeed(), false);
     updateMuteButton();
