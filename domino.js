@@ -22,11 +22,11 @@
           '<button type="button" data-speed="normal">Normal</button>' +
           '<button type="button" data-speed="fast">Fast</button>' +
         '</div>' +
-        '<label class="domVolume">' +
-          '<span class="domBotSpeedLabel">Volume</span>' +
-          '<input type="range" id="domVolume" min="0" max="100" step="1" value="40" aria-label="Song volume">' +
+        '<div class="domVolume" role="group" aria-label="Song volume">' +
+          '<button type="button" id="domVolumeDown">Volume −</button>' +
           '<span id="domVolumeReadout">40%</span>' +
-        '</label>' +
+          '<button type="button" id="domVolumeUp">Volume +</button>' +
+        '</div>' +
         '<button type="button" id="domMuteBtn" aria-pressed="false">Mute</button>' +
         '<button type="button" id="domScoreToggle" class="domScoreToggle hidden">Score</button>' +
       '</div>' +
@@ -1129,12 +1129,25 @@
       try { localStorage.setItem("dominoBgmVolume", String(level)); } catch (err) { /* ignore */ }
     }
     if (bgm) bgm.volume = level;
-    const slider = $("domVolume");
     const percent = String(Math.round(level * 100));
-    if (slider && slider.value !== percent) slider.value = percent;
     const readout = $("domVolumeReadout");
-    if (readout) readout.textContent = percent + "%";
+    if (readout) {
+      readout.textContent = percent + "%";
+      readout.dataset.volume = String(level);
+    }
+    const down = $("domVolumeDown");
+    const up = $("domVolumeUp");
+    if (down) down.disabled = level <= 0.001;
+    if (up) up.disabled = level >= 0.999;
     if (domMuteBtn) domMuteBtn.dataset.volume = String(level);
+  }
+
+  function stepBgmVolume(direction) {
+    const current = Math.round(currentBgmVolume() * 100);
+    const next = direction > 0
+      ? Math.min(100, Math.floor(current / 10) * 10 + 10)
+      : Math.max(0, Math.ceil(current / 10) * 10 - 10);
+    applyBgmVolume(next / 100, true);
   }
 
   function bgmAssetUrl(file) {
@@ -1707,16 +1720,17 @@
   }
 
   function wireControls() {
-    const volumeSlider = $("domVolume");
-    if (volumeSlider) {
-      if (!volumeSlider.dataset.wired) {
-        volumeSlider.dataset.wired = "1";
-        volumeSlider.addEventListener("input", () => {
-          applyBgmVolume(Number(volumeSlider.value) / 100, true);
-        });
-      }
-      applyBgmVolume(currentBgmVolume(), false);
+    const volumeDown = $("domVolumeDown");
+    const volumeUp = $("domVolumeUp");
+    if (volumeDown && !volumeDown.dataset.wired) {
+      volumeDown.dataset.wired = "1";
+      volumeDown.onclick = () => stepBgmVolume(-1);
     }
+    if (volumeUp && !volumeUp.dataset.wired) {
+      volumeUp.dataset.wired = "1";
+      volumeUp.onclick = () => stepBgmVolume(1);
+    }
+    if (volumeDown || volumeUp) applyBgmVolume(currentBgmVolume(), false);
     if (!domDrawBtn || domDrawBtn.dataset.wired) return;
     domDrawBtn.dataset.wired = "1";
     domDrawBtn.onclick = () => {
