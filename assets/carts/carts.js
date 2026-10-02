@@ -196,6 +196,74 @@ img.src=src;
 return images[src].ready?images[src].img:null;
 }
 
+function layerOn(name){
+return !(doc.layerState&&doc.layerState[name]&&doc.layerState[name].visible===false);
+}
+function drawSprite(visual,x,y,maxSize){
+if(!visual||!visual.src)return;
+const img=imageOf(visual.src);
+const scale=visual.scale||1;
+let w=maxSize;
+let h=maxSize;
+if(img&&img.naturalWidth){
+w=img.naturalWidth;
+h=img.naturalHeight||maxSize;
+const fit=Math.min(1,maxSize/Math.max(w,h));
+w*=fit;h*=fit;
+}
+ctx.save();
+ctx.translate(x+(visual.offsetX||0),y+(visual.offsetY||0));
+ctx.rotate((visual.rotation||0)*Math.PI/180);
+if(img)ctx.drawImage(img,-w*scale/2,-h*scale/2,w*scale,h*scale);
+ctx.restore();
+}
+function drawWorld(){
+const size=(doc.grid&&doc.grid.size)||32;
+const order=doc.layerOrder&&doc.layerOrder.length?doc.layerOrder:(CM.DEFAULT_ORDER||[]);
+order.forEach(function(name){
+if(name==="skeleton"||!layerOn(name))return;
+const layer=doc.layers&&doc.layers[name];
+if(layer){
+Object.keys(layer).forEach(function(key){
+const parts=key.split(",");
+const x=Number(parts[0])*size;
+const y=Number(parts[1])*size;
+const img=imageOf(layer[key]);
+if(img)ctx.drawImage(img,x,y,size,size);
+});
+}
+if(name==="roads"){
+(doc.skeleton.paths||[]).forEach(function(path){
+if(!path.visualStyle||!path.visualStyle.src)return;
+const img=imageOf(path.visualStyle.src);
+CM.roadCells(doc,path).forEach(function(key){
+if(!img)return;
+const parts=key.split(",");
+ctx.drawImage(img,Number(parts[0])*size,Number(parts[1])*size,size,size);
+});
+});
+}
+if(name==="buildings"){
+(doc.skeleton.destinations||[]).forEach(function(dest){
+if(dest.visual)drawSprite(dest.visual,dest.x,dest.y,128);
+});
+}
+if(name==="objects"){
+(doc.objects||[]).forEach(function(obj){
+ctx.save();
+ctx.translate(obj.x,obj.y);
+ctx.rotate((obj.rotation||0)*Math.PI/180);
+const scale=obj.scale||1;
+const img=imageOf(obj.asset);
+if(img)ctx.drawImage(img,-obj.w*scale/2,-obj.h*scale/2,obj.w*scale,obj.h*scale);
+ctx.restore();
+});
+(doc.skeleton.spawns||[]).forEach(function(spawn){
+if(spawn.visual)drawSprite(spawn.visual,spawn.x,spawn.y,72);
+});
+}
+});
+}
 function drawPath(path,selected){
 if(!path||!path.points||path.points.length<2)return;
 ctx.beginPath();
@@ -233,34 +301,18 @@ ctx.setTransform(fit.s,0,0,fit.s,fit.ox,fit.oy);
 ctx.clearRect(-fit.ox/fit.s,-fit.oy/fit.s,canvas.width/fit.s,canvas.height/fit.s);
 ctx.fillStyle="#ffffff";
 ctx.fillRect(0,0,world.width,world.height);
-const size=(doc.grid&&doc.grid.size)||32;
-CM.TILE_LAYERS.forEach(function(name){
-const layer=doc.layers[name]||{};
-if(doc.layerState&&doc.layerState[name]&&doc.layerState[name].visible===false)return;
-Object.keys(layer).forEach(function(key){
-const parts=key.split(",");
-const x=Number(parts[0])*size;
-const y=Number(parts[1])*size;
-const img=imageOf(layer[key]);
-if(img)ctx.drawImage(img,x,y,size,size);
-});
-});
-(doc.objects||[]).forEach(function(obj){
-ctx.save();
-ctx.translate(obj.x,obj.y);
-ctx.rotate((obj.rotation||0)*Math.PI/180);
-const scale=obj.scale||1;
-const img=imageOf(obj.asset);
-if(img)ctx.drawImage(img,-obj.w*scale/2,-obj.h*scale/2,obj.w*scale,obj.h*scale);
-ctx.restore();
-});
+drawWorld();
 const compiled=graph();
 const highlighted={};
 compiled.intersections.forEach(function(inter){
 const choice=choices[inter.id]||inter.defaultDirection;
 inter.outgoing.forEach(function(branch){if(branch.id===choice)highlighted[branch.pathId]=true;});
 });
-(doc.skeleton.paths||[]).forEach(function(path){drawPath(path,!!highlighted[path.id]);});
+(doc.skeleton.paths||[]).forEach(function(path){
+const styled=path.visualStyle&&path.visualStyle.src;
+if(styled&&!highlighted[path.id])return;
+drawPath(path,!!highlighted[path.id]);
+});
 (doc.skeleton.spawns||[]).forEach(function(spawn){
 ctx.beginPath();
 ctx.arc(spawn.x,spawn.y,16,0,Math.PI*2);
@@ -274,13 +326,16 @@ ctx.textBaseline="top";
 ctx.fillText("SPAWN",spawn.x,spawn.y+22);
 });
 (doc.skeleton.destinations||[]).forEach(function(dest){
-ctx.fillStyle="#fff";
+const styled=dest.visual&&dest.visual.src;
+ctx.fillStyle=styled?"#111":"#fff";
 ctx.strokeStyle="#111";
 ctx.lineWidth=3;
+if(!styled){
 ctx.fillRect(dest.x-46,dest.y-34,92,68);
 ctx.strokeRect(dest.x-46,dest.y-34,92,68);
 ctx.fillStyle="#111";
-ctx.font="bold 32px Arial";
+}
+ctx.font=styled?"bold 16px Arial":"bold 32px Arial";
 ctx.textAlign="center";
 ctx.textBaseline="middle";
 ctx.fillText(dest.label||dest.accepts||"?",dest.x,dest.y);

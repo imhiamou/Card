@@ -1,15 +1,17 @@
 /*
  * Carts map editor.
- * Skeleton tools edit the route graph. Decoration tools edit tiles and objects.
- * Those two sets of data are saved together and are not allowed to rewrite each other.
+ * Skeleton tools edit the route graph. Paint and Objects edit how the map looks.
+ * A path style and a destination building stay linked to those skeleton objects.
  */
 (function(){
 const CM=window.CartsMap;
 if(!CM)return;
 
 const STORAGE_KEY="carts.maps.v1";
-const SKELETON_TOOLS=["select","path","spawn","destination","intersection","connect","split","delete"];
-const DECOR_TOOLS=["select","pencil","rect","bucket","eraser","eyedropper","place","area","pan"];
+const SKELETON_TOOLS=["select","path","intersection","spawn","destination","connect","delete"];
+const PAINT_TOOLS=["pencil","rect","bucket","eraser","eyedropper"];
+const OBJECT_TOOLS=["select","place","rotate","scale","delete"];
+const LAYER_LABELS={ground:"Ground",roads:"Road",skeleton:"Skeleton",buildings:"Buildings",decorations:"Decorations",objects:"Objects"};
 
 let screen=null;
 let canvas=null;
@@ -121,17 +123,17 @@ top.appendChild(node);
 const left=document.getElementById("ceLeft");
 left.innerHTML='<h3>MODE</h3><div class="ceModes" id="ceModes"></div><h3>TOOLS</h3><div class="ceTools" id="ceTools"></div><div class="ceAssetBar" id="ceAssets"></div>';
 const modes=document.getElementById("ceModes");
-modes.appendChild(button("Skeleton","data-mode",function(){setMode("skeleton");}));
-modes.firstChild.dataset.mode="skeleton";
-const deco=button("Decoration",null,function(){setMode("decoration");});
-deco.dataset.mode="decoration";
-modes.appendChild(deco);
+[["Skeleton","skeleton"],["Paint","paint"],["Objects","objects"]].forEach(function(pair){
+const node=button(pair[0],null,function(){setMode(pair[1]);});
+node.dataset.mode=pair[1];
+modes.appendChild(node);
+});
 const tools=document.getElementById("ceTools");
 [
-["select","Select"],["path","Path"],["spawn","Spawn"],["destination","Destination"],
-["intersection","Intersection"],["connect","Connect"],["split","Split"],["delete","Delete"],
-["pencil","Pencil"],["rect","Rectangle"],["bucket","Bucket"],["eraser","Eraser"],
-["eyedropper","Eyedropper"],["place","Place"],["area","Area"],["pan","Pan"]
+["select","Select"],["path","Path"],["intersection","Intersection"],["spawn","Spawn"],
+["destination","Destination"],["connect","Connect"],["delete","Delete"],
+["pencil","Pencil"],["rect","Rectangle"],["bucket","Fill"],["eraser","Eraser"],
+["eyedropper","Eyedropper"],["place","Place"],["rotate","Rotate"],["scale","Scale"]
 ].forEach(function(pair){
 const node=button(pair[1],null,function(){setTool(pair[0]);});
 node.dataset.tool=pair[0];
@@ -140,19 +142,27 @@ tools.appendChild(node);
 renderSide();
 }
 
+function toolsForMode(which){
+if(which==="paint")return PAINT_TOOLS;
+if(which==="objects")return OBJECT_TOOLS;
+return SKELETON_TOOLS;
+}
+
 function setMode(next){
 mode=next;
-if(mode==="skeleton"&&DECOR_TOOLS.indexOf(tool)!==-1&&tool!=="select"&&tool!=="pan")tool="select";
-if(mode==="decoration"&&SKELETON_TOOLS.indexOf(tool)!==-1&&tool!=="select")tool="pencil";
+if(toolsForMode(mode).indexOf(tool)===-1)tool=mode==="paint"?"pencil":"select";
 draft=null;
 connectFirst=null;
 const banner=document.getElementById("ceBanner");
 if(mode==="skeleton"){
 banner.className="ceBanner skeleton";
-banner.textContent="Skeleton mode. Painting is locked. Paths, spawns, intersections, and destinations define how carts move.";
+banner.textContent="Skeleton mode. Build the routes first. Styles and buildings stay attached to them.";
+}else if(mode==="paint"){
+banner.className="ceBanner decoration";
+banner.textContent="Paint mode. Fill the ground. Painting does not change cart routes.";
 }else{
 banner.className="ceBanner decoration";
-banner.textContent="Decoration mode. The skeleton is locked. Tiles and objects do not change cart routes.";
+banner.textContent="Objects mode. Place trees, props, and other decorations.";
 }
 highlightTools();
 renderSide();
@@ -160,8 +170,7 @@ dirty=true;draw();
 }
 
 function setTool(next){
-if(mode==="skeleton"&&SKELETON_TOOLS.indexOf(next)===-1&&next!=="pan")return;
-if(mode==="decoration"&&DECOR_TOOLS.indexOf(next)===-1)return;
+if(toolsForMode(mode).indexOf(next)===-1)return;
 tool=next;
 if(tool!=="path")draft=null;
 if(tool!=="connect")connectFirst=null;
@@ -170,14 +179,14 @@ setStatus(toolLabel(next));
 }
 
 function toolLabel(name){
-const labels={select:"Select and drag",path:"Click to add path points. Double-click or Enter to finish.",spawn:"Click to place a spawn",destination:"Click to place a destination",intersection:"Click to place an intersection, or click a path to split one in",connect:"Click two endpoints to join them",split:"Select a middle path point, then Split",delete:"Click an item to delete it",pencil:"Paint the active tile layer",rect:"Drag a rectangle to fill it",bucket:"Fill a connected tile area",eraser:"Erase tiles",eyedropper:"Pick a tile",place:"Click to place the selected asset as an object",area:"Drag an area to copy, paste, or erase",pan:"Drag to pan"};
+const labels={select:"Select and drag",path:"Click to add path points. Double-click or Enter to finish.",spawn:"Click to place a spawn",destination:"Click to place a destination",intersection:"Click to place an intersection",connect:"Click two endpoints to join them",delete:"Click an item to delete it",pencil:"Paint the active tile layer",rect:"Drag a rectangle to fill it",bucket:"Fill a connected tile area",eraser:"Erase tiles",eyedropper:"Pick a tile",place:"Click to place the selected asset",rotate:"Click an object to rotate it",scale:"Click an object to scale it. Shift-click scales down."};
 return labels[name]||name;
 }
 
 function highlightTools(){
 document.querySelectorAll("#ceTools button").forEach(function(node){
 const name=node.dataset.tool;
-const allowed=mode==="skeleton"?SKELETON_TOOLS.indexOf(name)!==-1||name==="pan":DECOR_TOOLS.indexOf(name)!==-1;
+const allowed=toolsForMode(mode).indexOf(name)!==-1;
 node.hidden=!allowed;
 node.disabled=!allowed;
 node.classList.toggle("active",name===tool);
@@ -185,6 +194,8 @@ node.classList.toggle("active",name===tool);
 document.querySelectorAll("#ceModes button").forEach(function(node){
 node.classList.toggle("active",node.dataset.mode===mode);
 });
+const areaRow=document.querySelector(".ceLeft > .ceRow");
+if(areaRow)areaRow.hidden=true;
 }
 
 function renderSide(){
@@ -202,28 +213,7 @@ mutate(function(){map.skeleton.paths.forEach(function(path){path.width=map.roadW
 });
 right.appendChild(apply);
 right.appendChild(el("<h3>LAYERS</h3>"));
-const layers=document.createElement("div");
-layers.className="ceLayers";
-["skeleton","ground","roads","buildings","decorations","objects"].forEach(function(name){
-const row=document.createElement("div");
-row.className="ceLayer";
-const label=document.createElement("span");
-label.textContent=name;
-row.appendChild(label);
-row.appendChild(button(map.layerState[name].visible?"Hide":"Show",null,function(){
-map.layerState[name].visible=!map.layerState[name].visible;renderSide();dirty=true;draw();
-}));
-row.appendChild(button(map.layerState[name].locked?"Unlock":"Lock",null,function(){
-map.layerState[name].locked=!map.layerState[name].locked;renderSide();
-}));
-if(name!=="skeleton"&&name!=="objects"){
-label.style.cursor="pointer";
-label.addEventListener("click",function(){if(mode!=="decoration")setMode("decoration");activeLayer=name;renderSide();});
-if(activeLayer===name)label.style.fontWeight="bold";
-}
-layers.appendChild(row);
-});
-right.appendChild(layers);
+right.appendChild(renderLayers());
 right.appendChild(el("<h3>SELECTION</h3>"));
 right.appendChild(selectionFields());
 right.appendChild(el("<h3>VALIDATION</h3>"));
@@ -240,6 +230,60 @@ renderPalette();
 }
 
 let activeLayer="ground";
+
+function renderLayers(){
+const layers=document.createElement("div");
+layers.className="ceLayers";
+const order=map.layerOrder&&map.layerOrder.length?map.layerOrder:CM.DEFAULT_ORDER;
+order.forEach(function(name,index){
+const state=map.layerState[name]||{visible:true,locked:false};
+const row=document.createElement("div");
+row.className="ceLayer"+(activeLayer===name?" active":"");
+const eye=button(state.visible?"On":"Off",null,function(){
+map.layerState[name].visible=!map.layerState[name].visible;renderSide();dirty=true;draw();
+});
+eye.title=state.visible?"Hide layer":"Show layer";
+const lock=button(state.locked?"Lock":"Open",null,function(){
+map.layerState[name].locked=!map.layerState[name].locked;renderSide();
+});
+lock.title=state.locked?"Unlock layer":"Lock layer";
+const label=document.createElement("button");
+label.type="button";
+label.textContent=LAYER_LABELS[name]||name;
+label.title="Active layer";
+label.addEventListener("click",function(){
+activeLayer=name;
+if(name==="objects")setMode("objects");
+else if(name==="skeleton")setMode("skeleton");
+else setMode("paint");
+});
+const up=button("↑",null,function(){moveLayer(name,-1);});
+const down=button("↓",null,function(){moveLayer(name,1);});
+up.disabled=index===0;
+down.disabled=index===order.length-1;
+up.title="Move up";
+down.title="Move down";
+row.appendChild(eye);
+row.appendChild(lock);
+row.appendChild(label);
+row.appendChild(up);
+row.appendChild(down);
+layers.appendChild(row);
+});
+return layers;
+}
+
+function moveLayer(name,dir){
+const order=map.layerOrder;
+const index=order.indexOf(name);
+const next=index+dir;
+if(index<0||next<0||next>=order.length)return;
+mutate(function(){
+const swap=order[index];
+order[index]=order[next];
+order[next]=swap;
+});
+}
 
 function field(labelText,control){
 const wrap=document.createElement("label");
@@ -270,38 +314,42 @@ const sel=selection[0];
 if(sel.kind==="spawn"||sel.kind==="destination"||sel.kind==="intersection"){
 const obj=objectOf(sel);
 if(!obj)return wrap;
-wrap.appendChild(field("Id",input("text",obj.id,function(value){mutate(function(){renameId(obj,value);});})));
+wrap.appendChild(el("<p class='ceEmpty'>"+(sel.kind==="spawn"?"Spawn":sel.kind==="destination"?"Destination":"Intersection")+" "+obj.id+"</p>"));
 wrap.appendChild(field("X",input("number",Math.round(obj.x),function(value){mutate(function(){obj.x=Number(value)||0;CM.syncLinkedPoint(map,sel.kind,obj.id);});})));
 wrap.appendChild(field("Y",input("number",Math.round(obj.y),function(value){mutate(function(){obj.y=Number(value)||0;CM.syncLinkedPoint(map,sel.kind,obj.id);});})));
 if(sel.kind==="spawn"){
 wrap.appendChild(field("Enabled",input("text",obj.enabled?"yes":"no",function(value){mutate(function(){obj.enabled=value!=="no"&&value!=="false";});})));
+wrap.appendChild(el("<p class='ceEmpty'>Visual</p>"));
+wrap.appendChild(stylePicker(["decoration","prop","building"],obj.visual&&obj.visual.src,function(asset){
+if(layerLocked("objects")){setStatus("Objects layer is locked");return;}
+mutate(function(){obj.visual=visualFrom(asset,obj.visual);});
+}));
+if(obj.visual)wrap.appendChild(button("Remove visual",null,function(){mutate(function(){obj.visual=null;});}));
 }
 if(sel.kind==="destination"){
 wrap.appendChild(field("Label",input("text",obj.label,function(value){mutate(function(){obj.label=value.slice(0,16);syncBranchForDest(obj);});})));
 wrap.appendChild(field("Accepts cart",input("text",obj.accepts,function(value){mutate(function(){obj.accepts=value.slice(0,16);syncBranchForDest(obj);});})));
+wrap.appendChild(el("<p class='ceEmpty'>Building</p>"));
+wrap.appendChild(stylePicker(["building"],obj.visual&&obj.visual.src,function(asset){
+if(layerLocked("buildings")){setStatus("Buildings layer is locked");return;}
+mutate(function(){obj.visual=visualFrom(asset,obj.visual);});
+}));
+if(obj.visual){
+wrap.appendChild(button("Remove building",null,function(){mutate(function(){obj.visual=null;});}));
+wrap.appendChild(field("Offset X",input("number",obj.visual.offsetX||0,function(value){mutate(function(){obj.visual.offsetX=clamp(Number(value)||0,-2000,2000);});})));
+wrap.appendChild(field("Offset Y",input("number",obj.visual.offsetY||0,function(value){mutate(function(){obj.visual.offsetY=clamp(Number(value)||0,-2000,2000);});})));
+wrap.appendChild(field("Scale",input("number",obj.visual.scale||1,function(value){mutate(function(){obj.visual.scale=clamp(Number(value)||1,0.1,8);});})));
+wrap.appendChild(field("Rotation",input("number",obj.visual.rotation||0,function(value){mutate(function(){obj.visual.rotation=clamp(Number(value)||0,-360,360);});})));
+}
 }
 if(sel.kind==="intersection"){
 const graph=CM.compile(map).intersections.filter(function(item){return item.id===obj.id;})[0];
-const options=(graph&&graph.outgoing||[]).map(function(branch){return branch.id;});
-wrap.appendChild(field("Default branch",input("text",obj.defaultDirection||"",function(value){mutate(function(){obj.defaultDirection=value.slice(0,32);});})));
-wrap.appendChild(el("<p class='ceEmpty'>Branches: "+(options.join(", ")||"none")+"</p>"));
+const options=graph&&graph.outgoing||[];
+wrap.appendChild(el("<p class='ceEmpty'>Connections: "+(options.map(branchLabel).join(", ")||"none")+"</p>"));
+wrap.appendChild(field("Default direction",branchSelect(obj,options)));
 }
 }
-if(sel.kind==="path"){
-const path=CM.byId(map.skeleton.paths,sel.id);
-if(!path)return wrap;
-wrap.appendChild(field("Path",input("text",path.id,function(){})));
-wrap.appendChild(field("Width",input("number",path.width,function(value){mutate(function(){path.width=clamp(Number(value)||64,8,256);});})));
-wrap.appendChild(field("Branch id",input("text",path.branchId||"",function(value){mutate(function(){path.branchId=value.slice(0,32);});})));
-}
-if(sel.kind==="point"){
-const path=CM.byId(map.skeleton.paths,sel.id);
-const point=path&&path.points[sel.index];
-if(!point)return wrap;
-wrap.appendChild(field("Point X",input("number",Math.round(point.x),function(value){mutate(function(){movePoint(path,sel.index,Number(value)||0,point.y);});})));
-wrap.appendChild(field("Point Y",input("number",Math.round(point.y),function(value){mutate(function(){movePoint(path,sel.index,point.x,Number(value)||0);});})));
-if(sel.index>0&&sel.index<path.points.length-1)wrap.appendChild(button("Split here",null,function(){splitAt(path,sel.index);}));
-}
+if(sel.kind==="path"||sel.kind==="point")appendPathFields(wrap,sel);
 if(sel.kind==="object"){
 const obj=CM.byId(map.objects,sel.id);
 if(!obj)return wrap;
@@ -316,6 +364,109 @@ wrap.appendChild(button("Duplicate",null,duplicateSelection));
 wrap.appendChild(document.createTextNode(" "));
 wrap.appendChild(button("Delete",null,deleteSelection));
 return wrap;
+}
+
+function appendPathFields(wrap,sel){
+const path=CM.byId(map.skeleton.paths,sel.id);
+if(!path)return;
+if(sel.kind==="point"){
+const point=path.points[sel.index];
+if(!point)return;
+wrap.appendChild(field("Point X",input("number",Math.round(point.x),function(value){mutate(function(){movePoint(path,sel.index,Number(value)||0,point.y);});})));
+wrap.appendChild(field("Point Y",input("number",Math.round(point.y),function(value){mutate(function(){movePoint(path,sel.index,point.x,Number(value)||0);});})));
+if(sel.index>0&&sel.index<path.points.length-1)wrap.appendChild(button("Split here",null,function(){splitAt(path,sel.index);}));
+}
+wrap.appendChild(el("<p class='ceEmpty'>Path "+path.id+" · "+pathLength(path)+" px</p>"));
+wrap.appendChild(el("<p class='ceEmpty'>"+endName(path.from)+" → "+endName(path.to)+"</p>"));
+wrap.appendChild(field("Width",input("number",path.width,function(value){mutate(function(){path.width=clamp(Number(value)||64,8,256);});})));
+wrap.appendChild(el("<p class='ceEmpty'>Road style</p>"));
+wrap.appendChild(stylePicker(["road","ground"],path.visualStyle&&path.visualStyle.src,function(asset){
+if(layerLocked("roads")){setStatus("Road layer is locked");return;}
+mutate(function(){path.visualStyle={src:asset.src};});
+}));
+if(path.visualStyle)wrap.appendChild(button("Remove style",null,function(){mutate(function(){path.visualStyle=null;});}));
+}
+
+function pathLength(path){
+let total=0;
+for(let i=1;i<path.points.length;i++)total+=Math.hypot(path.points[i].x-path.points[i-1].x,path.points[i].y-path.points[i-1].y);
+return Math.round(total);
+}
+function endName(end){
+if(!end||!end.kind||end.kind==="open")return "open";
+return end.kind+" "+end.id;
+}
+function branchLabel(branch){
+const path=CM.byId(map.skeleton.paths,branch.pathId);
+return compass(path)+" "+branch.id;
+}
+function compass(path){
+if(!path||!path.points||path.points.length<2)return "Branch";
+const a=path.points[0];
+const b=path.points[1];
+const dx=b.x-a.x;
+const dy=b.y-a.y;
+if(Math.abs(dx)>Math.abs(dy))return dx>=0?"East":"West";
+return dy>=0?"South":"North";
+}
+function branchSelect(inter,options){
+const node=document.createElement("select");
+if(!options.length){
+const empty=document.createElement("option");
+empty.textContent="None yet";
+node.appendChild(empty);
+node.disabled=true;
+return node;
+}
+options.forEach(function(branch){
+const opt=document.createElement("option");
+opt.value=branch.id;
+opt.textContent=branchLabel(branch);
+if(branch.id===inter.defaultDirection)opt.selected=true;
+node.appendChild(opt);
+});
+node.addEventListener("change",function(){mutate(function(){inter.defaultDirection=node.value;});});
+return node;
+}
+function visualFrom(asset,previous){
+return {
+src:asset.src,
+offsetX:previous&&previous.offsetX||0,
+offsetY:previous&&previous.offsetY||0,
+scale:previous&&previous.scale||1,
+rotation:previous&&previous.rotation||0
+};
+}
+function assetRole(asset){
+const cat=String(asset.category||"").toLowerCase();
+const name=String(asset.name||"").toLowerCase();
+if(cat.indexOf("village")>=0)return "building";
+if(name.indexOf("path")===0||name.indexOf("road")>=0||cat.indexOf("transition")>=0)return "road";
+if(name.indexOf("grass")>=0)return "ground";
+if(cat.indexOf("vegetation")>=0||cat.indexOf("falling")>=0||name.indexOf("fence")>=0||name.indexOf("tree")>=0)return "decoration";
+return "prop";
+}
+function stylePicker(roles,current,onPick){
+const grid=document.createElement("div");
+grid.className="cePick";
+const list=assets.filter(function(asset){return roles.indexOf(assetRole(asset))!==-1;});
+if(!list.length){
+grid.appendChild(el("<p class='ceEmpty'>No matching images yet.</p>"));
+return grid;
+}
+list.forEach(function(asset){
+const node=document.createElement("button");
+node.type="button";
+node.title=asset.name;
+if(asset.src===current)node.classList.add("active");
+const img=document.createElement("img");
+img.src=asset.src;
+img.alt=asset.name;
+node.appendChild(img);
+node.addEventListener("click",function(){onPick(asset);});
+grid.appendChild(node);
+});
+return grid;
 }
 
 function objectOf(sel){
@@ -339,8 +490,8 @@ function renderPalette(){
 const host=document.getElementById("ceAssets");
 if(!host)return;
 host.innerHTML="";
-if(mode!=="decoration"){
-host.appendChild(el("<p class='ceEmpty'>Switch to Decoration to paint tiles and place objects.</p>"));
+if(mode==="skeleton"){
+host.appendChild(el("<p class='ceEmpty'>Select a path or destination. Its style choices appear on the right.</p>"));
 return;
 }
 host.appendChild(el("<h3>ASSETS</h3>"));
@@ -533,7 +684,8 @@ drag={kind:"pan",x:world.sx,y:world.sy,cx:camera.cx,cy:camera.cy};
 return;
 }
 if(mode==="skeleton")skeletonDown(event,world);
-else decorDown(event,world);
+else if(mode==="paint")decorDown(event,world);
+else objectsDown(event,world);
 }
 function straighten(path){
 function swap(){
@@ -605,14 +757,13 @@ if(tool==="delete")return deleteAt(world);
 }
 
 function decorDown(event,world){
-if(pasteArmed&&clipboard&&tool!=="select"){pasteAt(world);return;}
-if(tool==="select")return selectDown(event,world,false);
+if(pasteArmed&&clipboard){pasteAt(world);return;}
 if(tool==="area"){gestureStart();drag={kind:"area",start:world,current:world};return;}
 const layerName=activeLayer;
-if(tool!=="place"&&tool!=="eyedropper"&&layerLocked(layerName)&&tool!=="select"){setStatus(layerName+" is locked");return;}
+if(!map.layers[layerName]){setStatus("Choose Ground, Road, Buildings, or Decorations");return;}
+if(layerLocked(layerName)&&tool!=="eyedropper"){setStatus(LAYER_LABELS[layerName]+" is locked");return;}
 if(tool==="eyedropper")return pickTile(world);
 if(tool==="bucket")return doFlood(world);
-if(tool==="place")return placeObject(world);
 if(tool==="pencil"||tool==="eraser"){
 gestureStart();
 drag={kind:"pencil",erase:tool==="eraser"};
@@ -623,6 +774,31 @@ if(tool==="rect"){
 gestureStart();
 drag={kind:"rect",start:world,current:world,erase:false};
 }
+}
+
+function objectsDown(event,world){
+if(layerLocked("objects")&&tool!=="select"){setStatus("Objects layer is locked");return;}
+if(tool==="select")return selectDown(event,world,false);
+if(tool==="place")return placeObject(world);
+if(tool==="rotate"||tool==="scale")return nudgeObject(world,tool,event.shiftKey);
+if(tool==="delete"){
+const hit=hitTest(world.x,world.y,false);
+if(!hit)return;
+selection=[hit];
+deleteSelection();
+}
+}
+
+function nudgeObject(world,kind,shrink){
+const hit=hitTest(world.x,world.y,false);
+if(!hit||hit.kind!=="object"){setStatus("Click an object");return;}
+selection=[hit];
+mutate(function(){
+const obj=CM.byId(map.objects,hit.id);
+if(!obj)return;
+if(kind==="rotate")obj.rotation=(obj.rotation||0)+15;
+else obj.scale=clamp((obj.scale||1)+(shrink?-0.1:0.1),0.1,8);
+});
 }
 
 function placeNode(kind,world){
@@ -663,6 +839,7 @@ const neu={
 id:CM.newId(map,"p"),
 width:path.width,
 branchId:path.branchId||"",
+visualStyle:path.visualStyle?{src:path.visualStyle.src}:null,
 points:after,
 from:{kind:"intersection",id:inter.id},
 to:path.to
@@ -830,6 +1007,8 @@ else selection.push(hit);
 }else if(!selection.some(function(item){return item.kind===hit.kind&&item.id===hit.id&&item.index===hit.index;})){
 selection=[hit];
 }
+const locked=skeletonMode?skeletonLocked():layerLocked("objects");
+if(locked){renderSide();dirty=true;draw();return;}
 gestureStart();
 drag={
 kind:"move",
@@ -849,6 +1028,10 @@ if(sel.kind==="object"){
 const obj=CM.byId(map.objects,sel.id);
 return {kind:"object",id:sel.id,x:obj.x,y:obj.y};
 }
+if(sel.kind==="path"){
+const path=CM.byId(map.skeleton.paths,sel.id);
+return {kind:"path",id:sel.id,points:path.points.map(function(p){return {x:p.x,y:p.y};})};
+}
 const obj=objectOf(sel);
 return {kind:sel.kind,id:sel.id,x:obj.x,y:obj.y};
 }
@@ -862,6 +1045,12 @@ return;
 if(item.kind==="object"){
 const obj=CM.byId(map.objects,item.id);
 if(obj){obj.x=item.x+dx;obj.y=item.y+dy;}
+return;
+}
+if(item.kind==="path"){
+const path=CM.byId(map.skeleton.paths,item.id);
+if(!path)return;
+item.points.forEach(function(point,index){movePoint(path,index,point.x+dx,point.y+dy);});
 return;
 }
 const obj=objectOf(item);
@@ -886,7 +1075,7 @@ CM.syncLinkedPoint(map,end.kind,end.id);
 
 function hitTest(x,y,skeletonMode){
 const reach=12/camera.zoom;
-if(skeletonMode&&map.layerState.skeleton.visible){
+if(skeletonMode){
 let best=null;
 let bestDist=reach;
 map.skeleton.paths.forEach(function(path){
@@ -898,8 +1087,16 @@ if(dist<=bestDist){bestDist=dist;best={kind:"point",id:path.id,index:index};}
 if(best)return best;
 const link=CM.nearestLink(map,x,y,18/Math.max(camera.zoom,0.4));
 if(link&&link.kind!=="path")return {kind:link.kind,id:link.id};
-const segment=nearestSegment(x,y,10/Math.max(camera.zoom,0.4));
-if(segment)return {kind:"path",id:segment.path.id};
+let body=null;
+let bodyDist=Infinity;
+map.skeleton.paths.forEach(function(path){
+const limit=Math.max(16/Math.max(camera.zoom,0.4),(path.width||map.roadWidth||64)/2);
+for(let i=0;i<path.points.length-1;i++){
+const proj=project(x,y,path.points[i],path.points[i+1]);
+if(proj.dist<=limit&&proj.dist<bodyDist){bodyDist=proj.dist;body=path;}
+}
+});
+if(body)return {kind:"path",id:body.id};
 }
 if(!skeletonMode&&map.layerState.objects.visible){
 for(let i=map.objects.length-1;i>=0;i--){
@@ -960,12 +1157,12 @@ deleteSelection();
 }
 function deleteSelection(){
 if(!selection.length)return;
-if(mode==="decoration"&&selection.some(function(sel){return sel.kind!=="object";})){
+if(mode!=="skeleton"&&selection.some(function(sel){return sel.kind!=="object";})){
 setStatus("Switch to Skeleton to delete routes");
 return;
 }
 if(mode==="skeleton"&&selection.some(function(sel){return sel.kind==="object";})){
-setStatus("Switch to Decoration to delete objects");
+setStatus("Switch to Objects to delete decorations");
 return;
 }
 mutate(function(){
@@ -1017,6 +1214,7 @@ const neu={
 id:CM.newId(map,"p"),
 width:path.width,
 branchId:"",
+visualStyle:path.visualStyle?{src:path.visualStyle.src}:null,
 points:path.points.slice(index).map(function(p){return {x:p.x,y:p.y};}),
 from:{kind:"path",id:path.id},
 to:path.to
@@ -1447,13 +1645,30 @@ ctx.fillRect(0,0,map.width,map.height);
 ctx.strokeStyle="#111";
 ctx.lineWidth=2/camera.zoom;
 ctx.strokeRect(0,0,map.width,map.height);
-drawTiles();
-drawObjects();
-if(map.layerState.skeleton.visible)drawSkeleton();
+drawStacked();
+if(map.grid.visible)drawGrid();
+if(mode==="skeleton"&&layerVisible("skeleton"))drawSkeleton(false);
 if(draft)drawDraft();
 if(drag&&(drag.kind==="rect"||drag.kind==="area"||drag.kind==="marquee"))drawDrag();
 ctx.restore();
 dirty=false;
+}
+function layerVisible(name){
+return !map.layerState[name]||map.layerState[name].visible!==false;
+}
+function drawStacked(){
+const order=map.layerOrder&&map.layerOrder.length?map.layerOrder:CM.DEFAULT_ORDER;
+order.forEach(function(name){
+if(!layerVisible(name))return;
+if(name==="skeleton"){
+if(mode!=="skeleton")drawSkeleton(true);
+return;
+}
+if(map.layers[name])drawTileLayer(name);
+if(name==="roads")drawStyledRoads();
+if(name==="buildings")drawStyledBuildings();
+if(name==="objects")drawObjects();
+});
 }
 function visibleWorld(){
 const rect=canvas.getBoundingClientRect();
@@ -1461,12 +1676,10 @@ const halfW=rect.width/2/camera.zoom;
 const halfH=rect.height/2/camera.zoom;
 return {x0:camera.cx-halfW,y0:camera.cy-halfH,x1:camera.cx+halfW,y1:camera.cy+halfH};
 }
-function drawTiles(){
+function drawTileLayer(name){
 const view=visibleWorld();
 const size=map.grid.size||32;
-CM.TILE_LAYERS.forEach(function(name){
-if(!map.layerState[name].visible)return;
-const layer=map.layers[name];
+const layer=map.layers[name]||{};
 Object.keys(layer).forEach(function(key){
 const parts=key.split(",");
 const c=Number(parts[0]);
@@ -1478,8 +1691,9 @@ const img=imageOf(layer[key]);
 if(img)ctx.drawImage(img,x,y,size,size);
 else{ctx.fillStyle="#d5dbe3";ctx.fillRect(x,y,size,size);}
 });
-});
-if(map.grid.visible){
+}
+function drawGrid(){
+const view=visibleWorld();
 ctx.strokeStyle="rgba(0,0,0,.18)";
 ctx.lineWidth=1/camera.zoom;
 const sizeStep=map.grid.size||32;
@@ -1493,9 +1707,46 @@ for(let x=startC;x<=view.x1;x+=step){ctx.moveTo(x,view.y0);ctx.lineTo(x,view.y1)
 for(let y=startR;y<=view.y1;y+=step){ctx.moveTo(view.x0,y);ctx.lineTo(view.x1,y);}
 ctx.stroke();
 }
+function drawStyledRoads(){
+const view=visibleWorld();
+const size=map.grid.size||32;
+map.skeleton.paths.forEach(function(path){
+if(!path.visualStyle||!path.visualStyle.src)return;
+const img=imageOf(path.visualStyle.src);
+CM.roadCells(map,path).forEach(function(key){
+const parts=key.split(",");
+const x=Number(parts[0])*size;
+const y=Number(parts[1])*size;
+if(x>view.x1||y>view.y1||x+size<view.x0||y+size<view.y0)return;
+if(img)ctx.drawImage(img,x,y,size,size);
+else{ctx.fillStyle="#c4a574";ctx.fillRect(x,y,size,size);}
+});
+});
+}
+function drawStyledBuildings(){
+map.skeleton.destinations.forEach(function(dest){
+if(dest.visual)drawLinkedSprite(dest.visual,dest.x,dest.y,128);
+});
+}
+function drawLinkedSprite(visual,x,y,maxSize){
+const img=imageOf(visual.src);
+const scale=visual.scale||1;
+let w=maxSize;
+let h=maxSize;
+if(img&&img.naturalWidth){
+w=img.naturalWidth;
+h=img.naturalHeight||maxSize;
+const fit=Math.min(1,maxSize/Math.max(w,h));
+w*=fit;h*=fit;
+}
+ctx.save();
+ctx.translate(x+(visual.offsetX||0),y+(visual.offsetY||0));
+ctx.rotate((visual.rotation||0)*Math.PI/180);
+if(img)ctx.drawImage(img,-w*scale/2,-h*scale/2,w*scale,h*scale);
+else{ctx.strokeStyle="#333";ctx.strokeRect(-maxSize*scale/2,-maxSize*scale/2,maxSize*scale,maxSize*scale);}
+ctx.restore();
 }
 function drawObjects(){
-if(!map.layerState.objects.visible)return;
 map.objects.forEach(function(obj){
 ctx.save();
 ctx.translate(obj.x,obj.y);
@@ -1508,25 +1759,32 @@ ctx.restore();
 const selected=selection.some(function(sel){return sel.kind==="object"&&sel.id===obj.id;});
 if(selected){ctx.strokeStyle="#4f9cff";ctx.lineWidth=2/camera.zoom;ctx.strokeRect(obj.x-obj.w*obj.scale/2,obj.y-obj.h*obj.scale/2,obj.w*obj.scale,obj.h*obj.scale);}
 });
+map.skeleton.spawns.forEach(function(spawn){
+if(spawn.visual)drawLinkedSprite(spawn.visual,spawn.x,spawn.y,72);
+});
 }
-function drawSkeleton(){
+function drawSkeleton(faint){
+ctx.save();
+if(faint)ctx.globalAlpha=0.35;
 const graph=CM.compile(map);
 map.skeleton.paths.forEach(function(path){
 if(!path.points||path.points.length<2)return;
 const hot=graph.intersections.some(function(inter){
 return inter.outgoing.some(function(branch){return branch.pathId===path.id&&branch.id===inter.defaultDirection;});
 });
+const chosen=selection.some(function(sel){return (sel.kind==="path"||sel.kind==="point")&&sel.id===path.id;});
 ctx.beginPath();
 ctx.moveTo(path.points[0].x,path.points[0].y);
 path.points.forEach(function(point){ctx.lineTo(point.x,point.y);});
 ctx.lineWidth=(path.width||map.roadWidth||64);
-ctx.strokeStyle=mode==="decoration"?"rgba(20,20,20,.25)":"rgba(20,20,20,.45)";
+ctx.strokeStyle=chosen?"rgba(245,197,66,.35)":"rgba(20,20,20,.28)";
 ctx.lineCap="round";
 ctx.lineJoin="round";
 ctx.stroke();
-ctx.lineWidth=mode==="decoration"?3/camera.zoom:5;
-ctx.strokeStyle=hot?"#1565c0":"#111";
+ctx.lineWidth=chosen?6:4;
+ctx.strokeStyle=chosen?"#f5c542":hot?"#1565c0":"#111";
 ctx.stroke();
+for(let i=1;i<path.points.length;i++)drawArrow(path.points[i-1],path.points[i],chosen?"#f5c542":"#111");
 path.points.forEach(function(point,index){
 const selected=selection.some(function(sel){return sel.kind==="point"&&sel.id===path.id&&sel.index===index;});
 ctx.beginPath();
@@ -1573,6 +1831,21 @@ ctx.fill();
 ctx.strokeStyle="#7f1010";
 ctx.stroke();
 });
+ctx.restore();
+}
+function drawArrow(a,b,color){
+const ang=Math.atan2(b.y-a.y,b.x-a.x);
+ctx.save();
+ctx.translate((a.x+b.x)/2,(a.y+b.y)/2);
+ctx.rotate(ang);
+ctx.fillStyle=color;
+ctx.beginPath();
+ctx.moveTo(12,0);
+ctx.lineTo(-8,6);
+ctx.lineTo(-8,-6);
+ctx.closePath();
+ctx.fill();
+ctx.restore();
 }
 function drawDraft(){
 const pts=draft.points||[];
@@ -1614,6 +1887,7 @@ if(response.ok)data=await response.json();
 const found=(data&&data.assets)||[];
 assets=extraAssets.concat(found);
 renderPalette();
+if(map)renderSide();
 }
 
 function open(){

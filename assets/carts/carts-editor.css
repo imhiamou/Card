@@ -49,8 +49,12 @@ font-size:13px;
 #cartsEditorScreen .ceField input,
 #cartsEditorScreen .ceField select{width:100%;color:#111;background:#fff;margin:0;padding:6px;}
 .ceLayers{display:flex;flex-direction:column;gap:4px;}
-.ceLayer{display:grid;grid-template-columns:1fr auto auto;gap:4px;align-items:center;font-size:13px;}
-.ceLayer button{padding:4px 6px;}
+.ceLayer{display:grid;grid-template-columns:36px 46px minmax(0,1fr) 28px 28px;gap:3px;align-items:center;font-size:12px;}
+.ceLayer button{padding:3px 4px;font-size:11px;}
+.ceLayer.active{outline:1px solid #4f9cff;border-radius:6px;}
+.cePick{display:grid;grid-template-columns:repeat(auto-fill,36px);gap:4px;max-height:132px;overflow:auto;margin:0 0 8px;}
+.cePick button{padding:0;width:36px;height:36px;overflow:hidden;}
+.cePick img{width:36px;height:36px;object-fit:cover;display:block;image-rendering:pixelated;}
 .ceAssetBar{display:flex;flex-direction:column;gap:4px;}
 .ceAssetBar h3{margin:0;}
 .ceAssetBar .ceField{margin:0;}
