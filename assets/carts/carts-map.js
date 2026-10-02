@@ -431,7 +431,9 @@ visual:cleanVisual(dest.visual)
 
 function cleanStyle(style){
 if(!style||typeof style.src!=="string"||!style.src)return null;
-return {src:style.src.slice(0,240)};
+const out={src:style.src.slice(0,240)};
+if(typeof style.assetId==="string"&&style.assetId)out.assetId=style.assetId.slice(0,160);
+return out;
 }
 
 function cleanVisual(visual){

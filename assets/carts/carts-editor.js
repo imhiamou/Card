@@ -212,10 +212,11 @@ const apply=button("Apply road width to all paths",null,function(){
 mutate(function(){map.skeleton.paths.forEach(function(path){path.width=map.roadWidth;});});
 });
 right.appendChild(apply);
-right.appendChild(el("<h3>LAYERS</h3>"));
-right.appendChild(renderLayers());
 right.appendChild(el("<h3>SELECTION</h3>"));
 right.appendChild(selectionFields());
+right.appendChild(el("<h3>LAYERS</h3>"));
+right.appendChild(el("<p class='ceEmpty'>Same order as the canvas. Top is behind. Bottom is in front.</p>"));
+right.appendChild(renderLayers());
 right.appendChild(el("<h3>VALIDATION</h3>"));
 const list=document.createElement("ul");
 list.className="ceChecks";
@@ -230,6 +231,7 @@ renderPalette();
 }
 
 let activeLayer="ground";
+let roadChoice={pathId:"",src:"",id:"",name:""};
 
 function renderLayers(){
 const layers=document.createElement("div");
@@ -380,11 +382,30 @@ wrap.appendChild(el("<p class='ceEmpty'>Path "+path.id+" · "+pathLength(path)+"
 wrap.appendChild(el("<p class='ceEmpty'>"+endName(path.from)+" → "+endName(path.to)+"</p>"));
 wrap.appendChild(field("Width",input("number",path.width,function(value){mutate(function(){path.width=clamp(Number(value)||64,8,256);});})));
 wrap.appendChild(el("<p class='ceEmpty'>Road style</p>"));
-wrap.appendChild(stylePicker(["road","ground"],path.visualStyle&&path.visualStyle.src,function(asset){
-if(layerLocked("roads")){setStatus("Road layer is locked");return;}
-mutate(function(){path.visualStyle={src:asset.src};});
+if(path.visualStyle&&path.visualStyle.src){
+const preview=document.createElement("img");
+preview.className="cePreview";
+preview.src=path.visualStyle.src;
+preview.alt=path.visualStyle.assetId||"Current road style";
+wrap.appendChild(preview);
+}else wrap.appendChild(el("<p class='ceEmpty'>No road style yet.</p>"));
+const picked=roadChoice.pathId===path.id?roadChoice:null;
+wrap.appendChild(stylePicker(["road","ground"],(picked&&picked.src)||(path.visualStyle&&path.visualStyle.src),function(asset){
+roadChoice={pathId:path.id,src:asset.src,id:asset.id||asset.src,name:asset.name||""};
+renderSide();
+setStatus("Chosen "+(asset.name||"tile")+". Click Apply.");
 }));
-if(path.visualStyle)wrap.appendChild(button("Remove style",null,function(){mutate(function(){path.visualStyle=null;});}));
+wrap.appendChild(button("Apply",null,function(){
+if(roadChoice.pathId!==path.id||!roadChoice.src){setStatus("Choose a road tile first");return;}
+if(layerLocked("roads")){setStatus("Road layer is locked");return;}
+const choice=roadChoice;
+mutate(function(){path.visualStyle={src:choice.src,assetId:choice.id||choice.src};});
+setStatus("Road style applied to "+path.id);
+}));
+if(path.visualStyle)wrap.appendChild(button("Remove style",null,function(){
+if(layerLocked("roads")){setStatus("Road layer is locked");return;}
+mutate(function(){path.visualStyle=null;});
+}));
 }
 
 function pathLength(path){
@@ -427,6 +448,12 @@ node.appendChild(opt);
 });
 node.addEventListener("change",function(){mutate(function(){inter.defaultDirection=node.value;});});
 return node;
+}
+function copyStyle(style){
+if(!style||!style.src)return null;
+const out={src:style.src};
+if(style.assetId)out.assetId=style.assetId;
+return out;
 }
 function visualFrom(asset,previous){
 return {
@@ -839,7 +866,7 @@ const neu={
 id:CM.newId(map,"p"),
 width:path.width,
 branchId:path.branchId||"",
-visualStyle:path.visualStyle?{src:path.visualStyle.src}:null,
+visualStyle:copyStyle(path.visualStyle),
 points:after,
 from:{kind:"intersection",id:inter.id},
 to:path.to
@@ -1043,16 +1070,19 @@ movePoint(path,item.index,item.x+dx,item.y+dy);
 return;
 }
 if(item.kind==="object"){
+if(layerLocked("objects"))return;
 const obj=CM.byId(map.objects,item.id);
 if(obj){obj.x=item.x+dx;obj.y=item.y+dy;}
 return;
 }
 if(item.kind==="path"){
+if(layerLocked("roads"))return;
 const path=CM.byId(map.skeleton.paths,item.id);
 if(!path)return;
 item.points.forEach(function(point,index){movePoint(path,index,point.x+dx,point.y+dy);});
 return;
 }
+if(item.kind==="destination"&&layerLocked("buildings"))return;
 const obj=objectOf(item);
 if(!obj)return;
 obj.x=item.x+dx;
@@ -1107,9 +1137,12 @@ const proj=project(x,y,path.points[i],path.points[i+1]);
 if(proj.dist<=limit&&proj.dist<bodyDist){bodyDist=proj.dist;body=path;}
 }
 });
-if(body)return {kind:"path",id:body.id};
+if(body){
+if(layerLocked("roads")){setStatus("Road layer is locked");return null;}
+return {kind:"path",id:body.id};
 }
-if(!skeletonMode&&map.layerState.objects.visible){
+}
+if(!skeletonMode&&map.layerState.objects.visible&&!layerLocked("objects")){
 for(let i=map.objects.length-1;i>=0;i--){
 const obj=map.objects[i];
 if(Math.abs(obj.x-x)<=obj.w*obj.scale/2&&Math.abs(obj.y-y)<=obj.h*obj.scale/2)return {kind:"object",id:obj.id};
@@ -1176,6 +1209,18 @@ if(mode==="skeleton"&&selection.some(function(sel){return sel.kind==="object";})
 setStatus("Switch to Objects to delete decorations");
 return;
 }
+if(layerLocked("roads")&&selection.some(function(sel){return sel.kind==="path"||sel.kind==="point";})){
+setStatus("Road layer is locked");
+return;
+}
+if(layerLocked("objects")&&selection.some(function(sel){return sel.kind==="object";})){
+setStatus("Objects layer is locked");
+return;
+}
+if(layerLocked("buildings")&&selection.some(function(sel){return sel.kind==="destination";})){
+setStatus("Buildings layer is locked");
+return;
+}
 mutate(function(){
 selection.forEach(function(sel){
 if(sel.kind==="point"){
@@ -1225,7 +1270,7 @@ const neu={
 id:CM.newId(map,"p"),
 width:path.width,
 branchId:"",
-visualStyle:path.visualStyle?{src:path.visualStyle.src}:null,
+visualStyle:copyStyle(path.visualStyle),
 points:path.points.slice(index).map(function(p){return {x:p.x,y:p.y};}),
 from:{kind:"path",id:path.id},
 to:path.to
@@ -1658,7 +1703,6 @@ ctx.lineWidth=2/camera.zoom;
 ctx.strokeRect(0,0,map.width,map.height);
 drawStacked();
 if(map.grid.visible)drawGrid();
-if(mode==="skeleton"&&layerVisible("skeleton"))drawSkeleton(false);
 if(draft)drawDraft();
 if(drag&&(drag.kind==="rect"||drag.kind==="area"||drag.kind==="marquee"))drawDrag();
 ctx.restore();
@@ -1672,7 +1716,7 @@ const order=map.layerOrder&&map.layerOrder.length?map.layerOrder:CM.DEFAULT_ORDE
 order.forEach(function(name){
 if(!layerVisible(name))return;
 if(name==="skeleton"){
-if(mode!=="skeleton")drawSkeleton(true);
+drawSkeleton(mode!=="skeleton");
 return;
 }
 if(map.layers[name])drawTileLayer(name);
@@ -1784,15 +1828,18 @@ const hot=graph.intersections.some(function(inter){
 return inter.outgoing.some(function(branch){return branch.pathId===path.id&&branch.id===inter.defaultDirection;});
 });
 const chosen=selection.some(function(sel){return (sel.kind==="path"||sel.kind==="point")&&sel.id===path.id;});
+const styled=path.visualStyle&&path.visualStyle.src;
 ctx.beginPath();
 ctx.moveTo(path.points[0].x,path.points[0].y);
 path.points.forEach(function(point){ctx.lineTo(point.x,point.y);});
-ctx.lineWidth=(path.width||map.roadWidth||64);
-ctx.strokeStyle=chosen?"rgba(245,197,66,.35)":"rgba(20,20,20,.28)";
 ctx.lineCap="round";
 ctx.lineJoin="round";
+if(!styled){
+ctx.lineWidth=path.width||map.roadWidth||64;
+ctx.strokeStyle=chosen?"rgba(245,197,66,.28)":"rgba(20,20,20,.16)";
 ctx.stroke();
-ctx.lineWidth=chosen?6:4;
+}
+ctx.lineWidth=chosen?4:2;
 ctx.strokeStyle=chosen?"#f5c542":hot?"#1565c0":"#111";
 ctx.stroke();
 for(let i=1;i<path.points.length;i++)drawArrow(path.points[i-1],path.points[i],chosen?"#f5c542":"#111");

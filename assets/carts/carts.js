@@ -309,8 +309,7 @@ const choice=choices[inter.id]||inter.defaultDirection;
 inter.outgoing.forEach(function(branch){if(branch.id===choice)highlighted[branch.pathId]=true;});
 });
 (doc.skeleton.paths||[]).forEach(function(path){
-const styled=path.visualStyle&&path.visualStyle.src;
-if(styled&&!highlighted[path.id])return;
+if(path.visualStyle&&path.visualStyle.src)return;
 drawPath(path,!!highlighted[path.id]);
 });
 (doc.skeleton.spawns||[]).forEach(function(spawn){
