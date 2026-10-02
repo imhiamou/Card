@@ -9,6 +9,7 @@
 <link rel="stylesheet" href="uno.css">
 <link rel="stylesheet" href="hidden-hunter.css">
 <link rel="stylesheet" href="hidden-hunter-editor.css">
+<link rel="stylesheet" href="assets/carts/carts.css">
 <script src="assets/socket.io/socket.io.min.js"></script>
 </head>
 <body>
@@ -29,6 +30,7 @@
 <option value="dominoes">Dominoes</option>
 <option value="uno">UNO</option>
 <option value="hidden-hunter">Hidden Hunter</option>
+<option value="carts">Carts</option>
 </select>
 </section>
 
@@ -103,6 +105,11 @@
 </select>
 </div>
 
+<div id="cartsHint" class="hidden">
+<strong>CARTS</strong>
+<p>Local single player. Route each cart at the red intersection.</p>
+</div>
+
 <!-- Dominoes / UNO only: optionally fill empty seats with server bots -->
 <div id="botFillWrap" class="hidden">
 <label class="botFillLabel"><input type="checkbox" id="botFillCheck"> Fill empty slots with bots</label>
@@ -110,6 +117,7 @@
 </section>
 
 <section class="lobbyCol lobbyActions">
+<div id="lobbyMultiplayer">
 <h3>Create lobby</h3>
 <input id="createCode" placeholder="Choose Lobby Code (4-8 letters/numbers)" maxlength="8">
 <button id="createBtn">Create Lobby</button>
@@ -117,6 +125,12 @@
 <h3>Join lobby</h3>
 <input id="roomCode" placeholder="Lobby Code" maxlength="8">
 <button id="joinBtn">Join Lobby</button>
+</div>
+<div id="cartsPlayWrap" class="hidden">
+<h3>Play</h3>
+<p>Local single player. No lobby.</p>
+<button type="button" id="cartsPlayBtn">Play Carts</button>
+</div>
 </section>
 
 </div>
@@ -217,12 +231,36 @@
 <div class="box hidden" id="hiddenHunterScreen"></div>
 <div id="hhEditorScreen" class="hidden"></div>
 
+<!-- Carts: local single-player prototype -->
+<div class="box cartsScreen hidden" id="cartsScreen">
+<div class="cartsTop">
+<h2>Carts</h2>
+<button type="button" id="cartsLobbyBtn">Lobby</button>
+</div>
+<div class="cartsHud">
+<span id="cartsScore">Score: 0</span>
+<span id="cartsLives">Lives: 3</span>
+<span id="cartsDirection">Direction: A</span>
+<span id="cartsStatus">Next cart</span>
+</div>
+<p class="cartsHelp">Tap the red intersection to switch the route before the cart arrives.</p>
+<div class="cartsStage">
+<canvas id="cartsCanvas"></canvas>
+<div id="cartsOverlay" class="cartsOverlay hidden">
+<h2>Game Over</h2>
+<p id="cartsFinalScore">Score: 0</p>
+<button type="button" id="cartsRestartBtn">Restart</button>
+</div>
+</div>
+</div>
+
 <script src="assets/ui-notice.js"></script>
 <script src="game-sfx.js"></script>
 <script src="domino.js"></script>
 <script src="uno.js"></script>
 <script src="hidden-hunter.js"></script>
 <script src="hidden-hunter-editor.js"></script>
+<script src="assets/carts/carts.js"></script>
 <script src="index.js"></script>
 </body>
 </html>

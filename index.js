@@ -176,6 +176,12 @@ const hhEditorGate=document.getElementById("hhEditorGate");
 if(hhMapPick)hhMapPick.classList.toggle("hidden",game!=="hidden-hunter");
 if(hhEditorGate)hhEditorGate.classList.toggle("hidden",game!=="hidden-hunter");
 if(game==="hidden-hunter"&&window.HiddenHunterEditor)HiddenHunterEditor.refreshMaps();
+const cartsHint=document.getElementById("cartsHint");
+const cartsPlayWrap=document.getElementById("cartsPlayWrap");
+const lobbyMultiplayer=document.getElementById("lobbyMultiplayer");
+if(cartsHint)cartsHint.classList.toggle("hidden",game!=="carts");
+if(cartsPlayWrap)cartsPlayWrap.classList.toggle("hidden",game!=="carts");
+if(lobbyMultiplayer)lobbyMultiplayer.classList.toggle("hidden",game==="carts");
 // Team A / Team B only for Dominoes. Hidden Hunter uses map and difficulty.
 const showTeam=game==="dominoes";
 if(dominoTeamWrap)dominoTeamWrap.classList.toggle("hidden",!showTeam);
@@ -322,9 +328,20 @@ return lastLobbyAction==="join"?"roomCode":"createCode";
 return null;
 }
 
+const cartsPlayBtn=document.getElementById("cartsPlayBtn");
+if(cartsPlayBtn){
+cartsPlayBtn.onclick=()=>{
+if(window.Carts)Carts.start();
+};
+}
+
 document.getElementById("createBtn").onclick=()=>{
 const name=getPlayerName();
 lastLobbyAction="create";
+if(document.getElementById("gameSelect").value==="carts"){
+if(window.Carts)Carts.start();
+return;
+}
 if(!isValidPlayerName(name)){showAppNotice("Enter a name (2-16 letters, numbers, spaces, - or _)","playerName");return;}
 const room=document.getElementById("createCode").value.trim().toUpperCase();
 if(!ROOM_CODE_PATTERN.test(room)){showAppNotice("Lobby code must be 4-8 letters or numbers","createCode");return;}
@@ -360,6 +377,7 @@ document.getElementById("joinBtn").onclick=()=>{
 const name=getPlayerName();
 lastLobbyAction="join";
 if(!isValidPlayerName(name)){showAppNotice("Enter a name (2-16 letters, numbers, spaces, - or _)","playerName");return;}
+if(gameSelectEl&&gameSelectEl.value==="carts")return;
 const room=document.getElementById("roomCode").value.trim().toUpperCase();
 if(!room){showAppNotice("Enter lobby code","roomCode");return;}
 const payload={name,room};
@@ -428,6 +446,7 @@ renderDominoLobbyTeams(data);
 // Carries the public player list (id, name, character) used to
 // render the player information panel during the game.
 socket.on("gameStart",(data)=>{
+if(window.Carts&&Carts.isActive())return;
 endLobbyWait();
 if(data&&data.room)currentRoom=data.room;
 if(data&&data.players)lobbyPlayers=data.players;
@@ -436,6 +455,7 @@ setTimeout(showPlacementScreen,1500);
 });
 
 socket.on("playerLeft",()=>{
+if(window.Carts&&Carts.isActive())return;
 if(window.HiddenHunter&&HiddenHunter.isActive()&&HiddenHunter.partnerDisconnected()){
 return;
 }
@@ -463,6 +483,7 @@ if(window.Dominoes&&Dominoes.isActive()&&Dominoes.showError(msg))return;
 // UNO handles its own rule messages when active.
 if(window.Uno&&Uno.isActive()&&Uno.showError(msg))return;
 if(window.HiddenHunter&&HiddenHunter.isActive()&&HiddenHunter.showError(msg))return;
+if(window.Carts&&Carts.isActive())return;
 // During the game, a rejected play (e.g. an invalid Dash target) must
 // NOT freeze the match: unlock the hand so the player can try again,
 // and show the reason on screen instead of an alert.
