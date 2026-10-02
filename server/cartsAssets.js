@@ -1,6 +1,6 @@
 /*
  * Lists image files under assets/carts without touching other games.
- * Category is the first folder name. Scripts and styles are ignored.
+ * Category is the folder under assets/carts. Scripts and styles are ignored.
  */
 
 const fs = require("fs");
@@ -22,12 +22,14 @@ function scan(root) {
         return;
       }
       if (!IMAGE.test(entry.name)) return;
-      const category = rel ? rel.split("/")[0] : "uncategorized";
+      const webPath = relChild.split(path.sep).join("/");
+      const folder = rel ? path.posix.dirname(webPath) : "";
+      const category = !folder || folder === "." ? "uncategorized" : folder;
       assets.push({
-        id: relChild,
+        id: webPath,
         name: entry.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " "),
         category: category,
-        src: "assets/carts/" + relChild.split(path.sep).join("/")
+        src: "assets/carts/" + webPath
       });
     });
   }

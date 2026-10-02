@@ -27,14 +27,22 @@ font-size:13px;
 .ceBanner{padding:4px 10px;font-size:13px;font-weight:bold;background:#243044;}
 .ceBanner.skeleton{background:#5a1d1d;}
 .ceBanner.decoration{background:#1d3d2a;}
-.ceBody{flex:1;min-height:0;display:grid;grid-template-columns:210px minmax(0,1fr) 290px;}
-.ceLeft,.ceRight{overflow:auto;background:#1b2330;padding:8px;min-height:0;}
+.ceBody{flex:1;min-height:0;display:grid;grid-template-columns:248px minmax(0,1fr) 290px;grid-template-rows:minmax(0,1fr);}
+.ceLeft,.ceRight{background:#1b2330;padding:8px;min-height:0;min-width:0;}
+.ceLeft{display:flex;flex-direction:column;overflow:hidden;}
+.ceRight{overflow:auto;}
+.ceLeft > h3,.ceModes,.ceTools,.ceLeft > .ceRow{flex:0 0 auto;}
+.ceAssetBar{flex:1 1 auto;min-height:0;overflow:hidden;}
 .ceLeft{border-right:1px solid #314158;}
 .ceRight{border-left:1px solid #314158;}
 .ceLeft h3,.ceRight h3{margin:10px 0 6px;font-size:12px;letter-spacing:.04em;color:#9fb0c9;}
-.ceTools,.ceModes{display:flex;flex-direction:column;gap:4px;}
-.ceTools button,.ceModes button{text-align:left;}
-.ceCanvasWrap{position:relative;min-width:0;min-height:0;background:#0e1218;}
+.ceModes{display:flex;flex-direction:column;gap:4px;}
+.ceModes button{text-align:left;}
+.ceTools{display:grid;grid-template-columns:1fr 1fr;gap:4px;overflow:visible;}
+.ceTools button{padding:5px 4px;font-size:12px;text-align:center;}
+.ceLeft > .ceRow{flex-wrap:nowrap;overflow-x:auto;margin-top:6px;}
+.ceLeft > .ceRow button{flex:0 0 auto;padding:4px 6px;font-size:12px;}
+.ceCanvasWrap{position:relative;min-width:0;min-height:0;height:100%;background:#0e1218;}
 #cartsEditorCanvas{display:block;width:100%;height:100%;touch-action:none;cursor:crosshair;}
 .ceStatus{position:absolute;left:8px;bottom:8px;background:rgba(20,26,34,.85);color:#fff;padding:4px 8px;border-radius:6px;font-size:12px;pointer-events:none;}
 .ceField{display:flex;flex-direction:column;gap:3px;margin:0 0 8px;font-size:12px;color:#c5d2e6;}
@@ -43,9 +51,14 @@ font-size:13px;
 .ceLayers{display:flex;flex-direction:column;gap:4px;}
 .ceLayer{display:grid;grid-template-columns:1fr auto auto;gap:4px;align-items:center;font-size:13px;}
 .ceLayer button{padding:4px 6px;}
-.ceAssetBar{display:flex;flex-direction:column;gap:6px;}
-.ceCats{display:flex;flex-wrap:wrap;gap:4px;}
-.ceGrid{display:grid;grid-template-columns:repeat(auto-fill,32px);gap:4px;max-height:220px;overflow:auto;}
+.ceAssetBar{display:flex;flex-direction:column;gap:4px;}
+.ceAssetBar h3{margin:0;}
+.ceAssetBar .ceField{margin:0;}
+.ceAssetBar > *{flex:0 0 auto;}
+.ceCats{display:flex;flex-wrap:nowrap;gap:4px;overflow-x:auto;overflow-y:hidden;min-height:32px;}
+.ceCats button{flex:0 0 auto;}
+.ceGrid{display:grid;grid-template-columns:repeat(auto-fill,32px);gap:4px;align-content:start;}
+.ceAssetBar > .ceGrid{flex:1 1 auto;min-height:72px;overflow:auto;}
 .ceGrid button{padding:0;width:32px;height:32px;overflow:hidden;}
 .ceGrid img{width:32px;height:32px;object-fit:cover;display:block;}
 .ceChecks{list-style:none;margin:0;padding:0;font-size:12px;line-height:1.45;}
@@ -60,6 +73,6 @@ font-size:13px;
 .ceMapList button{text-align:left;}
 .ceEmpty{color:#9fb0c9;font-size:12px;line-height:1.4;}
 @media(max-width:900px){
-.ceBody{grid-template-columns:1fr;grid-template-rows:auto minmax(220px,1fr) auto;}
-.ceLeft,.ceRight{max-height:180px;}
+.ceBody{grid-template-columns:1fr;grid-template-rows:minmax(220px,42vh) minmax(220px,1fr) minmax(120px,32vh);}
+.ceLeft,.ceRight{max-height:none;overflow:auto;}
 }
