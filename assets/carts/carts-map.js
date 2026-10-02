@@ -9,6 +9,7 @@ else root.CartsMap=factory();
 })(typeof window!=="undefined"?window:globalThis,function(){
 const VERSION=1;
 const TILE_LAYERS=["ground","roads","buildings","decorations"];
+const DEFAULT_ORDER=["ground","roads","skeleton","buildings","decorations","objects"];
 const FLOOD_LIMIT=20000;
 
 function clone(value){
@@ -44,6 +45,7 @@ skeleton:{paths:[],intersections:[],spawns:[],destinations:[]},
 layers:emptyLayers(),
 objects:[],
 layerState:layerState(),
+layerOrder:DEFAULT_ORDER.slice(),
 updated:Date.now()
 };
 }
@@ -349,6 +351,7 @@ if(typeof value==="string"&&value)out.layers[name][key]=value.slice(0,240);
 });
 });
 out.objects=Array.isArray(map.objects)?map.objects.map(cleanObject).filter(Boolean):[];
+out.layerOrder=cleanOrder(map.layerOrder);
 if(map.layerState){
 Object.keys(out.layerState).forEach(function(name){
 const src=map.layerState[name];
@@ -386,7 +389,8 @@ width:clamp(Number(path.width)||64,8,256),
 branchId:typeof path.branchId==="string"?path.branchId.slice(0,32):"",
 points:points,
 from:cleanEnd(path.from),
-to:cleanEnd(path.to)
+to:cleanEnd(path.to),
+visualStyle:cleanStyle(path.visualStyle)
 };
 }
 
@@ -407,7 +411,8 @@ id:spawn.id.slice(0,32),
 x:Number(spawn.x)||0,
 y:Number(spawn.y)||0,
 pathId:typeof spawn.pathId==="string"?spawn.pathId.slice(0,32):"",
-enabled:spawn.enabled!==false
+enabled:spawn.enabled!==false,
+visual:cleanVisual(spawn.visual)
 };
 }
 
@@ -419,8 +424,67 @@ x:Number(dest.x)||0,
 y:Number(dest.y)||0,
 pathId:typeof dest.pathId==="string"?dest.pathId.slice(0,32):"",
 accepts:typeof dest.accepts==="string"?dest.accepts.slice(0,16):"",
-label:typeof dest.label==="string"?dest.label.slice(0,16):""
+label:typeof dest.label==="string"?dest.label.slice(0,16):"",
+visual:cleanVisual(dest.visual)
 };
+}
+
+function cleanStyle(style){
+if(!style||typeof style.src!=="string"||!style.src)return null;
+return {src:style.src.slice(0,240)};
+}
+
+function cleanVisual(visual){
+if(!visual||typeof visual.src!=="string"||!visual.src)return null;
+return {
+src:visual.src.slice(0,240),
+offsetX:clamp(Number(visual.offsetX)||0,-2000,2000),
+offsetY:clamp(Number(visual.offsetY)||0,-2000,2000),
+scale:clamp(Number(visual.scale)||1,0.1,8),
+rotation:clamp(Number(visual.rotation)||0,-360,360)
+};
+}
+
+function cleanOrder(order){
+const next=[];
+(Array.isArray(order)?order:[]).forEach(function(name){
+if(typeof name!=="string"||DEFAULT_ORDER.indexOf(name)===-1||next.indexOf(name)!==-1)return;
+next.push(name);
+});
+DEFAULT_ORDER.forEach(function(name){if(next.indexOf(name)===-1)next.push(name);});
+return next;
+}
+
+function distToSegment(px,py,ax,ay,bx,by){
+const dx=bx-ax;
+const dy=by-ay;
+const len=dx*dx+dy*dy||1;
+let t=((px-ax)*dx+(py-ay)*dy)/len;
+t=Math.max(0,Math.min(1,t));
+return Math.hypot(ax+dx*t-px,ay+dy*t-py);
+}
+
+function roadCells(map,path){
+const found={};
+if(!path||!path.points||path.points.length<2)return [];
+const size=(map.grid&&map.grid.size)||32;
+const radius=Math.max(size/2,(Number(path.width)||map.roadWidth||64)/2);
+for(let i=0;i<path.points.length-1;i++){
+const a=path.points[i];
+const b=path.points[i+1];
+const c0=Math.floor((Math.min(a.x,b.x)-radius)/size);
+const c1=Math.floor((Math.max(a.x,b.x)+radius)/size);
+const r0=Math.floor((Math.min(a.y,b.y)-radius)/size);
+const r1=Math.floor((Math.max(a.y,b.y)+radius)/size);
+for(let c=c0;c<=c1;c++){
+for(let r=r0;r<=r1;r++){
+const cx=(c+0.5)*size;
+const cy=(r+0.5)*size;
+if(distToSegment(cx,cy,a.x,a.y,b.x,b.y)<=radius)found[c+","+r]=true;
+}
+}
+}
+return Object.keys(found);
 }
 
 function cleanObject(obj){
@@ -589,6 +653,7 @@ return best;
 return {
 VERSION:VERSION,
 TILE_LAYERS:TILE_LAYERS,
+DEFAULT_ORDER:DEFAULT_ORDER,
 FLOOD_LIMIT:FLOOD_LIMIT,
 clone:clone,
 blank:blank,
@@ -613,6 +678,7 @@ syncLinkedPoint:syncLinkedPoint,
 linkPath:linkPath,
 validate:validate,
 nearestLink:nearestLink,
-samePoint:samePoint
+samePoint:samePoint,
+roadCells:roadCells
 };
 });
