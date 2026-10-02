@@ -1,0 +1,18 @@
+LICENSE - Free Cozy Farm Tileset Sampler
+
+YOU MAY
+- Use this asset in unlimited personal and commercial projects
+- Use it in games you sell, in free games, and in client work
+- Modify, recolour, crop and combine it however you need
+- Ship it inside a compiled game, app or Roblox experience
+
+YOU MAY NOT
+- Resell, redistribute or give away the asset files themselves,
+  as-is or modified, whether free or paid
+- Include them in another asset pack, template or UI library
+- Claim authorship of the artwork
+
+No attribution required, though it is always welcome.
+
+This license is granted per purchase and cannot be transferred.
+If your team needs multiple seats, one purchase covers your whole studio.

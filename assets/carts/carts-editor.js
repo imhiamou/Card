@@ -178,6 +178,7 @@ function highlightTools(){
 document.querySelectorAll("#ceTools button").forEach(function(node){
 const name=node.dataset.tool;
 const allowed=mode==="skeleton"?SKELETON_TOOLS.indexOf(name)!==-1||name==="pan":DECOR_TOOLS.indexOf(name)!==-1;
+node.hidden=!allowed;
 node.disabled=!allowed;
 node.classList.toggle("active",name===tool);
 });
@@ -380,8 +381,9 @@ node.addEventListener("click",function(){selectedAsset=asset;renderPalette();set
 grid.appendChild(node);
 });
 host.appendChild(grid);
+host.appendChild(el("<p class='ceEmpty'>Farm tiles are 128px. Set the grid to 128 to paint them full size.</p>"));
 if(!filteredAssets().length){
-host.appendChild(el("<p class='ceEmpty'>No images under assets/carts yet. Add category folders such as ground or props and reload. Painting still works once a tile is available.</p>"));
+host.appendChild(el("<p class='ceEmpty'>No images under assets/carts yet. Add category folders and reload.</p>"));
 }
 if(selectedAsset)host.appendChild(el("<p class='ceEmpty'>Selected: "+selectedAsset.name+"</p>"));
 }
