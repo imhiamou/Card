@@ -380,7 +380,7 @@ if(sel.index>0&&sel.index<path.points.length-1)wrap.appendChild(button("Split he
 }
 wrap.appendChild(el("<p class='ceEmpty'>Path "+path.id+" · "+pathLength(path)+" px</p>"));
 wrap.appendChild(el("<p class='ceEmpty'>"+endName(path.from)+" → "+endName(path.to)+"</p>"));
-wrap.appendChild(field("Width",input("number",path.width,function(value){mutate(function(){path.width=clamp(Number(value)||64,8,256);});})));
+wrap.appendChild(field("Path width",input("number",path.width,function(value){mutate(function(){path.width=clamp(Number(value)||64,8,256);});})));
 wrap.appendChild(el("<p class='ceEmpty'>Road style</p>"));
 if(path.visualStyle&&path.visualStyle.src){
 const preview=document.createElement("img");
