@@ -38,7 +38,7 @@ type:"carts",
 id:"",
 name:name||"Untitled map",
 width:width||1600,
-height:height||1200,
+height:height||1216,
 grid:{size:32,visible:true,snap:true},
 roadWidth:64,
 skeleton:{paths:[],intersections:[],spawns:[],destinations:[]},
@@ -51,7 +51,7 @@ updated:Date.now()
 }
 
 function builtin(){
-const map=blank("Prototype",720,640);
+const map=blank("Prototype",736,640);
 map.id="builtin";
 map.grid.size=32;
 map.roadWidth=64;
@@ -233,23 +233,79 @@ function samePoint(a,b){
 return Math.abs(a.x-b.x)<0.01&&Math.abs(a.y-b.y)<0.01;
 }
 
+function cellSizeOf(map){
+const size=Number(map&&map.grid&&map.grid.size);
+return size>0?size:32;
+}
+
+function tileCounts(map){
+const size=cellSizeOf(map);
+return {size:size,cols:Math.max(1,Math.round((map.width||size)/size)),rows:Math.max(1,Math.round((map.height||size)/size))};
+}
+
+function gridLimits(size){
+const cell=clamp(Number(size)||32,8,256);
+return {size:cell,min:Math.max(1,Math.ceil(320/cell)),max:Math.max(1,Math.floor(8000/cell))};
+}
+
+function setTileCounts(map,cols,rows){
+const limits=gridLimits(cellSizeOf(map));
+const c=clamp(Math.round(Number(cols)||limits.min),limits.min,limits.max);
+const r=clamp(Math.round(Number(rows)||limits.min),limits.min,limits.max);
+map.grid.size=limits.size;
+map.width=c*limits.size;
+map.height=r*limits.size;
+return map;
+}
+
+function setCellSize(map,next){
+const prev=cellSizeOf(map);
+const counts=tileCounts(map);
+const size=gridLimits(next).size;
+if(size===prev)return map;
+const factor=size/prev;
+(map.skeleton.paths||[]).forEach(function(path){
+(path.points||[]).forEach(function(point){point.x*=factor;point.y*=factor;});
+path.width=clamp((Number(path.width)||64)*factor,8,256);
+});
+["intersections","spawns","destinations"].forEach(function(name){
+(map.skeleton[name]||[]).forEach(function(node){
+node.x*=factor;
+node.y*=factor;
+if(node.visual){
+node.visual.offsetX=(Number(node.visual.offsetX)||0)*factor;
+node.visual.offsetY=(Number(node.visual.offsetY)||0)*factor;
+}
+});
+});
+(map.objects||[]).forEach(function(obj){
+obj.x*=factor;
+obj.y*=factor;
+obj.w=clamp((Number(obj.w)||prev)*factor,8,512);
+obj.h=clamp((Number(obj.h)||prev)*factor,8,512);
+});
+map.roadWidth=clamp((Number(map.roadWidth)||64)*factor,8,256);
+map.grid.size=size;
+map.width=counts.cols*size;
+map.height=counts.rows*size;
+return map;
+}
+
 function snapPoint(map,x,y){
 const grid=map.grid||{};
-const size=grid.size>0?grid.size:32;
+const size=cellSizeOf(map);
 if(!grid.snap)return {x:x,y:y};
 return {x:Math.round(x/size)*size,y:Math.round(y/size)*size};
 }
 
 function cellOf(map,x,y){
-const size=(map.grid&&map.grid.size)||32;
+const size=cellSizeOf(map);
 return {c:Math.floor(x/size),r:Math.floor(y/size),size:size};
 }
 
 function inMapCell(map,c,r){
-const size=(map.grid&&map.grid.size)||32;
-const cols=Math.ceil(map.width/size);
-const rows=Math.ceil(map.height/size);
-return c>=0&&r>=0&&c<cols&&r<rows;
+const counts=tileCounts(map);
+return c>=0&&r>=0&&c<counts.cols&&r<counts.rows;
 }
 
 function paintCells(layer,cells,asset){
@@ -283,9 +339,9 @@ return cells;
 function flood(map,layerName,c,r,asset){
 const layer=map.layers[layerName];
 if(!layer)return {filled:0,capped:false};
-const size=(map.grid&&map.grid.size)||32;
-const cols=Math.ceil(map.width/size);
-const rows=Math.ceil(map.height/size);
+const counts=tileCounts(map);
+const cols=counts.cols;
+const rows=counts.rows;
 const target=layer[c+","+r]||"";
 const next=asset||"";
 if(target===next)return {filled:0,capped:false};
@@ -329,10 +385,9 @@ out.id=typeof map.id==="string"?map.id:"";
 out.name=typeof map.name==="string"&&map.name.trim()?map.name.trim().slice(0,48):"Untitled map";
 out.version=VERSION;
 out.type="carts";
-out.width=clamp(Number(map.width)||1600,320,8000);
-out.height=clamp(Number(map.height)||1200,320,8000);
 out.roadWidth=clamp(Number(map.roadWidth)||64,8,256);
-out.grid.size=clamp(Number(map.grid&&map.grid.size)||32,8,256);
+out.grid.size=gridLimits(map.grid&&map.grid.size).size;
+setTileCounts(out,Math.round((Number(map.width)||1600)/out.grid.size),Math.round((Number(map.height)||1200)/out.grid.size));
 out.grid.visible=!(map.grid&&map.grid.visible===false);
 out.grid.snap=!(map.grid&&map.grid.snap===false);
 out.updated=Number(map.updated)||Date.now();
@@ -469,7 +524,7 @@ return Math.hypot(ax+dx*t-px,ay+dy*t-py);
 function roadCells(map,path){
 const found={};
 if(!path||!path.points||path.points.length<2)return [];
-const size=(map.grid&&map.grid.size)||32;
+const size=cellSizeOf(map);
 const radius=Math.max(size/2,(Number(path.width)||map.roadWidth||64)/2);
 for(let i=0;i<path.points.length-1;i++){
 const a=path.points[i];
@@ -668,6 +723,10 @@ initialChoices:initialChoices,
 legacyView:legacyView,
 legAlong:legAlong,
 pathTouching:pathTouching,
+cellSizeOf:cellSizeOf,
+tileCounts:tileCounts,
+setTileCounts:setTileCounts,
+setCellSize:setCellSize,
 snapPoint:snapPoint,
 cellOf:cellOf,
 inMapCell:inMapCell,

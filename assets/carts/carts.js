@@ -219,6 +219,8 @@ ctx.restore();
 }
 function drawWorld(){
 const size=(doc.grid&&doc.grid.size)||32;
+const cols=Math.max(1,Math.round((doc.width||size)/size));
+const rows=Math.max(1,Math.round((doc.height||size)/size));
 const order=doc.layerOrder&&doc.layerOrder.length?doc.layerOrder:(CM.DEFAULT_ORDER||[]);
 order.forEach(function(name){
 if(name==="skeleton"||!layerOn(name))return;
@@ -226,10 +228,11 @@ const layer=doc.layers&&doc.layers[name];
 if(layer){
 Object.keys(layer).forEach(function(key){
 const parts=key.split(",");
-const x=Number(parts[0])*size;
-const y=Number(parts[1])*size;
+const c=Number(parts[0]);
+const r=Number(parts[1]);
+if(c<0||r<0||c>=cols||r>=rows)return;
 const img=imageOf(layer[key]);
-if(img)ctx.drawImage(img,x,y,size,size);
+if(img)ctx.drawImage(img,c*size,r*size,size,size);
 });
 }
 if(name==="roads"){
@@ -239,7 +242,10 @@ const img=imageOf(path.visualStyle.src);
 CM.roadCells(doc,path).forEach(function(key){
 if(!img)return;
 const parts=key.split(",");
-ctx.drawImage(img,Number(parts[0])*size,Number(parts[1])*size,size,size);
+const c=Number(parts[0]);
+const r=Number(parts[1]);
+if(c<0||r<0||c>=cols||r>=rows)return;
+ctx.drawImage(img,c*size,r*size,size,size);
 });
 });
 }

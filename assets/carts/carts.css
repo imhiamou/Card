@@ -84,8 +84,8 @@ color:#333;
 }
 .cartsStage{
 position:relative;
-width:min(100%, calc((100vh - 168px) * 720 / 640));
-aspect-ratio:720 / 640;
+width:min(100%, calc((100vh - 168px) * 736 / 640));
+aspect-ratio:736 / 640;
 margin:0 auto;
 background:#fff;
 border:2px solid #111;
