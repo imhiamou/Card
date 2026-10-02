@@ -334,6 +334,12 @@ cartsPlayBtn.onclick=()=>{
 if(window.Carts)Carts.start();
 };
 }
+const cartsEditorBtn=document.getElementById("cartsEditorBtn");
+if(cartsEditorBtn){
+cartsEditorBtn.onclick=()=>{
+if(window.CartsEditor)CartsEditor.open();
+};
+}
 
 document.getElementById("createBtn").onclick=()=>{
 const name=getPlayerName();
@@ -447,6 +453,7 @@ renderDominoLobbyTeams(data);
 // render the player information panel during the game.
 socket.on("gameStart",(data)=>{
 if(window.Carts&&Carts.isActive())return;
+if(window.CartsEditor&&CartsEditor.isActive())return;
 endLobbyWait();
 if(data&&data.room)currentRoom=data.room;
 if(data&&data.players)lobbyPlayers=data.players;
@@ -456,6 +463,7 @@ setTimeout(showPlacementScreen,1500);
 
 socket.on("playerLeft",()=>{
 if(window.Carts&&Carts.isActive())return;
+if(window.CartsEditor&&CartsEditor.isActive())return;
 if(window.HiddenHunter&&HiddenHunter.isActive()&&HiddenHunter.partnerDisconnected()){
 return;
 }
@@ -484,6 +492,7 @@ if(window.Dominoes&&Dominoes.isActive()&&Dominoes.showError(msg))return;
 if(window.Uno&&Uno.isActive()&&Uno.showError(msg))return;
 if(window.HiddenHunter&&HiddenHunter.isActive()&&HiddenHunter.showError(msg))return;
 if(window.Carts&&Carts.isActive())return;
+if(window.CartsEditor&&CartsEditor.isActive())return;
 // During the game, a rejected play (e.g. an invalid Dash target) must
 // NOT freeze the match: unlock the hand so the player can try again,
 // and show the reason on screen instead of an alert.

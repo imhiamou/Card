@@ -1,3 +1,4 @@
+const path = require("path");
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
@@ -6,6 +7,8 @@ const uno = require("./uno");
 const hiddenHunter = require("./hiddenHunter");
 const hhMaps = require("./hhMapStore");
 const hhEditor = require("./hhEditor");
+const cartsMaps = require("./cartsMapStore");
+const cartsAssets = require("./cartsAssets");
 const { createBotSocket } = require("./bots/botSocket");
 
 const app = express();
@@ -79,6 +82,75 @@ app.get("/api/maps/:id", async (req, res) => {
     console.error("[hh-maps] GET /api/maps/:id failed");
     console.error(hhMaps.describeError(err));
     res.status(503).json({ ok: false, error: hhMaps.LOAD_FAIL + " " + hhMaps.describeError(err) });
+  }
+});
+
+function cartsCors(res) {
+  res.set("Access-Control-Allow-Origin", "*");
+  res.set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+  res.set("Access-Control-Allow-Headers", "Content-Type");
+}
+
+app.options("/api/carts-maps", (req, res) => {
+  cartsCors(res);
+  res.sendStatus(204);
+});
+app.options("/api/carts-maps/:id", (req, res) => {
+  cartsCors(res);
+  res.sendStatus(204);
+});
+app.get("/api/carts-assets", (req, res) => {
+  cartsCors(res);
+  res.json(cartsAssets.scan(path.join(__dirname, "..")));
+});
+app.get("/api/carts-maps", async (req, res) => {
+  cartsCors(res);
+  try {
+    res.json(await cartsMaps.listMaps());
+  } catch (err) {
+    console.error("[carts-maps] list failed");
+    res.status(503).json({ ok: false, error: cartsMaps.describeError(err) });
+  }
+});
+app.get("/api/carts-maps/:id", async (req, res) => {
+  cartsCors(res);
+  try {
+    const result = await cartsMaps.loadMap(req.params.id);
+    res.status(result.ok ? 200 : 404).json(result);
+  } catch (err) {
+    console.error("[carts-maps] load failed");
+    res.status(503).json({ ok: false, error: cartsMaps.describeError(err) });
+  }
+});
+app.post("/api/carts-maps", async (req, res) => {
+  cartsCors(res);
+  const body = req.body && req.body.map ? req.body.map : req.body;
+  try {
+    const result = await cartsMaps.saveMap(body);
+    res.status(result.ok ? 200 : 400).json(result);
+  } catch (err) {
+    console.error("[carts-maps] save failed");
+    res.status(503).json({ ok: false, error: cartsMaps.describeError(err) });
+  }
+});
+app.post("/api/carts-maps/:id/rename", async (req, res) => {
+  cartsCors(res);
+  try {
+    const result = await cartsMaps.renameMap(req.params.id, req.body && req.body.name);
+    res.status(result.ok ? 200 : 404).json(result);
+  } catch (err) {
+    console.error("[carts-maps] rename failed");
+    res.status(503).json({ ok: false, error: cartsMaps.describeError(err) });
+  }
+});
+app.delete("/api/carts-maps/:id", async (req, res) => {
+  cartsCors(res);
+  try {
+    const result = await cartsMaps.deleteMap(req.params.id);
+    res.status(result.ok ? 200 : 404).json(result);
+  } catch (err) {
+    console.error("[carts-maps] delete failed");
+    res.status(503).json({ ok: false, error: cartsMaps.describeError(err) });
   }
 });
 
@@ -1446,8 +1518,15 @@ function listen() {
   });
 }
 
-hhMaps.ready().then((storage) => {
+hhMaps.ready().then(async (storage) => {
   console.log("Hidden Hunter maps restored from Postgres (" + storage.count + ").");
+  try {
+    const cartsStorage = await cartsMaps.ready();
+    console.log("Carts maps storage " + cartsStorage.persisted + " (" + cartsStorage.count + ").");
+  } catch (err) {
+    console.error("Carts map storage failed to start.");
+    console.error(cartsMaps.describeError(err));
+  }
   listen();
 }).catch((err) => {
   const message = hhMaps.describeError(err);
@@ -1456,7 +1535,10 @@ hhMaps.ready().then((storage) => {
   if (err && err.stack) console.error(hhMaps.redact(err.stack));
   if (message.indexOf("DATABASE_URL is missing") !== -1) {
     console.error("DATABASE_URL is missing. Hidden Hunter map saves cannot persist until DATABASE_URL points at a Postgres database.");
-    listen();
+    cartsMaps.ready().then((cartsStorage) => {
+      console.log("Carts maps storage " + cartsStorage.persisted + " (" + cartsStorage.count + ").");
+      listen();
+    }).catch(() => listen());
     return;
   }
   process.exit(1);
