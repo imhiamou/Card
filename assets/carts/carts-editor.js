@@ -9,7 +9,7 @@ if(!CM)return;
 
 const STORAGE_KEY="carts.maps.v1";
 const SKELETON_TOOLS=["select","path","intersection","spawn","destination","connect","delete"];
-const PAINT_TOOLS=["pencil","rect","bucket","eraser","eyedropper"];
+const PAINT_TOOLS=["select","pencil","rect","bucket","eraser","eyedropper"];
 const OBJECT_TOOLS=["select","place","rotate","scale","delete"];
 const LAYER_LABELS={ground:"Ground",roads:"Road",skeleton:"Skeleton",buildings:"Buildings",decorations:"Decorations",objects:"Objects"};
 
@@ -36,6 +36,8 @@ let area=null;
 let clipboard=null;
 let pasteArmed=false;
 let camera={cx:360,cy:320,zoom:1};
+let hover=null;
+let hoverKey="";
 let active=false;
 let space=false;
 let drag=null;
@@ -83,6 +85,7 @@ ctx=canvas.getContext("2d");
 buildChrome();
 canvas.addEventListener("pointerdown",onPointerDown);
 canvas.addEventListener("pointermove",onPointerMove);
+canvas.addEventListener("pointerleave",function(){hover=null;hoverKey="";dirty=true;});
 canvas.addEventListener("pointerup",onPointerUp);
 canvas.addEventListener("pointercancel",onPointerUp);
 canvas.addEventListener("wheel",onWheel,{passive:false});
@@ -149,7 +152,9 @@ return SKELETON_TOOLS;
 }
 
 function setMode(next){
+const prev=mode;
 mode=next;
+if(prev!==next&&next==="paint"&&tool==="select")tool="pencil";
 if(toolsForMode(mode).indexOf(tool)===-1)tool=mode==="paint"?"pencil":"select";
 draft=null;
 connectFirst=null;
@@ -195,7 +200,7 @@ document.querySelectorAll("#ceModes button").forEach(function(node){
 node.classList.toggle("active",node.dataset.mode===mode);
 });
 const areaRow=document.querySelector(".ceLeft > .ceRow");
-if(areaRow)areaRow.hidden=true;
+if(areaRow)areaRow.hidden=mode!=="paint";
 }
 
 function renderSide(){
@@ -204,10 +209,13 @@ if(!right||!map)return;
 right.innerHTML="";
 right.appendChild(el("<h3>MAP</h3>"));
 right.appendChild(field("Name",input("text",map.name,function(value){mutate(function(){map.name=value.slice(0,48)||"Untitled map";});})));
-right.appendChild(field("Width",input("number",map.width,function(value){mutate(function(){map.width=clamp(Number(value)||map.width,320,8000);});})));
-right.appendChild(field("Height",input("number",map.height,function(value){mutate(function(){map.height=clamp(Number(value)||map.height,320,8000);});})));
 right.appendChild(field("Road width",input("number",map.roadWidth,function(value){mutate(function(){map.roadWidth=clamp(Number(value)||64,8,256);});})));
-right.appendChild(field("Grid size",input("number",map.grid.size,function(value){mutate(function(){map.grid.size=clamp(Number(value)||32,8,256);});})));
+const counts=CM.tileCounts(map);
+right.appendChild(el("<h3>MAP GRID</h3>"));
+right.appendChild(el("<p class='ceEmpty'>Each square is one tile. Width and height count tiles.</p>"));
+right.appendChild(field("Tile size",input("number",counts.size,function(value){mutate(function(){CM.setCellSize(map,Number(value)||counts.size);});})));
+right.appendChild(field("Width",input("number",counts.cols,function(value){mutate(function(){CM.setTileCounts(map,Number(value)||counts.cols,counts.rows);});})));
+right.appendChild(field("Height",input("number",counts.rows,function(value){mutate(function(){CM.setTileCounts(map,counts.cols,Number(value)||counts.rows);});})));
 const apply=button("Apply road width to all paths",null,function(){
 mutate(function(){map.skeleton.paths.forEach(function(path){path.width=map.roadWidth;});});
 });
@@ -559,7 +567,7 @@ node.addEventListener("click",function(){selectedAsset=asset;renderPalette();set
 grid.appendChild(node);
 });
 host.appendChild(grid);
-host.appendChild(el("<p class='ceEmpty'>Farm tiles are 128px. Set the grid to 128 to paint them full size.</p>"));
+host.appendChild(el("<p class='ceEmpty'>A tile fills one grid cell. Larger props belong in Objects.</p>"));
 if(!filteredAssets().length){
 host.appendChild(el("<p class='ceEmpty'>No images under assets/carts yet. Add category folders and reload.</p>"));
 }
@@ -673,8 +681,8 @@ function zoomBy(factor){
 camera.zoom=clamp(camera.zoom*factor,0.15,8);
 dirty=true;draw();
 }
-function toggleGrid(){map.grid.visible=!map.grid.visible;setStatus(map.grid.visible?"Grid on":"Grid off");dirty=true;draw();}
-function toggleSnap(){map.grid.snap=!map.grid.snap;setStatus(map.grid.snap?"Snap on":"Snap off");}
+function toggleGrid(){map.grid.visible=!map.grid.visible;setStatus(map.grid.visible?"Grid lines on":"Grid lines off");dirty=true;draw();}
+function toggleSnap(){map.grid.snap=!map.grid.snap;setStatus(map.grid.snap?"Path and object snap on":"Path and object snap off");}
 
 function onWheel(event){
 if(!active)return;
@@ -734,6 +742,12 @@ if(inter&&!inter.defaultDirection)inter.defaultDirection=path.branchId;
 function onPointerMove(event){
 if(!active)return;
 const world=worldFromEvent(event);
+if(map){
+const cell=CM.cellOf(map,world.x,world.y);
+const key=cell.c+","+cell.r;
+hover=world;
+if(key!==hoverKey){hoverKey=key;dirty=true;}
+}
 if(!drag)return;
 if(drag.kind==="pan"){
 camera.cx=drag.cx-(world.sx-drag.x)/camera.zoom;
@@ -760,7 +774,7 @@ function onPointerUp(event){
 if(!drag)return;
 const world=worldFromEvent(event);
 if(drag.kind==="rect")fillRect(drag.start,world,drag.erase);
-if(drag.kind==="area")area={a:CM.cellOf(map,drag.start.x,drag.start.y),b:CM.cellOf(map,world.x,world.y)};
+if(drag.kind==="area"||drag.kind==="cells")area={a:CM.cellOf(map,drag.start.x,drag.start.y),b:CM.cellOf(map,world.x,world.y)};
 if(drag.kind==="marquee")selectMarquee(drag.start,world,event.shiftKey);
 if(drag.kind==="pencil"||drag.kind==="move"){map.updated=Date.now();renderSide();}
 drag=null;
@@ -785,6 +799,7 @@ if(tool==="delete")return deleteAt(world);
 
 function decorDown(event,world){
 if(pasteArmed&&clipboard){pasteAt(world);return;}
+if(tool==="select"){drag={kind:"cells",start:world,current:world};dirty=true;return;}
 if(tool==="area"){gestureStart();drag={kind:"area",start:world,current:world};return;}
 const layerName=activeLayer;
 if(!map.layers[layerName]){setStatus("Choose Ground, Road, Buildings, or Decorations");return;}
@@ -1389,14 +1404,16 @@ function placeObject(world){
 if(!selectedAsset){setStatus("Select an asset first");return;}
 if(layerLocked("objects")){setStatus("Objects layer is locked");return;}
 const point=CM.snapPoint(map,world.x,world.y);
+const img=imageOf(selectedAsset.src);
+const size=map.grid.size||32;
 mutate(function(){
 const obj={
 id:CM.newId(map,"o"),
 asset:selectedAsset.src,
 x:point.x,y:point.y,
 rotation:0,scale:1,
-w:Math.max(map.grid.size,32),
-h:Math.max(map.grid.size,32)
+w:img&&img.naturalWidth?img.naturalWidth:size,
+h:img&&img.naturalHeight?img.naturalHeight:size
 };
 map.objects.push(obj);
 selection=[{kind:"object",id:obj.id}];
@@ -1501,8 +1518,9 @@ function newMap(){
 openDialog([
 "<h3>New map</h3>",
 "<label class='ceField'>Name<input id='ceNewName' value='New map'></label>",
-"<label class='ceField'>Width<input id='ceNewW' type='number' value='1600'></label>",
-"<label class='ceField'>Height<input id='ceNewH' type='number' value='1200'></label>",
+"<label class='ceField'>Width (tiles)<input id='ceNewW' type='number' value='50'></label>",
+"<label class='ceField'>Height (tiles)<input id='ceNewH' type='number' value='38'></label>",
+"<label class='ceField'>Tile size<input id='ceNewSize' type='number' value='32'></label>",
 "<div class='ceRow'><button type='button' id='ceNewOk'>Create</button><button type='button' id='ceNewCancel'>Cancel</button></div>"
 ].join(""),function(){
 document.getElementById("ceNewCancel").onclick=closeDialog;
@@ -1510,7 +1528,11 @@ document.getElementById("ceNewOk").onclick=function(){
 const name=document.getElementById("ceNewName").value;
 const w=Number(document.getElementById("ceNewW").value);
 const h=Number(document.getElementById("ceNewH").value);
-loadDocument(CM.blank(name,w,h));
+const size=Number(document.getElementById("ceNewSize").value);
+const doc=CM.blank(name);
+CM.setCellSize(doc,size||32);
+CM.setTileCounts(doc,w,h);
+loadDocument(doc);
 closeDialog();
 };
 });
@@ -1702,9 +1724,11 @@ ctx.strokeStyle="#111";
 ctx.lineWidth=2/camera.zoom;
 ctx.strokeRect(0,0,map.width,map.height);
 drawStacked();
+if(!drag)drawHoverPreview();
 if(map.grid.visible)drawGrid();
+drawCellSelection();
 if(draft)drawDraft();
-if(drag&&(drag.kind==="rect"||drag.kind==="area"||drag.kind==="marquee"))drawDrag();
+if(drag&&(drag.kind==="rect"||drag.kind==="area"||drag.kind==="marquee"||drag.kind==="cells"))drawDrag();
 ctx.restore();
 dirty=false;
 }
@@ -1739,6 +1763,7 @@ Object.keys(layer).forEach(function(key){
 const parts=key.split(",");
 const c=Number(parts[0]);
 const r=Number(parts[1]);
+if(!CM.inMapCell(map,c,r))return;
 const x=c*size;
 const y=r*size;
 if(x>view.x1||y>view.y1||x+size<view.x0||y+size<view.y0)return;
@@ -1748,19 +1773,74 @@ else{ctx.fillStyle="#d5dbe3";ctx.fillRect(x,y,size,size);}
 });
 }
 function drawGrid(){
+const size=map.grid.size||32;
+const counts=CM.tileCounts(map);
 const view=visibleWorld();
-ctx.strokeStyle="rgba(0,0,0,.18)";
+const c0=Math.max(0,Math.floor(view.x0/size));
+const c1=Math.min(counts.cols,Math.ceil(view.x1/size));
+const r0=Math.max(0,Math.floor(view.y0/size));
+const r1=Math.min(counts.rows,Math.ceil(view.y1/size));
+ctx.strokeStyle="rgba(0,0,0,.28)";
 ctx.lineWidth=1/camera.zoom;
-const sizeStep=map.grid.size||32;
-let step=sizeStep;
-const span=(view.x1-view.x0)/step;
-if(span>180)step*=Math.ceil(span/180);
-const startC=Math.floor(view.x0/step)*step;
-const startR=Math.floor(view.y0/step)*step;
 ctx.beginPath();
-for(let x=startC;x<=view.x1;x+=step){ctx.moveTo(x,view.y0);ctx.lineTo(x,view.y1);}
-for(let y=startR;y<=view.y1;y+=step){ctx.moveTo(view.x0,y);ctx.lineTo(view.x1,y);}
+for(let c=c0;c<=c1;c++){
+const x=c*size;
+ctx.moveTo(x,r0*size);
+ctx.lineTo(x,r1*size);
+}
+for(let r=r0;r<=r1;r++){
+const y=r*size;
+ctx.moveTo(c0*size,y);
+ctx.lineTo(c1*size,y);
+}
 ctx.stroke();
+}
+function cellBox(a,b){
+const ca=CM.cellOf(map,a.x,a.y);
+const cb=CM.cellOf(map,b.x,b.y);
+const size=map.grid.size||32;
+const c0=Math.min(ca.c,cb.c);
+const c1=Math.max(ca.c,cb.c);
+const r0=Math.min(ca.r,cb.r);
+const r1=Math.max(ca.r,cb.r);
+return {x:c0*size,y:r0*size,w:(c1-c0+1)*size,h:(r1-r0+1)*size};
+}
+function drawHoverPreview(){
+if(!hover||mode!=="paint")return;
+if(tool!=="pencil"&&tool!=="rect"&&tool!=="bucket"&&tool!=="eraser"&&tool!=="select")return;
+const size=map.grid.size||32;
+const origin=CM.cellOf(map,hover.x,hover.y);
+if(!CM.inMapCell(map,origin.c,origin.r))return;
+const span=tool==="pencil"||tool==="eraser"?brush:1;
+const img=tool!=="eraser"&&tool!=="select"&&selectedAsset?imageOf(selectedAsset.src):null;
+ctx.save();
+ctx.globalAlpha=img?0.72:1;
+for(let x=0;x<span;x++){
+for(let y=0;y<span;y++){
+const c=origin.c+x;
+const r=origin.r+y;
+if(!CM.inMapCell(map,c,r))continue;
+const px=c*size;
+const py=r*size;
+if(tool==="eraser"){ctx.fillStyle="rgba(229,57,53,.28)";ctx.fillRect(px,py,size,size);}
+else if(img)ctx.drawImage(img,px,py,size,size);
+ctx.strokeStyle=tool==="eraser"?"#e53935":"#1565c0";
+ctx.lineWidth=2/camera.zoom;
+ctx.strokeRect(px,py,size,size);
+}
+}
+ctx.restore();
+}
+function drawCellSelection(){
+if(!area||!area.a||!area.b)return;
+const size=map.grid.size||32;
+const c0=Math.min(area.a.c,area.b.c);
+const c1=Math.max(area.a.c,area.b.c);
+const r0=Math.min(area.a.r,area.b.r);
+const r1=Math.max(area.a.r,area.b.r);
+ctx.strokeStyle="#4f9cff";
+ctx.lineWidth=2/camera.zoom;
+ctx.strokeRect(c0*size,r0*size,(c1-c0+1)*size,(r1-r0+1)*size);
 }
 function drawStyledRoads(){
 const view=visibleWorld();
@@ -1770,8 +1850,11 @@ if(!path.visualStyle||!path.visualStyle.src)return;
 const img=imageOf(path.visualStyle.src);
 CM.roadCells(map,path).forEach(function(key){
 const parts=key.split(",");
-const x=Number(parts[0])*size;
-const y=Number(parts[1])*size;
+const c=Number(parts[0]);
+const r=Number(parts[1]);
+if(!CM.inMapCell(map,c,r))return;
+const x=c*size;
+const y=r*size;
 if(x>view.x1||y>view.y1||x+size<view.x0||y+size<view.y0)return;
 if(img)ctx.drawImage(img,x,y,size,size);
 else{ctx.fillStyle="#c4a574";ctx.fillRect(x,y,size,size);}
@@ -1922,7 +2005,12 @@ const a=drag.start;
 const b=drag.current||drag.start;
 ctx.strokeStyle="#1565c0";
 ctx.lineWidth=2/camera.zoom;
+if(drag.kind==="marquee"){
 ctx.strokeRect(Math.min(a.x,b.x),Math.min(a.y,b.y),Math.abs(b.x-a.x),Math.abs(b.y-a.y));
+return;
+}
+const box=cellBox(a,b);
+ctx.strokeRect(box.x,box.y,box.w,box.h);
 }
 
 function loop(){
