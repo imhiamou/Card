@@ -1085,6 +1085,17 @@ if(dist<=bestDist){bestDist=dist;best={kind:"point",id:path.id,index:index};}
 });
 });
 if(best)return best;
+let marker=null;
+map.skeleton.destinations.forEach(function(dest){
+if(Math.abs(dest.x-x)<=36&&Math.abs(dest.y-y)<=28)marker={kind:"destination",id:dest.id};
+});
+map.skeleton.spawns.forEach(function(spawn){
+if(Math.hypot(spawn.x-x,spawn.y-y)<=16)marker={kind:"spawn",id:spawn.id};
+});
+map.skeleton.intersections.forEach(function(inter){
+if(Math.abs(inter.x-x)+Math.abs(inter.y-y)<=22)marker={kind:"intersection",id:inter.id};
+});
+if(marker)return marker;
 const link=CM.nearestLink(map,x,y,18/Math.max(camera.zoom,0.4));
 if(link&&link.kind!=="path")return {kind:link.kind,id:link.id};
 let body=null;
