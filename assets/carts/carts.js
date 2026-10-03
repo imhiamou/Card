@@ -393,8 +393,10 @@ ctx.save();
 ctx.translate(cart.x,cart.y);
 ctx.imageSmoothingEnabled=false;
 if(img){
+const turn=CM.cartSpriteTransform?CM.cartSpriteTransform(cart.type):{rotation:Math.PI,scale:1,base:56};
+ctx.rotate(turn.rotation);
 ctx.imageSmoothingEnabled=true;
-const max=56;
+const max=turn.base*turn.scale;
 const fit=Math.min(max/img.naturalWidth,max/img.naturalHeight);
 const w=img.naturalWidth*fit;
 const h=img.naturalHeight*fit;

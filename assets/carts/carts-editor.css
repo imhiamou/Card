@@ -55,7 +55,13 @@ font-size:13px;
 .cePick{display:grid;grid-template-columns:repeat(auto-fill,36px);gap:4px;max-height:132px;overflow:auto;margin:0 0 8px;}
 .cePick button{padding:0;width:36px;height:36px;overflow:hidden;}
 .cePick img{width:36px;height:36px;object-fit:cover;display:block;image-rendering:pixelated;}
-.cePreview{width:48px;height:48px;object-fit:cover;display:block;margin:0 0 6px;border:2px solid #4f9cff;image-rendering:pixelated;}
+.cePreview{width:48px;height:48px;object-fit:contain;display:block;margin:0 0 6px;border:2px solid #4f9cff;image-rendering:pixelated;}
+.ceCartFrame{width:112px;height:112px;display:flex;align-items:center;justify-content:center;margin:0 0 6px;}
+.ceCartFrame .cePreview{width:56px;height:56px;margin:0;object-fit:contain;image-rendering:auto;transform-origin:center center;}
+.ceCartSpin{transform:rotate(180deg);transform-origin:center center;image-rendering:auto;}
+.ceSizeRow{display:flex;align-items:center;gap:8px;}
+.ceSizeRow input[type=range]{flex:1;padding:0;}
+.ceSizePct{min-width:42px;color:#e7eef8;}
 .ceAssetBar{display:flex;flex-direction:column;gap:4px;}
 .ceAssetBar h3{margin:0;}
 .ceAssetBar .ceField{margin:0;}
@@ -81,20 +87,35 @@ font-size:13px;
 .ceThumb{display:block;background-color:#0e1218;image-rendering:pixelated;}
 .ceCarts{display:grid;grid-template-columns:repeat(auto-fill,72px);gap:4px;max-height:180px;overflow:auto;}
 .ceCarts button{width:72px;height:78px;padding:3px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:10px;}
-.ceCarts img{width:40px;height:40px;object-fit:contain;image-rendering:pixelated;}
-.ceLibrary{width:min(980px,100%);height:min(680px,88vh);display:flex;flex-direction:column;gap:8px;background:#1d2633;border:1px solid #3d4c63;border-radius:10px;padding:12px;}
-.ceLibrary h3{margin:0;}
-.ceLibrary input{color:#111;background:#fff;padding:8px;border-radius:6px;border:0;}
+.ceCarts img{width:40px;height:40px;object-fit:contain;image-rendering:auto;transform:rotate(180deg);transform-origin:center center;}
+.ceLibrary{width:min(1100px,96vw);height:min(760px,90vh);min-width:min(520px,100%);min-height:360px;resize:both;overflow:hidden;display:flex;flex-direction:column;gap:8px;background:#1d2633;border:1px solid #3d4c63;border-radius:10px;padding:12px;}
+.ceLibHead{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.ceLibrary h3{margin:0;letter-spacing:.06em;}
+.ceLibrary input[type=search]{color:#111;background:#fff;padding:8px;border-radius:6px;border:0;}
+.ceLibFilters{display:flex;flex-wrap:wrap;gap:4px;}
+.ceLibFilters button{padding:4px 8px;font-size:11px;letter-spacing:.03em;}
+.ceLibMain{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 240px;gap:10px;}
+.ceLibScroll{min-height:0;overflow:auto;background:#0e1218;border-radius:8px;position:relative;}
+.ceLibCanvas{position:relative;width:100%;}
+.ceLibCell{position:absolute;height:116px;box-sizing:border-box;}
+#cartsEditorScreen .ceLibUse{width:100%;height:100%;padding:16px 4px 6px;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:10px;line-height:1.15;}
+#cartsEditorScreen .ceLibStar{width:22px;height:22px;padding:0;}
+#cartsEditorScreen .ceSizeRow input[type=range]{width:auto;flex:1;margin:0;padding:0;}
+.ceLibUse span:last-child{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.ceLibStar{position:absolute;top:2px;right:2px;z-index:1;width:22px;height:22px;padding:0;line-height:18px;background:rgba(14,18,24,.82);}
+.ceLibStar.on{color:#ffd45a;}
+.ceLibPreview{min-height:0;overflow:auto;background:#141b27;border-radius:8px;padding:8px;}
+.ceLibPreview .cePreviewArt{width:160px;height:160px;margin:0 auto 8px;}
+.ceLibName{margin:0 0 4px;font-size:14px;font-weight:bold;}
 .ceLibraryBody{flex:1;min-height:0;display:grid;grid-template-columns:190px minmax(0,1fr);gap:10px;}
-.ceLibCats,.ceLibGrid{min-height:0;overflow:auto;}
-.ceLibCats{display:flex;flex-direction:column;gap:4px;}
+.ceLibCats,.ceLibGrid{min-height:0;}
+.ceLibCats{display:flex;flex-direction:column;gap:4px;overflow:auto;}
 .ceLibCats button{text-align:left;}
-.ceLibGrid{display:grid;grid-template-columns:repeat(auto-fill,84px);gap:6px;align-content:start;}
-.ceLibGrid button{width:84px;height:96px;padding:4px;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:10px;line-height:1.15;}
-.ceLibGrid button span:last-child{max-width:76px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .ceLayer{display:flex;flex-wrap:wrap;gap:3px;align-items:center;}
 .ceLayer .ceLayerName{flex:1;text-align:left;min-width:70px;}
 @media(max-width:900px){
 .ceBody{grid-template-columns:1fr;grid-template-rows:minmax(220px,42vh) minmax(220px,1fr) minmax(120px,32vh);}
 .ceLeft,.ceRight{max-height:none;overflow:auto;}
+.ceLibMain{grid-template-columns:1fr;}
+.ceLibPreview{max-height:200px;}
 }

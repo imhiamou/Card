@@ -17,14 +17,19 @@ const ARROW_SRC="assets/carts/arrow_up.png";
 const ARROW_W=64;
 const ARROW_H=128;
 const CARTS=[
-{id:"cart",name:"Cart",image:"assets/carts/carts/cart.png",sound:"assets/carts/carts/cart.mp3"},
-{id:"barn",name:"Barn",image:"assets/carts/carts/barn_cart.png",sound:"assets/carts/carts/barn.mp3"},
-{id:"mine",name:"Mine",image:"assets/carts/carts/mine_cart.png",sound:"assets/carts/carts/mine.mp3"},
-{id:"princess",name:"Princess",image:"assets/carts/carts/princess_cart.png",sound:"assets/carts/carts/castle.mp3"},
-{id:"sawmill",name:"Sawmill",image:"assets/carts/carts/sawmill_cart.png",sound:"assets/carts/carts/sawmill.mp3"},
-{id:"tavern",name:"Tavern",image:"assets/carts/carts/tavern_cart.png",sound:"assets/carts/carts/tavern.mp3"},
-{id:"windmill",name:"Windmill",image:"assets/carts/carts/windmill_cart.png",sound:"assets/carts/carts/windmill.mp3"}
+{id:"cart",name:"Cart",image:"assets/carts/carts/cart.png",sound:"assets/carts/carts/cart.mp3",scale:1},
+{id:"barn",name:"Barn",image:"assets/carts/carts/barn_cart.png",sound:"assets/carts/carts/barn.mp3",scale:1},
+{id:"mine",name:"Mine",image:"assets/carts/carts/mine_cart.png",sound:"assets/carts/carts/mine.mp3",scale:1},
+{id:"princess",name:"Princess",image:"assets/carts/carts/princess_cart.png",sound:"assets/carts/carts/castle.mp3",scale:1},
+{id:"sawmill",name:"Sawmill",image:"assets/carts/carts/sawmill_cart.png",sound:"assets/carts/carts/sawmill.mp3",scale:1},
+{id:"tavern",name:"Tavern",image:"assets/carts/carts/tavern_cart.png",sound:"assets/carts/carts/tavern.mp3",scale:1},
+{id:"windmill",name:"Windmill",image:"assets/carts/carts/windmill_cart.png",sound:"assets/carts/carts/windmill.mp3",scale:1}
 ];
+const CART_PREFS_KEY="carts.editor.v1";
+const CART_ROTATION=Math.PI;
+const CART_DRAW=56;
+const CART_SCALE_MIN=0.5;
+const CART_SCALE_MAX=2;
 const LEGACY_LAYERS=[
 {id:"ground",name:"Ground",kind:"tile"},
 {id:"roads",name:"Road",kind:"tile",role:"road"},
@@ -414,6 +419,118 @@ function cartById(id){
 return CARTS.filter(function(cart){return cart.id===id;})[0]||null;
 }
 
+let memoryPrefs=null;
+function clampScale(value){
+const n=Number(value);
+if(!Number.isFinite(n))return 1;
+const rounded=Math.round(n*100)/100;
+return Math.max(CART_SCALE_MIN,Math.min(CART_SCALE_MAX,rounded));
+}
+function emptyPrefs(){
+return {cartScale:1,cartScales:{},favorites:[]};
+}
+function syncRegistryScales(){
+if(!memoryPrefs)return;
+CARTS.forEach(function(cart){
+const custom=memoryPrefs.cartScales[cart.id];
+cart.scale=custom==null?memoryPrefs.cartScale:custom;
+});
+}
+function readPrefs(){
+if(memoryPrefs)return memoryPrefs;
+memoryPrefs=emptyPrefs();
+let raw=null;
+try{
+if(typeof localStorage!=="undefined")raw=localStorage.getItem(CART_PREFS_KEY);
+}catch(err){}
+if(raw){
+try{
+const parsed=JSON.parse(raw);
+if(parsed&&typeof parsed==="object"){
+memoryPrefs.cartScale=clampScale(parsed.cartScale);
+if(parsed.cartScales&&typeof parsed.cartScales==="object"){
+Object.keys(parsed.cartScales).forEach(function(id){
+if(cartById(id))memoryPrefs.cartScales[id]=clampScale(parsed.cartScales[id]);
+});
+}
+if(Array.isArray(parsed.favorites)){
+const seen={};
+parsed.favorites.forEach(function(id){
+const key=typeof id==="string"?id.slice(0,400):"";
+if(!key||seen[key])return;
+seen[key]=true;
+memoryPrefs.favorites.push(key);
+});
+}
+}
+}catch(err){}
+}
+syncRegistryScales();
+return memoryPrefs;
+}
+function writePrefs(){
+if(!memoryPrefs)return;
+try{
+if(typeof localStorage!=="undefined")localStorage.setItem(CART_PREFS_KEY,JSON.stringify(memoryPrefs));
+}catch(err){}
+}
+function cartVisualScale(id){
+const prefs=readPrefs();
+if(id&&prefs.cartScales[id]!=null)return prefs.cartScales[id];
+return prefs.cartScale;
+}
+function cartScaleIsCustom(id){
+const prefs=readPrefs();
+return !!(id&&Object.prototype.hasOwnProperty.call(prefs.cartScales,id));
+}
+function defaultCartScale(){
+return readPrefs().cartScale;
+}
+function setCartScale(id,scale){
+if(!cartById(id))return;
+const prefs=readPrefs();
+prefs.cartScales[id]=clampScale(scale);
+syncRegistryScales();
+writePrefs();
+}
+function setDefaultCartScale(scale){
+const prefs=readPrefs();
+prefs.cartScale=clampScale(scale);
+syncRegistryScales();
+writePrefs();
+}
+function clearCartScale(id){
+const prefs=readPrefs();
+if(prefs.cartScales)delete prefs.cartScales[id];
+syncRegistryScales();
+writePrefs();
+}
+function cartSpriteTransform(id){
+return {rotation:CART_ROTATION,scale:cartVisualScale(id),base:CART_DRAW};
+}
+function favoriteKey(id){
+return typeof id==="string"?id.slice(0,400):"";
+}
+function isFavorite(id){
+const key=favoriteKey(id);
+return !!key&&readPrefs().favorites.indexOf(key)>=0;
+}
+function toggleFavorite(id){
+const key=favoriteKey(id);
+if(!key)return false;
+const prefs=readPrefs();
+const index=prefs.favorites.indexOf(key);
+if(index>=0)prefs.favorites.splice(index,1);
+else{
+if(prefs.favorites.length<4000)prefs.favorites.push(key);
+}
+writePrefs();
+return prefs.favorites.indexOf(key)>=0;
+}
+function favoriteIds(){
+return readPrefs().favorites.slice();
+}
+
 function parseSprite(ref){
 const text=String(ref||"");
 const pipe=text.lastIndexOf("|");
@@ -690,19 +807,21 @@ visual:cleanVisual(dest.visual)
 function cleanStyle(style){
 if(!style||typeof style.src!=="string"||!style.src)return null;
 const out={src:style.src.slice(0,400)};
-if(typeof style.assetId==="string"&&style.assetId)out.assetId=style.assetId.slice(0,160);
+if(typeof style.assetId==="string"&&style.assetId)out.assetId=style.assetId.slice(0,400);
 return out;
 }
 
 function cleanVisual(visual){
 if(!visual||typeof visual.src!=="string"||!visual.src)return null;
-return {
+const out={
 src:visual.src.slice(0,400),
 offsetX:clamp(Number(visual.offsetX)||0,-2000,2000),
 offsetY:clamp(Number(visual.offsetY)||0,-2000,2000),
 scale:clamp(Number(visual.scale)||1,0.1,8),
 rotation:clamp(Number(visual.rotation)||0,-360,360)
 };
+if(typeof visual.assetId==="string"&&visual.assetId)out.assetId=visual.assetId.slice(0,400);
+return out;
 }
 
 function cleanOrder(order){
@@ -921,7 +1040,20 @@ ARROW_SRC:ARROW_SRC,
 ARROW_W:ARROW_W,
 ARROW_H:ARROW_H,
 CARTS:CARTS,
+CART_PREFS_KEY:CART_PREFS_KEY,
+CART_ROTATION:CART_ROTATION,
+CART_DRAW:CART_DRAW,
 cartById:cartById,
+cartVisualScale:cartVisualScale,
+cartScaleIsCustom:cartScaleIsCustom,
+defaultCartScale:defaultCartScale,
+setCartScale:setCartScale,
+setDefaultCartScale:setDefaultCartScale,
+clearCartScale:clearCartScale,
+cartSpriteTransform:cartSpriteTransform,
+isFavorite:isFavorite,
+toggleFavorite:toggleFavorite,
+favoriteIds:favoriteIds,
 parseSprite:parseSprite,
 spriteRef:spriteRef,
 addLayer:addLayer,

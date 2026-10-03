@@ -478,6 +478,14 @@ wrap.appendChild(stylePicker("road",(picked&&picked.src)||(path.visualStyle&&pat
 roadChoice={pathId:path.id,src:CM.spriteRef(asset),id:asset.id||asset.src,name:asset.name||""};
 renderSide();
 setStatus("Chosen "+(asset.name||"tile")+". Click Apply.");
+},function(asset){
+const road=(map.layerRecords||[]).filter(function(record){return record.role==="road"||record.id==="roads";})[0];
+if(road&&road.locked){setStatus("Road layer is locked");return;}
+const src=CM.spriteRef(asset);
+const assetId=asset.id||src;
+mutate(function(){path.visualStyle={src:src,assetId:assetId};});
+roadChoice={pathId:path.id,src:src,id:assetId,name:asset.name||""};
+setStatus("Road style applied to "+path.id);
 }));
 wrap.appendChild(button("Apply",null,function(){
 if(roadChoice.pathId!==path.id||!roadChoice.src){setStatus("Choose a road tile first");return;}
@@ -544,6 +552,7 @@ return out;
 function visualFrom(asset,previous){
 return {
 src:CM.spriteRef(asset),
+assetId:asset&&asset.id||"",
 offsetX:previous&&previous.offsetX||0,
 offsetY:previous&&previous.offsetY||0,
 scale:previous&&previous.scale||1,
@@ -561,7 +570,7 @@ if(cat.indexOf("tree")>=0||cat.indexOf("plant")>=0)return "nature";
 if(cat.indexOf("character")>=0||cat.indexOf("animal")>=0)return "character";
 return asset.kind==="object"?"decoration":"tile";
 }
-function stylePicker(context,current,onPick){
+function stylePicker(context,current,onPick,onLibrary){
 const wrap=document.createElement("div");
 const match=assets.filter(function(asset){return (asset.ref||asset.src)===current||asset.src===current;})[0];
 if(match)wrap.appendChild(thumb(match,48));
@@ -578,20 +587,73 @@ node.addEventListener("click",function(){onPick(asset);});
 grid.appendChild(node);
 });
 wrap.appendChild(grid);
-wrap.appendChild(button("Choose",null,function(){openLibrary(context,onPick);}));
+wrap.appendChild(button("Choose",{"data-library":context},function(){openLibrary(context,onLibrary||onPick);}));
+return wrap;
+}
+function cartFrame(cart){
+const frame=document.createElement("div");
+frame.className="ceCartFrame";
+const img=document.createElement("img");
+img.className="cePreview ceCartSpin";
+img.alt=cart.name;
+img.src=cart.image;
+frame.appendChild(img);
+function fit(){
+img.style.transform="rotate(180deg) scale("+CM.cartVisualScale(cart.id)+")";
+}
+fit();
+frame.fit=fit;
+return frame;
+}
+function sizeSlider(label,value,onInput){
+const wrap=document.createElement("label");
+wrap.className="ceField";
+const title=document.createElement("span");
+title.textContent=label;
+const row=document.createElement("span");
+row.className="ceSizeRow";
+const range=document.createElement("input");
+range.type="range";
+range.min="50";
+range.max="200";
+range.step="5";
+range.value=String(Math.round(value*100));
+const pct=document.createElement("span");
+pct.className="ceSizePct";
+pct.textContent=Math.round(value*100)+"%";
+range.addEventListener("input",function(){
+onInput(Number(range.value)/100);
+pct.textContent=range.value+"%";
+});
+row.appendChild(range);
+row.appendChild(pct);
+wrap.appendChild(title);
+wrap.appendChild(row);
 return wrap;
 }
 function cartPicker(dest){
 const wrap=document.createElement("div");
 const current=CM.cartById(dest.acceptedCart);
 wrap.appendChild(el("<p class='ceEmpty'>"+(current?current.name:"Select a cart")+"</p>"));
+let frame=null;
 if(current){
-const preview=document.createElement("img");
-preview.className="cePreview";
-preview.alt=current.name;
-preview.src=current.image;
-wrap.appendChild(preview);
+frame=cartFrame(current);
+wrap.appendChild(frame);
+wrap.appendChild(sizeSlider("Cart Size",CM.cartVisualScale(current.id),function(scale){
+CM.setCartScale(current.id,scale);
+if(frame&&frame.fit)frame.fit();
+}));
+if(CM.cartScaleIsCustom(current.id)){
+wrap.appendChild(button("Use default size",null,function(){
+CM.clearCartScale(current.id);
+renderSide();
+}));
 }
+}
+wrap.appendChild(sizeSlider("Default cart size",CM.defaultCartScale(),function(scale){
+CM.setDefaultCartScale(scale);
+if(current&&!CM.cartScaleIsCustom(current.id)&&frame&&frame.fit)frame.fit();
+}));
 const grid=document.createElement("div");
 grid.className="ceCarts";
 CM.CARTS.forEach(function(cart){
@@ -608,6 +670,12 @@ node.addEventListener("click",function(){mutate(function(){dest.acceptedCart=car
 grid.appendChild(node);
 });
 wrap.appendChild(grid);
+wrap.appendChild(button("Choose",{"data-library":"cart"},function(){
+openLibrary("cart",function(asset){
+if(!asset.cartId){setStatus("That sprite is not a cart");return;}
+mutate(function(){dest.acceptedCart=asset.cartId;});
+});
+}));
 return wrap;
 }
 
@@ -757,72 +825,283 @@ node.style.backgroundPosition=(-part.rect.x*scale)+"px "+(-part.rect.y*scale)+"p
 node.style.backgroundSize=((asset.sheetWidth||part.rect.w)*scale)+"px "+((asset.sheetHeight||part.rect.h)*scale)+"px";
 return node;
 }
+const LIBRARY_FILTERS=[
+{id:"all",label:"ALL"},
+{id:"favorites",label:"FAVORITES"},
+{id:"tiles",label:"TILES"},
+{id:"roads",label:"ROADS"},
+{id:"buildings",label:"BUILDINGS"},
+{id:"nature",label:"NATURE"},
+{id:"decorations",label:"DECORATIONS"},
+{id:"objects",label:"OBJECTS"},
+{id:"carts",label:"CARTS"}
+];
+function libraryFilterFor(context){
+if(context==="road")return "roads";
+if(context==="building")return "buildings";
+if(context==="cart")return "carts";
+if(context==="object")return "objects";
+if(context==="tile")return "tiles";
+return "all";
+}
+function libraryGroup(asset){
+if(!asset)return "objects";
+if(asset.role==="cart"||asset.kind==="cart")return "carts";
+const role=assetRole(asset);
+if(role==="road")return "roads";
+if(role==="building")return "buildings";
+if(role==="nature")return "nature";
+if(role==="decoration")return "decorations";
+if(role==="character"||asset.kind==="object")return "objects";
+return "tiles";
+}
+function cartLibraryAssets(){
+return CM.CARTS.map(function(cart){
+return {
+id:"carts-"+cart.id,
+name:cart.name,
+category:"Carts",
+role:"cart",
+kind:"cart",
+src:cart.image,
+ref:cart.image,
+cartId:cart.id,
+sound:cart.sound,
+tags:["cart",cart.id,cart.name]
+};
+});
+}
+function masterLibrary(){
+const list=cartLibraryAssets();
+assets.forEach(function(asset){
+if(asset.kind==="reference"||assetRole(asset)==="reference")return;
+list.push(asset);
+});
+return list;
+}
+function assetHay(asset){
+const tags=Array.isArray(asset.tags)?asset.tags.join(" "):"";
+return [asset.name,asset.category,asset.id,asset.sheet,asset.role,asset.kind,asset.cartId,tags].join(" ").toLowerCase();
+}
+function libraryMatches(asset,filter,query){
+if(filter==="favorites"){
+if(!CM.isFavorite(asset.id))return false;
+}else if(filter&&filter!=="all"&&libraryGroup(asset)!==filter)return false;
+if(!query)return true;
+return assetHay(asset).indexOf(query)!==-1;
+}
 function openLibrary(context,onPick){
-libraryContext=context||"tile";
-if(assetCategory!=="all"&&categoriesFor(libraryContext).indexOf(assetCategory)<0)assetCategory="all";
+openSpriteLibrary({context:context||"tile",initialFilter:libraryFilterFor(context),onPick:onPick});
+}
+function openSpriteLibrary(options){
+const opts=options||{};
+const onPick=opts.onPick||function(){};
+libraryContext=opts.context||"tile";
+let filter=opts.initialFilter||libraryFilterFor(libraryContext);
+let query="";
+let hoverAsset=null;
+let list=[];
 const root=document.createElement("div");
 root.className="ceLibrary";
-function paint(){
-root.innerHTML="";
+root.setAttribute("role","dialog");
+const head=document.createElement("div");
+head.className="ceLibHead";
 const title=document.createElement("h3");
-title.textContent=librarySheet?"Spritesheet":"Tile / asset library";
-root.appendChild(title);
+title.textContent="SPRITE LIBRARY";
+head.appendChild(title);
+head.appendChild(button("×",{"aria-label":"Close"},closeDialog));
+root.appendChild(head);
 const search=document.createElement("input");
-search.type="text";
-search.placeholder="Search";
-search.value=assetQuery;
-search.addEventListener("input",function(){assetQuery=search.value;paint();});
+search.type="search";
+search.className="ceLibSearch";
+search.placeholder="Search name, category, or tag";
+search.addEventListener("input",function(){
+query=search.value.trim().toLowerCase();
+scroll.scrollTop=0;
+refreshList();
+});
+search.addEventListener("keydown",function(event){
+if(event.key==="Escape")closeDialog();
+});
 root.appendChild(search);
-const body=document.createElement("div");
-body.className="ceLibraryBody";
-const cats=document.createElement("div");
-cats.className="ceLibCats";
-["all"].concat(categoriesFor(libraryContext)).forEach(function(name){
-const node=button(name,null,function(){assetCategory=name;librarySheet="";paint();});
-if(name===assetCategory&&!librarySheet)node.classList.add("active");
-cats.appendChild(node);
+const filters=document.createElement("div");
+filters.className="ceLibFilters";
+LIBRARY_FILTERS.forEach(function(item){
+const node=button(item.label,{"data-filter":item.id},function(){
+filter=item.id;
+scroll.scrollTop=0;
+markFilters();
+refreshList();
 });
-body.appendChild(cats);
-const grid=document.createElement("div");
-grid.className="ceLibGrid";
-const list=libraryAssets(libraryContext).slice(0,600);
-if(!list.length)grid.appendChild(el("<p class='ceEmpty'>No matching pieces.</p>"));
-list.forEach(function(asset){
-const node=document.createElement("button");
-node.type="button";
-node.title=asset.name;
-if(selectedAsset&&CM.spriteRef(selectedAsset)===CM.spriteRef(asset))node.classList.add("active");
-node.appendChild(thumb(asset,48));
-const caption=document.createElement("span");
-caption.textContent=asset.name;
-node.appendChild(caption);
-node.addEventListener("click",function(){
-selectedAsset=asset;
-if(asset.sheet)librarySheet=asset.sheet;
-onPick(asset);
-if(!asset.sheet)closeDialog();
-else paint();
+filters.appendChild(node);
 });
-grid.appendChild(node);
-});
-body.appendChild(grid);
-root.appendChild(body);
+root.appendChild(filters);
+const main=document.createElement("div");
+main.className="ceLibMain";
+const scroll=document.createElement("div");
+scroll.className="ceLibScroll ceLibGrid";
+const canvas=document.createElement("div");
+canvas.className="ceLibCanvas";
+scroll.appendChild(canvas);
+const preview=document.createElement("div");
+preview.className="ceLibPreview";
+main.appendChild(scroll);
+main.appendChild(preview);
+root.appendChild(main);
+const count=document.createElement("p");
+count.className="ceEmpty ceLibCount";
+root.appendChild(count);
 const row=document.createElement("div");
 row.className="ceRow";
-if(librarySheet){
-row.appendChild(button("Whole library",null,function(){librarySheet="";paint();}));
-row.appendChild(button("Use selected sprite",null,function(){if(selectedAsset){onPick(selectedAsset);closeDialog();}}));
-}
 row.appendChild(button("Close",null,closeDialog));
 root.appendChild(row);
-const shown=libraryAssets(libraryContext).length;
-root.appendChild(el("<p class='ceEmpty'>"+(librarySheet?"Pieces from this sheet. ":"")+(shown>600?"Showing 600 of "+shown+".":shown+" pieces.")+"</p>"));
+function markFilters(){
+[...filters.children].forEach(function(node){
+node.classList.toggle("active",node.getAttribute("data-filter")===filter);
+});
 }
-paint();
+function useAsset(asset){
+if(libraryContext==="cart"&&!asset.cartId){
+setStatus("That sprite is not a cart");
+return;
+}
+selectedAsset=asset;
+onPick(asset);
+closeDialog();
+}
+function paintPreview(){
+preview.innerHTML="";
+if(filter==="carts"||(hoverAsset&&hoverAsset.kind==="cart")){
+preview.appendChild(sizeSlider("Default cart size",CM.defaultCartScale(),function(scale){
+CM.setDefaultCartScale(scale);
+const art=preview.querySelector(".cePreviewArt");
+if(art&&hoverAsset&&hoverAsset.cartId&&!CM.cartScaleIsCustom(hoverAsset.cartId)){
+art.style.transform="rotate(180deg) scale("+CM.cartVisualScale(hoverAsset.cartId)+")";
+}
+}));
+}
+if(!hoverAsset){
+preview.appendChild(el("<p class='ceEmpty'>Hover a sprite to preview it.</p>"));
+return;
+}
+const asset=hoverAsset;
+const big=thumb(asset,160);
+big.classList.add("cePreviewArt");
+if(asset.kind==="cart"){
+big.classList.add("ceCartSpin");
+big.style.transform="rotate(180deg) scale("+CM.cartVisualScale(asset.cartId)+")";
+big.style.transformOrigin="center";
+}
+preview.appendChild(big);
+const name=document.createElement("p");
+name.className="ceLibName";
+name.textContent=asset.name||asset.id;
+preview.appendChild(name);
+preview.appendChild(line("Category: "+(asset.category||libraryGroup(asset))));
+if(asset.sheet)preview.appendChild(line("Sheet: "+asset.sheet));
+preview.appendChild(line(CM.isFavorite(asset.id)?"Favorite":"Not a favorite"));
+if(asset.kind==="cart"){
+preview.appendChild(sizeSlider("Cart Size",CM.cartVisualScale(asset.cartId),function(scale){
+CM.setCartScale(asset.cartId,scale);
+big.style.transform="rotate(180deg) scale("+CM.cartVisualScale(asset.cartId)+")";
+}));
+if(CM.cartScaleIsCustom(asset.cartId)){
+preview.appendChild(button("Use default size",null,function(){
+CM.clearCartScale(asset.cartId);
+paintPreview();
+}));
+}
+}
+}
+function line(text){
+const node=document.createElement("p");
+node.className="ceEmpty";
+node.textContent=text;
+return node;
+}
+function paintCells(){
+const width=scroll.clientWidth||720;
+const cols=Math.max(4,Math.min(8,Math.floor(width/108)));
+const cellW=Math.floor(width/cols);
+const cellH=124;
+const rows=Math.ceil(list.length/cols)||0;
+canvas.style.height=(rows*cellH)+"px";
+canvas.innerHTML="";
+if(!list.length){
+canvas.style.height="80px";
+canvas.appendChild(el("<p class='ceEmpty'>"+(filter==="favorites"?"No favorites yet.":"No matching sprites.")+"</p>"));
+return;
+}
+const view=scroll.clientHeight||480;
+const first=Math.max(0,Math.floor(scroll.scrollTop/cellH)-1);
+const last=Math.min(rows-1,Math.ceil((scroll.scrollTop+view)/cellH)+1);
+const frag=document.createDocumentFragment();
+for(let r=first;r<=last;r++){
+for(let c=0;c<cols;c++){
+const index=r*cols+c;
+if(index>=list.length)break;
+const asset=list[index];
+const cell=document.createElement("div");
+cell.className="ceLibCell";
+cell.style.left=(c*cellW)+"px";
+cell.style.top=(r*cellH)+"px";
+cell.style.width=(cellW-8)+"px";
+const star=document.createElement("button");
+star.type="button";
+star.className="ceLibStar"+(CM.isFavorite(asset.id)?" on":"");
+star.textContent=CM.isFavorite(asset.id)?"★":"☆";
+star.title=CM.isFavorite(asset.id)?"Remove favorite":"Favorite";
+star.addEventListener("click",function(event){
+event.preventDefault();
+event.stopPropagation();
+const on=CM.toggleFavorite(asset.id);
+star.textContent=on?"★":"☆";
+star.classList.toggle("on",on);
+star.title=on?"Remove favorite":"Favorite";
+if(hoverAsset&&hoverAsset.id===asset.id)paintPreview();
+if(filter==="favorites"&&!on)refreshList();
+});
+const use=document.createElement("button");
+use.type="button";
+use.className="ceLibUse";
+use.title=asset.name||asset.id;
+use.setAttribute("data-asset",asset.id);
+const art=thumb(asset,64);
+if(asset.kind==="cart")art.classList.add("ceCartSpin");
+use.appendChild(art);
+const caption=document.createElement("span");
+caption.textContent=asset.name||asset.id;
+use.appendChild(caption);
+use.addEventListener("mouseenter",function(){
+hoverAsset=asset;
+paintPreview();
+});
+use.addEventListener("click",function(){useAsset(asset);});
+cell.appendChild(star);
+cell.appendChild(use);
+frag.appendChild(cell);
+}
+}
+canvas.appendChild(frag);
+}
+function refreshList(){
+const source=masterLibrary();
+list=source.filter(function(asset){return libraryMatches(asset,filter,query);});
+count.textContent=list.length+(list.length===1?" sprite":" sprites");
+paintCells();
+}
+scroll.addEventListener("scroll",paintCells);
+if(window.ResizeObserver)new ResizeObserver(paintCells).observe(scroll);
+markFilters();
 const dialog=document.getElementById("ceDialog");
 dialog.innerHTML="";
 dialog.appendChild(root);
 dialog.classList.remove("hidden");
+requestAnimationFrame(function(){
+refreshList();
+paintPreview();
+search.focus();
+});
 }
 
 function setStatus(text){
