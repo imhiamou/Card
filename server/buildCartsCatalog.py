@@ -6,6 +6,7 @@ described with rectangles. Reference sheets, palettes, and the cart
 registry folder are not offered as map tiles.
 """
 
+import hashlib
 import json
 import os
 from PIL import Image
@@ -35,7 +36,7 @@ def skip_file(rel):
     if name in SKIP_NAME:
         return True
     hay = rel.lower()
-    for word in ("bitmask", "palette", "readme", "reference", "license"):
+    for word in ("bitmask", "palette", "pallet", "readme", "read_me", "reference", "license", "aseprite"):
         if word in hay:
             return True
     return False
@@ -135,34 +136,56 @@ def classify(rel, rect):
     name = os.path.basename(low)
     width = rect[2] if rect else 0
     height = rect[3] if rect else 0
-    big = width > 48 or height > 48
-    if "village/" in low or "house" in name or "door" in name or "bridge" in name:
-        return "Structures/Buildings", "building", "object"
+    small = bool(rect) and width <= 32 and height <= 32
+    if "chicken" in name or "cow" in name or "farm animals" in low or name.startswith("egg"):
+        return "Characters/Animals", "character", "object"
+    if "/characters/" in low or "/character/" in low or name.startswith("idle") or name.startswith("walk"):
+        if "tool" in name:
+            return "Decorations/Props", "decoration", "object"
+        return "Characters/Player", "character", "object"
+    if "chest" in name:
+        return "Decorations/Chests", "decoration", "object"
+    if "furniture" in name:
+        return "Decorations/Furniture", "decoration", "object"
+    if "fence" in low:
+        return "Decorations/Fences", "decoration", "object" if not small else "tile"
+    if "bridge" in name:
+        return "Structures/Bridges", "building", "tile" if small else "object"
+    if "door" in name:
+        return "Structures/Doors", "tile", "tile"
+    if "interior" in name:
+        return "Decorations/Furniture", "decoration", "object" if not small else "tile"
+    if "house" in name or "roof" in name or "wall" in name or "village/" in low:
+        if small or (rect is None and "tileset" in low):
+            return "Structures/Buildings", "tile", "tile"
+        if rect is None:
+            return "Structures/Buildings", "building", "object"
+        return "Structures/Buildings", "building" if not small else "tile", "object" if not small else "tile"
+    if "tree" in low or "maple" in name:
+        return "Nature/Trees", "nature", "object"
+    if "plant" in name or "crop" in name or "grass biom" in name:
+        return "Nature/Plants", "nature", "object" if not small else "tile"
     if "falling-leaf" in low or "frames" in name:
         return "Decorations/Props", "decoration", "object"
-    if "fence" in low:
-        return "Decorations/Fences", "decoration", "object" if big or rect else "tile"
-    if "tree" in low:
-        return "Nature/Trees", "nature", "object"
-    if "plant" in low or "crop" in low or "grass biome" in low:
-        return "Nature/Plants", "nature", "object" if big else "tile"
-    if "character" in low or "chicken" in name or "cow" in name or name.startswith("idle") or name.startswith("walk"):
-        return "Characters/Animals", "character", "object"
     if "water" in name:
         return "Tiles/Water", "tile", "tile"
     if "dirt" in name or "till" in name:
         return "Tiles/Dirt", "tile", "tile"
     if "path" in name or "road" in name or "/transitions/" in low:
         return "Tiles/Paths", "road", "tile"
-    if "grass" in name and "tileset" not in low and rect is None:
+    if "grass" in name:
         return "Tiles/Grass", "tile", "tile"
-    if "vegetation" in low or "object" in low:
-        return "Nature/Plants" if not big else "Decorations/Props", "nature" if "vegetation" in low else "decoration", "object"
-    if rect and width <= 32 and height <= 32:
+    if "hill" in name:
+        return "Tiles/Terrain", "tile", "tile"
+    if "tool" in name or "material" in name or "meterial" in name:
+        return "Decorations/Props", "decoration", "object"
+    if rect and width <= 32 and height <= 32 and "tileset" in low:
         return "Tiles/Terrain", "tile", "tile"
     if "tileset" in low:
         return "Tiles/Terrain", "tile", "tile"
-    return "Decorations/Props", "decoration", "object" if big else "tile"
+    if small:
+        return "Decorations/Props", "decoration", "tile"
+    return "Decorations/Props", "decoration", "object"
 
 
 def pretty(rel, suffix):
@@ -199,7 +222,12 @@ def pieces(path, rel):
     largest = max((bw * bh for _, _, bw, bh in boxes), default=0)
     touching = largest > area * 0.4
     low = rel.lower()
-    tilesheet = "/tilesets/" in low and "fence" not in low and w % 16 == 0 and h % 16 == 0
+    name = os.path.basename(low)
+    tilesheet = ("/tilesets/" in low or "/tileset/" in low) and w % 16 == 0 and h % 16 == 0
+    if not tilesheet and ("path" in name or "road" in name) and max(w, h) <= 96 and w % 16 == 0 and h % 16 == 0:
+        cells = grid_cells(im, 16)
+        if len(cells) >= 4 and len(boxes) * 2 < len(cells):
+            tilesheet = True
     if tilesheet:
         cells = grid_cells(im, 16)
         if len(cells) >= 2:
@@ -214,6 +242,7 @@ def pieces(path, rel):
 
 def main():
     assets = []
+    seen_twins = set()
     for dirpath, dirnames, filenames in os.walk(BASE):
         dirnames[:] = [name for name in dirnames if name not in SKIP_DIR and not name.startswith(".")]
         for name in sorted(filenames):
@@ -223,6 +252,12 @@ def main():
             rel = rel_of(path)
             if skip_file(rel):
                 continue
+            stem = os.path.splitext(name)[0].replace("_", " ").replace("-", " ").lower()
+            digest = hashlib.sha256(open(path, "rb").read()).hexdigest()
+            twin = (os.path.dirname(rel).lower(), stem, digest)
+            if twin in seen_twins:
+                continue
+            seen_twins.add(twin)
             assets.extend(pieces(path, rel))
     assets.sort(key=lambda item: (item["category"], item["name"], item["id"]))
     payload = {"version": 2, "assets": assets}

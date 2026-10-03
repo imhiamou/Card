@@ -568,7 +568,7 @@ if(match)wrap.appendChild(thumb(match,48));
 else if(current)wrap.appendChild(el("<p class='ceEmpty'>Using a saved image.</p>"));
 const grid=document.createElement("div");
 grid.className="cePick";
-assets.filter(function(asset){return assetFits(asset,context);}).slice(0,36).forEach(function(asset){
+ranked(assets.filter(function(asset){return assetFits(asset,context);}),36).forEach(function(asset){
 const node=document.createElement("button");
 node.type="button";
 node.title=asset.name;
@@ -643,7 +643,7 @@ openLibrary(context,function(asset){selectedAsset=asset;renderPalette();setStatu
 }));
 const grid=document.createElement("div");
 grid.className="ceGrid";
-libraryAssets(context).slice(0,80).forEach(function(asset){
+quickList(libraryAssets(context),96).forEach(function(asset){
 const node=document.createElement("button");
 node.type="button";
 node.title=(asset.category||"")+" / "+asset.name;
@@ -677,6 +677,33 @@ if(context==="building")return role==="building";
 if(context==="object")return role==="building"||role==="nature"||role==="decoration"||role==="character"||asset.kind==="object";
 if(context==="tile")return role==="tile"||role==="road"||role==="ground";
 return true;
+}
+function ranked(list,limit){
+return list.slice().sort(function(a,b){
+const sheet=(a.sheet?1:0)-(b.sheet?1:0);
+if(sheet)return sheet;
+return String(a.name).localeCompare(String(b.name));
+}).slice(0,limit);
+}
+function quickList(list,limit){
+const groups={};
+list.forEach(function(asset){
+const key=asset.category||"Other";
+if(!groups[key])groups[key]=[];
+groups[key].push(asset);
+});
+const out=[];
+Object.keys(groups).sort().forEach(function(key){
+const items=groups[key].slice().sort(function(a,b){
+const sheet=(a.sheet?1:0)-(b.sheet?1:0);
+if(sheet)return sheet;
+return String(a.name).localeCompare(String(b.name));
+});
+items.slice(0,8).forEach(function(asset){
+if(out.length<limit)out.push(asset);
+});
+});
+return out;
 }
 function libraryAssets(context){
 return assets.filter(function(asset){
