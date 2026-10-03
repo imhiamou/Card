@@ -76,6 +76,7 @@ async function listMaps() {
     const rows = await persist.loadAll();
     return {
       ok: true,
+      persisted: "postgres",
       maps: rows
         .map((row) => row.document)
         .filter((doc) => doc && doc.type === "carts" && (!doc.game || doc.game === "carts"))
@@ -110,11 +111,23 @@ async function saveMap(body) {
   if (!ID_PATTERN.test(map.id)) map.id = createId();
   map.updated = Date.now();
   if (tooBig(map)) return { ok: false, error: "Carts map is too large" };
+  console.log("[carts-maps] save requested");
+  console.log("[carts-maps] map id: " + map.id);
+  console.log("[carts-maps] map name: " + map.name);
   writeCache(map);
   if (persist.enabled()) {
-    await persist.save(map);
+    console.log("[carts-maps] persistence: postgres");
+    try {
+      await persist.save(map);
+    } catch (err) {
+      console.error("[carts-maps] database write failed for map id: " + map.id);
+      console.error(persist.safeMessage(err));
+      throw err;
+    }
+    console.log("[carts-maps] database write confirmed for map id: " + map.id);
     return { ok: true, map: map, persisted: "postgres" };
   }
+  console.log("[carts-maps] persistence: cache");
   return {
     ok: true,
     map: map,

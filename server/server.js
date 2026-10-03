@@ -99,6 +99,10 @@ app.options("/api/carts-maps/:id", (req, res) => {
   cartsCors(res);
   res.sendStatus(204);
 });
+app.options("/api/carts-maps/:id/rename", (req, res) => {
+  cartsCors(res);
+  res.sendStatus(204);
+});
 app.get("/api/carts-assets", (req, res) => {
   cartsCors(res);
   res.json(cartsAssets.scan(path.join(__dirname, "..")));
@@ -109,6 +113,7 @@ app.get("/api/carts-maps", async (req, res) => {
     res.json(await cartsMaps.listMaps());
   } catch (err) {
     console.error("[carts-maps] list failed");
+    console.error(cartsMaps.describeError(err));
     res.status(503).json({ ok: false, error: cartsMaps.describeError(err) });
   }
 });
@@ -119,6 +124,7 @@ app.get("/api/carts-maps/:id", async (req, res) => {
     res.status(result.ok ? 200 : 404).json(result);
   } catch (err) {
     console.error("[carts-maps] load failed");
+    console.error(cartsMaps.describeError(err));
     res.status(503).json({ ok: false, error: cartsMaps.describeError(err) });
   }
 });
@@ -130,6 +136,7 @@ app.post("/api/carts-maps", async (req, res) => {
     res.status(result.ok ? 200 : 400).json(result);
   } catch (err) {
     console.error("[carts-maps] save failed");
+    console.error(cartsMaps.describeError(err));
     res.status(503).json({ ok: false, error: cartsMaps.describeError(err) });
   }
 });
@@ -140,6 +147,7 @@ app.post("/api/carts-maps/:id/rename", async (req, res) => {
     res.status(result.ok ? 200 : 404).json(result);
   } catch (err) {
     console.error("[carts-maps] rename failed");
+    console.error(cartsMaps.describeError(err));
     res.status(503).json({ ok: false, error: cartsMaps.describeError(err) });
   }
 });
@@ -150,6 +158,7 @@ app.delete("/api/carts-maps/:id", async (req, res) => {
     res.status(result.ok ? 200 : 404).json(result);
   } catch (err) {
     console.error("[carts-maps] delete failed");
+    console.error(cartsMaps.describeError(err));
     res.status(503).json({ ok: false, error: cartsMaps.describeError(err) });
   }
 });

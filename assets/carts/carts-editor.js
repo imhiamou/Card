@@ -8,6 +8,7 @@ const CM=window.CartsMap;
 if(!CM)return;
 
 const STORAGE_KEY="carts.maps.v1";
+const CARTS_API_BASE="https://cardb-2uys.onrender.com";
 const SKELETON_TOOLS=["select","path","intersection","spawn","destination","connect","delete"];
 const PAINT_TOOLS=["select","pencil","rect","bucket","eraser","eyedropper"];
 const OBJECT_TOOLS=["select","place","rotate","scale","delete"];
@@ -54,6 +55,27 @@ return parsed.maps&&typeof parsed.maps==="object"?parsed.maps:{};
 }
 function writeStore(maps){
 localStorage.setItem(STORAGE_KEY,JSON.stringify({maps:maps}));
+}
+function cartsApi(path){
+return CARTS_API_BASE+path;
+}
+function cacheMap(doc){
+const maps=readStore();
+maps[doc.id]=doc;
+writeStore(maps);
+}
+function uncacheMap(id){
+const maps=readStore();
+delete maps[id];
+writeStore(maps);
+}
+async function serverError(response){
+let message="The server returned "+response.status+".";
+try{
+const body=await response.json();
+if(body&&body.error)message=String(body.error);
+}catch(err){}
+return message;
 }
 
 function el(html){
@@ -2116,10 +2138,9 @@ openDialog([
 ].join(""),function(){
 document.getElementById("ceRenameCancel").onclick=closeDialog;
 document.getElementById("ceRenameOk").onclick=function(){
-map.name=document.getElementById("ceRename").value.slice(0,48)||"Untitled map";
+const name=document.getElementById("ceRename").value.slice(0,48)||"Untitled map";
 closeDialog();
-if(map.id&&map.id!=="builtin")persist(false);
-else renderSide();
+renameOnServer(name);
 };
 });
 }
@@ -2129,13 +2150,9 @@ openDialog("<h3>Delete this map?</h3><p>"+escapeHtml(map.name)+"</p><div class='
 document.getElementById("ceDelCancel").onclick=closeDialog;
 document.getElementById("ceDelOk").onclick=function(){
 const id=map.id;
-const maps=readStore();
-delete maps[id];
-writeStore(maps);
-fetch("/api/carts-maps/"+encodeURIComponent(id),{method:"DELETE"}).catch(function(){});
+const name=map.name;
 closeDialog();
-loadDocument(CM.clone(CM.builtin()));
-setStatus("Map deleted");
+deleteOnServer(id,name);
 };
 });
 }
@@ -2152,52 +2169,122 @@ async function persist(){
 map.updated=Date.now();
 map.type="carts";
 map.version=1;
+if(!map.id||map.id==="builtin"||!/^c[a-f0-9]{12}$/.test(map.id))map.id=newMapId();
 const doc=CM.normalize(map);
 map=doc;
-const maps=readStore();
-maps[doc.id]=doc;
-writeStore(maps);
-let where="this browser";
+const previousId=doc.id;
+cacheMap(doc);
 try{
-const response=await fetch("/api/carts-maps",{
+const response=await fetch(cartsApi("/api/carts-maps"),{
 method:"POST",
 headers:{"Content-Type":"application/json"},
 body:JSON.stringify({map:doc})
 });
-if(response.ok){
-const body=await response.json();
-if(body.map&&body.map.id)map.id=body.map.id;
-where=body.persisted==="postgres"?"the database":"the server cache and this browser";
-if(body.warning)where+=". "+body.warning;
-}else where="this browser. The server did not store it.";
-}catch(err){
-where="this browser";
-}
-setStatus("Saved "+map.name+" in "+where);
+if(!response.ok){
+setStatus("Not saved to the database. "+await serverError(response));
 renderSide();
+return;
+}
+const body=await response.json();
+if(body&&body.ok===true&&body.persisted==="postgres"&&body.map){
+const stored=CM.normalize(body.map);
+if(stored.id&&stored.id!==previousId)uncacheMap(previousId);
+map=stored;
+cacheMap(map);
+setStatus("Saved "+map.name+" to the database");
+renderSide();
+return;
+}
+const detail=body&&(body.error||body.warning);
+setStatus("Not saved to the database."+(detail?" "+detail:" The server did not confirm database storage."));
+}catch(err){
+setStatus("Could not reach the map server. The map is only in this browser.");
+}
+renderSide();
+}
+async function renameOnServer(name){
+if(!map.id||map.id==="builtin"){
+map.name=name;
+renderSide();
+setStatus("Renamed in this browser. Save the map to store it in the database.");
+return;
+}
+try{
+const response=await fetch(cartsApi("/api/carts-maps/"+encodeURIComponent(map.id)+"/rename"),{
+method:"POST",
+headers:{"Content-Type":"application/json"},
+body:JSON.stringify({name:name})
+});
+if(!response.ok){
+setStatus("Rename failed. "+await serverError(response));
+renderSide();
+return;
+}
+const body=await response.json();
+if(!(body&&body.ok===true&&body.persisted==="postgres")){
+const detail=body&&(body.error||body.warning);
+setStatus("Rename was not stored in the database."+(detail?" "+detail:""));
+renderSide();
+return;
+}
+map=body.map?CM.normalize(body.map):map;
+map.name=map.name||name;
+cacheMap(map);
+setStatus("Renamed "+map.name+" in the database");
+}catch(err){
+setStatus("Could not reach the map server. The name was not changed.");
+}
+renderSide();
+}
+async function deleteOnServer(id,name){
+try{
+const response=await fetch(cartsApi("/api/carts-maps/"+encodeURIComponent(id)),{method:"DELETE"});
+if(!response.ok){
+setStatus("Delete failed. "+await serverError(response));
+return;
+}
+const body=await response.json();
+if(!body||body.ok!==true){
+setStatus("Delete failed. "+((body&&body.error)||"The server did not confirm deletion."));
+return;
+}
+}catch(err){
+setStatus("Could not reach the map server. The map was not deleted.");
+return;
+}
+uncacheMap(id);
+loadDocument(CM.clone(CM.builtin()));
+setStatus("Deleted "+name+" from the database");
 }
 
 async function loadDialog(){
 const local=readStore();
 let remote=[];
+let remoteLabel="database";
+let listError="";
 try{
-const response=await fetch("/api/carts-maps");
+const response=await fetch(cartsApi("/api/carts-maps"));
 if(response.ok){
 const body=await response.json();
 remote=body.maps||[];
+remoteLabel=body.persisted==="cache"?"server cache":"database";
+}else listError=await serverError(response);
+}catch(err){
+listError="Could not reach the map server.";
 }
-}catch(err){remote=[];}
 const merged={};
 Object.keys(local).forEach(function(id){merged[id]={id:id,name:local[id].name,updated:local[id].updated||0,source:"browser"};});
 remote.forEach(function(item){
+if(!item||!item.id)return;
 const prev=merged[item.id];
-if(!prev||(item.updated||0)>=prev.updated)merged[item.id]={id:item.id,name:item.name,updated:item.updated||0,source:"server"};
+if(!prev||(item.updated||0)>=(prev.updated||0))merged[item.id]={id:item.id,name:item.name,updated:item.updated||0,source:remoteLabel};
 });
-const ids=Object.keys(merged);
+const ids=Object.keys(merged).sort(function(a,b){return (merged[b].updated||0)-(merged[a].updated||0);});
 const buttons=ids.map(function(id){
 return "<button type='button' data-id='"+id+"'>"+escapeHtml(merged[id].name)+" ("+merged[id].source+")</button>";
 }).join("");
-openDialog("<h3>Load map</h3><div class='ceMapList'>"+(buttons||"<p>No saved Carts maps.</p>")+"</div><div class='ceRow'><button type='button' id='ceLoadCancel'>Cancel</button></div>",function(){
+const notice=listError?"<p class='ceEmpty'>"+escapeHtml(listError)+"</p>":"";
+openDialog("<h3>Load map</h3>"+notice+"<div class='ceMapList'>"+(buttons||"<p>No saved Carts maps.</p>")+"</div><div class='ceRow'><button type='button' id='ceLoadCancel'>Cancel</button></div>",function(){
 const cancel=document.getElementById("ceLoadCancel");
 if(cancel)cancel.onclick=closeDialog;
 document.querySelectorAll(".ceMapList button").forEach(function(node){
@@ -2206,19 +2293,25 @@ node.onclick=function(){loadById(node.dataset.id,local);};
 });
 }
 async function loadById(id,local){
-let doc=local[id];
+let doc=local[id]||null;
+let serverDoc=null;
+let serverProblem="";
 try{
-const response=await fetch("/api/carts-maps/"+encodeURIComponent(id));
+const response=await fetch(cartsApi("/api/carts-maps/"+encodeURIComponent(id)));
 if(response.ok){
 const body=await response.json();
-if(body.map&&(!doc||(body.map.updated||0)>=(doc.updated||0)))doc=body.map;
+if(body&&body.map)serverDoc=body.map;
+}else if(response.status!==404)serverProblem=await serverError(response);
+}catch(err){
+serverProblem="Could not reach the map server.";
 }
-}catch(err){}
-if(!doc){setStatus("Map not found");return;}
+if(serverDoc&&(!doc||(serverDoc.updated||0)>=(doc.updated||0)))doc=serverDoc;
+if(!doc){setStatus(serverProblem||"Map not found");return;}
 if((doc.type&&doc.type!=="carts")||(doc.game&&doc.game!=="carts")){setStatus("That is not a Carts map");return;}
 loadDocument(doc);
+if(serverDoc&&doc===serverDoc)cacheMap(CM.normalize(doc));
 closeDialog();
-setStatus("Loaded "+map.name);
+setStatus(serverProblem?"Loaded "+map.name+" from this browser. "+serverProblem:"Loaded "+map.name);
 }
 
 function loadDocument(doc){
