@@ -40,10 +40,15 @@ return CM.legacyView(doc);
 function graph(){
 return CM.compile(doc);
 }
+function wantedType(dest){
+if(dest.acceptedCart)return dest.acceptedCart;
+return dest.accepts||"";
+}
 function types(){
 const found=[];
 (doc.skeleton.destinations||[]).forEach(function(dest){
-if(dest.accepts&&found.indexOf(dest.accepts)===-1)found.push(dest.accepts);
+const type=wantedType(dest);
+if(type&&found.indexOf(type)===-1)found.push(type);
 });
 if(!found.length)return ["A","B"];
 return found;
@@ -116,8 +121,10 @@ function resolveDestination(id){
 if(!cart||cart.resolved)return;
 cart.resolved=true;
 const dest=CM.byId(doc.skeleton.destinations,id);
-if(dest&&cart.type===dest.accepts)score+=1;
-else lives-=1;
+if(dest&&cart.type===wantedType(dest)){
+score+=1;
+playCartSound(cart.type);
+}else lives-=1;
 cart=null;
 if(lives<=0){
 lives=0;
@@ -179,7 +186,10 @@ if(livesEl)livesEl.textContent="Lives: "+lives;
 if(directionEl)directionEl.textContent="Direction: "+direction;
 if(statusEl){
 if(state==="gameover")statusEl.textContent="Game Over";
-else if(cart)statusEl.textContent="Cart: "+cart.type;
+else if(cart){
+const spec=CM.cartById(cart.type);
+statusEl.textContent="Cart: "+(spec?spec.name:cart.type);
+}
 else statusEl.textContent="Next cart";
 }
 if(editorBtn)editorBtn.classList.toggle("hidden",!fromEditor);
@@ -201,11 +211,12 @@ return !(doc.layerState&&doc.layerState[name]&&doc.layerState[name].visible===fa
 }
 function drawSprite(visual,x,y,maxSize){
 if(!visual||!visual.src)return;
-const img=imageOf(visual.src);
+const part=CM.parseSprite(visual.src);
+const img=imageOf(part.src);
 const scale=visual.scale||1;
-let w=maxSize;
-let h=maxSize;
-if(img&&img.naturalWidth){
+let w=part.rect?part.rect.w:maxSize;
+let h=part.rect?part.rect.h:maxSize;
+if(!part.rect&&img&&img.naturalWidth){
 w=img.naturalWidth;
 h=img.naturalHeight||maxSize;
 const fit=Math.min(1,maxSize/Math.max(w,h));
@@ -214,61 +225,84 @@ w*=fit;h*=fit;
 ctx.save();
 ctx.translate(x+(visual.offsetX||0),y+(visual.offsetY||0));
 ctx.rotate((visual.rotation||0)*Math.PI/180);
-if(img)ctx.drawImage(img,-w*scale/2,-h*scale/2,w*scale,h*scale);
+ctx.imageSmoothingEnabled=false;
+if(img&&part.rect)ctx.drawImage(img,part.rect.x,part.rect.y,part.rect.w,part.rect.h,-w*scale/2,-h*scale/2,w*scale,h*scale);
+else if(img)ctx.drawImage(img,-w*scale/2,-h*scale/2,w*scale,h*scale);
 ctx.restore();
 }
-function drawWorld(){
+function drawSpriteRef(ref,x,y,w,h){
+const part=CM.parseSprite(ref);
+const img=imageOf(part.src);
+ctx.imageSmoothingEnabled=false;
+if(!img)return;
+if(part.rect)ctx.drawImage(img,part.rect.x,part.rect.y,part.rect.w,part.rect.h,x,y,w,h);
+else ctx.drawImage(img,x,y,w,h);
+}
+function drawTileBucket(id){
 const size=(doc.grid&&doc.grid.size)||32;
 const cols=Math.max(1,Math.round((doc.width||size)/size));
 const rows=Math.max(1,Math.round((doc.height||size)/size));
-const order=doc.layerOrder&&doc.layerOrder.length?doc.layerOrder:(CM.DEFAULT_ORDER||[]);
-order.forEach(function(name){
-if(name==="skeleton"||!layerOn(name))return;
-const layer=doc.layers&&doc.layers[name];
-if(layer){
+const layer=doc.layers&&doc.layers[id];
+if(!layer)return;
 Object.keys(layer).forEach(function(key){
 const parts=key.split(",");
 const c=Number(parts[0]);
 const r=Number(parts[1]);
 if(c<0||r<0||c>=cols||r>=rows)return;
-const img=imageOf(layer[key]);
-if(img)ctx.drawImage(img,c*size,r*size,size,size);
+drawSpriteRef(layer[key],c*size,r*size,size,size);
 });
 }
-if(name==="roads"){
+function drawRoadStyles(){
+const size=(doc.grid&&doc.grid.size)||32;
+const cols=Math.max(1,Math.round((doc.width||size)/size));
+const rows=Math.max(1,Math.round((doc.height||size)/size));
 (doc.skeleton.paths||[]).forEach(function(path){
 if(!path.visualStyle||!path.visualStyle.src)return;
-const img=imageOf(path.visualStyle.src);
 CM.roadCells(doc,path).forEach(function(key){
-if(!img)return;
 const parts=key.split(",");
 const c=Number(parts[0]);
 const r=Number(parts[1]);
 if(c<0||r<0||c>=cols||r>=rows)return;
-ctx.drawImage(img,c*size,r*size,size,size);
+drawSpriteRef(path.visualStyle.src,c*size,r*size,size,size);
 });
 });
 }
-if(name==="buildings"){
+function drawBuildingVisuals(){
 (doc.skeleton.destinations||[]).forEach(function(dest){
 if(dest.visual)drawSprite(dest.visual,dest.x,dest.y,128);
 });
 }
-if(name==="objects"){
+function drawObjectLayer(){
 (doc.objects||[]).forEach(function(obj){
 ctx.save();
 ctx.translate(obj.x,obj.y);
 ctx.rotate((obj.rotation||0)*Math.PI/180);
-const scale=obj.scale||1;
-const img=imageOf(obj.asset);
-if(img)ctx.drawImage(img,-obj.w*scale/2,-obj.h*scale/2,obj.w*scale,obj.h*scale);
+ctx.scale(obj.scale||1,obj.scale||1);
+drawSpriteRef(obj.asset,-obj.w/2,-obj.h/2,obj.w,obj.h);
 ctx.restore();
 });
 (doc.skeleton.spawns||[]).forEach(function(spawn){
 if(spawn.visual)drawSprite(spawn.visual,spawn.x,spawn.y,72);
 });
 }
+function drawWorld(){
+const records=doc.layerRecords||[];
+let roads=false;
+let buildings=false;
+let objects=false;
+records.forEach(function(record){
+if(record.role==="road"||record.id==="roads")roads=true;
+if(record.role==="building"||record.id==="buildings")buildings=true;
+if(record.kind==="object")objects=true;
+if(record.visible===false||record.kind==="route")return;
+if(record.kind==="object"){drawObjectLayer();return;}
+drawTileBucket(record.id);
+if(record.role==="road"||record.id==="roads")drawRoadStyles();
+if(record.role==="building"||record.id==="buildings")drawBuildingVisuals();
 });
+if(!roads)drawRoadStyles();
+if(!buildings)drawBuildingVisuals();
+if(!objects)drawObjectLayer();
 }
 function drawPath(path,selected){
 if(!path||!path.points||path.points.length<2)return;
@@ -304,6 +338,7 @@ if(!ctx||!doc)return;
 const world={width:doc.width,height:doc.height};
 const fit=fitTransform();
 ctx.setTransform(fit.s,0,0,fit.s,fit.ox,fit.oy);
+ctx.imageSmoothingEnabled=false;
 ctx.clearRect(-fit.ox/fit.s,-fit.oy/fit.s,canvas.width/fit.s,canvas.height/fit.s);
 ctx.fillStyle="#ffffff";
 ctx.fillRect(0,0,world.width,world.height);
@@ -348,9 +383,25 @@ ctx.fillText(dest.label||dest.accepts||"?",dest.x,dest.y);
 compiled.intersections.forEach(function(inter){
 drawIntersectionArrow(inter);
 });
-if(cart){
+if(cart)drawCartBody();
+}
+
+function drawCartBody(){
+const spec=CM.cartById(cart.type);
+const img=spec&&imageOf(spec.image);
+ctx.save();
+ctx.translate(cart.x,cart.y);
+ctx.imageSmoothingEnabled=false;
+if(img){
+ctx.imageSmoothingEnabled=true;
+const max=56;
+const fit=Math.min(max/img.naturalWidth,max/img.naturalHeight);
+const w=img.naturalWidth*fit;
+const h=img.naturalHeight*fit;
+ctx.drawImage(img,-w/2,-h/2,w,h);
+}else{
 ctx.beginPath();
-ctx.arc(cart.x,cart.y,22,0,Math.PI*2);
+ctx.arc(0,0,22,0,Math.PI*2);
 ctx.fillStyle=cart.type==="A"?"#1d4ed8":cart.type==="B"?"#f59e0b":"#6d28d9";
 ctx.fill();
 ctx.lineWidth=3;
@@ -360,10 +411,35 @@ ctx.fillStyle=cart.type==="A"||cart.type!=="B"?"#fff":"#111";
 ctx.font="bold 22px Arial";
 ctx.textAlign="center";
 ctx.textBaseline="middle";
-ctx.fillText(cart.type,cart.x,cart.y+1);
+ctx.fillText(cart.type,0,1);
+}
+ctx.restore();
+}
+let audioUnlocked=false;
+const cartSounds={};
+function unlockAudio(){
+audioUnlocked=true;
+const Ctx=window.AudioContext||window.webkitAudioContext;
+if(Ctx&&!unlockAudio.ctx){
+try{unlockAudio.ctx=new Ctx();unlockAudio.ctx.resume();}catch(err){}
+}else if(unlockAudio.ctx&&unlockAudio.ctx.state==="suspended"){
+unlockAudio.ctx.resume();
 }
 }
-
+function playCartSound(type){
+if(!audioUnlocked)return;
+const spec=CM.cartById(type);
+if(!spec||!spec.sound)return;
+let audio=cartSounds[spec.id];
+if(!audio){
+audio=new Audio(spec.sound);
+cartSounds[spec.id]=audio;
+}
+audio.pause();
+try{audio.currentTime=0;}catch(err){}
+const pending=audio.play();
+if(pending&&pending.catch)pending.catch(function(){});
+}
 function liveCompass(inter){
 const choice=choices[inter.id]||inter.defaultDirection;
 const branch=(inter.outgoing||[]).filter(function(item){return item.id===choice;})[0];
@@ -376,6 +452,7 @@ const img=imageOf(CM.ARROW_SRC);
 ctx.save();
 ctx.translate(inter.x,inter.y);
 ctx.rotate(angle);
+ctx.imageSmoothingEnabled=true;
 if(img)ctx.drawImage(img,-CM.ARROW_W/2,-CM.ARROW_H/2,CM.ARROW_W,CM.ARROW_H);
 else{
 ctx.fillStyle="#e53935";
@@ -439,6 +516,7 @@ choices[id]=ids[(index+1)%ids.length];
 }
 
 function onPointer(event){
+unlockAudio();
 if(!running||!canvas||state==="gameover")return;
 const p=worldFromEvent(event);
 let hit=null;
@@ -463,7 +541,12 @@ if(screen)screen.classList.remove("hidden");
 active=true;
 }
 
+function preloadCarts(){
+(CM.CARTS||[]).forEach(function(spec){imageOf(spec.image);});
+}
 function begin(){
+unlockAudio();
+preloadCarts();
 showScreen();
 resetMatch();
 running=true;

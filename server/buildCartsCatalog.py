@@ -1,0 +1,236 @@
+#!/usr/bin/env python3
+"""Build assets/carts/catalog.json from local Carts images.
+
+Source PNGs are read only. Sprites stay inside their sheets and are
+described with rectangles. Reference sheets, palettes, and the cart
+registry folder are not offered as map tiles.
+"""
+
+import json
+import os
+from PIL import Image
+
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+BASE = os.path.join(ROOT, "assets", "carts")
+OUT = os.path.join(BASE, "catalog.json")
+
+SKIP_DIR = {"carts"}
+SKIP_NAME = {
+    "arrow_up.png",
+    "harvest-bg.png",
+    "titel.png",
+    "text.png",
+}
+
+
+def rel_of(path):
+    return os.path.relpath(path, BASE).replace(os.sep, "/")
+
+
+def skip_file(rel):
+    name = os.path.basename(rel).lower()
+    folder = rel.split("/")[0] if "/" in rel else ""
+    if folder in SKIP_DIR:
+        return True
+    if name in SKIP_NAME:
+        return True
+    hay = rel.lower()
+    for word in ("bitmask", "palette", "readme", "reference", "license"):
+        if word in hay:
+            return True
+    return False
+
+
+def islands(im, min_side=8):
+    rgba = im.convert("RGBA")
+    w, h = rgba.size
+    px = rgba.load()
+    seen = bytearray(w * h)
+    found = []
+    for y in range(h):
+        for x in range(w):
+            i = y * w + x
+            if seen[i] or px[x, y][3] <= 12:
+                continue
+            stack = [(x, y)]
+            seen[i] = 1
+            minx = maxx = x
+            miny = maxy = y
+            while stack:
+                cx, cy = stack.pop()
+                for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    nx, ny = cx + dx, cy + dy
+                    if nx < 0 or ny < 0 or nx >= w or ny >= h:
+                        continue
+                    j = ny * w + nx
+                    if seen[j] or px[nx, ny][3] <= 12:
+                        continue
+                    seen[j] = 1
+                    stack.append((nx, ny))
+                    if nx < minx:
+                        minx = nx
+                    if nx > maxx:
+                        maxx = nx
+                    if ny < miny:
+                        miny = ny
+                    if ny > maxy:
+                        maxy = ny
+            bw, bh = maxx - minx + 1, maxy - miny + 1
+            if bw >= min_side and bh >= min_side:
+                found.append((minx, miny, bw, bh))
+    return found
+
+
+def merge_boxes(boxes, pad=3):
+    items = [list(box) for box in boxes]
+    changed = True
+    while changed:
+        changed = False
+        next_items = []
+        used = [False] * len(items)
+        for i, a in enumerate(items):
+            if used[i]:
+                continue
+            ax, ay, aw, ah = a
+            for j in range(i + 1, len(items)):
+                if used[j]:
+                    continue
+                bx, by, bw, bh = items[j]
+                if ax - pad < bx + bw and bx - pad < ax + aw and ay - pad < by + bh and by - pad < ay + ah:
+                    nx = min(ax, bx)
+                    ny = min(ay, by)
+                    aw = max(ax + aw, bx + bw) - nx
+                    ah = max(ay + ah, by + bh) - ny
+                    ax, ay = nx, ny
+                    used[j] = True
+                    changed = True
+            next_items.append([ax, ay, aw, ah])
+        items = next_items
+    return [tuple(box) for box in items]
+
+
+def grid_cells(im, cell):
+    rgba = im.convert("RGBA")
+    w, h = rgba.size
+    px = rgba.load()
+    cells = []
+    for row, y in enumerate(range(0, h - cell + 1, cell)):
+        for col, x in enumerate(range(0, w - cell + 1, cell)):
+            opaque = 0
+            for yy in range(y, y + cell):
+                for xx in range(x, x + cell):
+                    if px[xx, yy][3] > 12:
+                        opaque += 1
+                        if opaque >= 4:
+                            break
+                if opaque >= 4:
+                    break
+            if opaque >= 4:
+                cells.append((x, y, cell, cell, col, row))
+    return cells
+
+
+def classify(rel, rect):
+    low = rel.lower()
+    name = os.path.basename(low)
+    width = rect[2] if rect else 0
+    height = rect[3] if rect else 0
+    big = width > 48 or height > 48
+    if "village/" in low or "house" in name or "door" in name or "bridge" in name:
+        return "Structures/Buildings", "building", "object"
+    if "falling-leaf" in low or "frames" in name:
+        return "Decorations/Props", "decoration", "object"
+    if "fence" in low:
+        return "Decorations/Fences", "decoration", "object" if big or rect else "tile"
+    if "tree" in low:
+        return "Nature/Trees", "nature", "object"
+    if "plant" in low or "crop" in low or "grass biome" in low:
+        return "Nature/Plants", "nature", "object" if big else "tile"
+    if "character" in low or "chicken" in name or "cow" in name or name.startswith("idle") or name.startswith("walk"):
+        return "Characters/Animals", "character", "object"
+    if "water" in name:
+        return "Tiles/Water", "tile", "tile"
+    if "dirt" in name or "till" in name:
+        return "Tiles/Dirt", "tile", "tile"
+    if "path" in name or "road" in name or "/transitions/" in low:
+        return "Tiles/Paths", "road", "tile"
+    if "grass" in name and "tileset" not in low and rect is None:
+        return "Tiles/Grass", "tile", "tile"
+    if "vegetation" in low or "object" in low:
+        return "Nature/Plants" if not big else "Decorations/Props", "nature" if "vegetation" in low else "decoration", "object"
+    if rect and width <= 32 and height <= 32:
+        return "Tiles/Terrain", "tile", "tile"
+    if "tileset" in low:
+        return "Tiles/Terrain", "tile", "tile"
+    return "Decorations/Props", "decoration", "object" if big else "tile"
+
+
+def pretty(rel, suffix):
+    base = os.path.splitext(os.path.basename(rel))[0].replace("_", " ").replace("-", " ")
+    return (base + " " + suffix).strip()
+
+
+def entry(rel, im, rect, suffix):
+    category, role, kind = classify(rel, rect)
+    src = "assets/carts/" + rel
+    item = {
+        "id": rel if not rect else rel + "#%d,%d,%d,%d" % rect,
+        "name": pretty(rel, suffix),
+        "category": category,
+        "role": role,
+        "kind": kind,
+        "src": src,
+    }
+    if rect:
+        item["rect"] = {"x": rect[0], "y": rect[1], "width": rect[2], "height": rect[3]}
+        item["sheet"] = rel
+        item["sheetWidth"] = im.size[0]
+        item["sheetHeight"] = im.size[1]
+    return item
+
+
+def pieces(path, rel):
+    im = Image.open(path)
+    w, h = im.size
+    if w * h > 1400000:
+        return []
+    boxes = merge_boxes(islands(im), 1)
+    area = w * h
+    largest = max((bw * bh for _, _, bw, bh in boxes), default=0)
+    touching = largest > area * 0.4
+    low = rel.lower()
+    tilesheet = "/tilesets/" in low and "fence" not in low and w % 16 == 0 and h % 16 == 0
+    if tilesheet:
+        cells = grid_cells(im, 16)
+        if len(cells) >= 2:
+            return [entry(rel, im, (x, y, cw, ch), "r%d c%d" % (row + 1, col + 1)) for x, y, cw, ch, col, row in cells]
+    if len(boxes) >= 2 and not touching:
+        out = []
+        for index, box in enumerate(boxes, 1):
+            out.append(entry(rel, im, box, str(index)))
+        return out
+    return [entry(rel, im, None, "")]
+
+
+def main():
+    assets = []
+    for dirpath, dirnames, filenames in os.walk(BASE):
+        dirnames[:] = [name for name in dirnames if name not in SKIP_DIR and not name.startswith(".")]
+        for name in sorted(filenames):
+            if not name.lower().endswith(".png"):
+                continue
+            path = os.path.join(dirpath, name)
+            rel = rel_of(path)
+            if skip_file(rel):
+                continue
+            assets.extend(pieces(path, rel))
+    assets.sort(key=lambda item: (item["category"], item["name"], item["id"]))
+    payload = {"version": 2, "assets": assets}
+    with open(OUT, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, indent=2)
+        handle.write("\n")
+    print("assets", len(assets), "categories", len({item["category"] for item in assets}))
+
+
+if __name__ == "__main__":
+    main()

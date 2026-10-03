@@ -9,6 +9,13 @@ const path = require("path");
 const IMAGE = /\.(png|jpe?g|webp|gif|svg)$/i;
 
 function scan(root) {
+  const catalog = path.join(root, "assets", "carts", "catalog.json");
+  if (fs.existsSync(catalog)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(catalog, "utf8"));
+      if (parsed && Array.isArray(parsed.assets) && parsed.assets.length) return parsed;
+    } catch (err) { /* fall through to a folder scan */ }
+  }
   const base = path.join(root, "assets", "carts");
   const assets = [];
   function walk(abs, rel) {

@@ -223,7 +223,8 @@ right.appendChild(apply);
 right.appendChild(el("<h3>SELECTION</h3>"));
 right.appendChild(selectionFields());
 right.appendChild(el("<h3>LAYERS</h3>"));
-right.appendChild(el("<p class='ceEmpty'>Same order as the canvas. Top is behind. Bottom is in front.</p>"));
+right.appendChild(el("<p class='ceEmpty'>Top is behind. Bottom is in front. A new map starts with none.</p>"));
+right.appendChild(button("+ Add layer",null,addLayerDialog));
 right.appendChild(renderLayers());
 right.appendChild(el("<h3>VALIDATION</h3>"));
 const list=document.createElement("ul");
@@ -238,60 +239,128 @@ right.appendChild(list);
 renderPalette();
 }
 
-let activeLayer="ground";
+let activeLayer="";
+let libraryContext="tile";
 let roadChoice={pathId:"",src:"",id:"",name:""};
 
 function renderLayers(){
 const layers=document.createElement("div");
 layers.className="ceLayers";
-const order=map.layerOrder&&map.layerOrder.length?map.layerOrder:CM.DEFAULT_ORDER;
-order.forEach(function(name,index){
-const state=map.layerState[name]||{visible:true,locked:false};
+const records=map.layerRecords||[];
+if(!records.length)layers.appendChild(el("<p class='ceEmpty'>No layers yet.</p>"));
+records.forEach(function(record,index){
 const row=document.createElement("div");
-row.className="ceLayer"+(activeLayer===name?" active":"");
-const eye=button(state.visible?"On":"Off",null,function(){
-map.layerState[name].visible=!map.layerState[name].visible;renderSide();dirty=true;draw();
+row.className="ceLayer"+(activeLayer===record.id?" active":"");
+const eye=button(record.visible!==false?"On":"Off",null,function(){
+mutate(function(){record.visible=record.visible===false;CM.syncLayerMirrors(map);});
 });
-eye.title=state.visible?"Hide layer":"Show layer";
-const lock=button(state.locked?"Lock":"Open",null,function(){
-map.layerState[name].locked=!map.layerState[name].locked;renderSide();
+eye.title=record.visible!==false?"Hide layer":"Show layer";
+const lock=button(record.locked?"Lock":"Open",null,function(){
+mutate(function(){record.locked=!record.locked;CM.syncLayerMirrors(map);});
 });
-lock.title=state.locked?"Unlock layer":"Lock layer";
+lock.title=record.locked?"Unlock layer":"Lock layer";
 const label=document.createElement("button");
 label.type="button";
-label.textContent=LAYER_LABELS[name]||name;
-label.title="Active layer";
-label.addEventListener("click",function(){
-activeLayer=name;
-if(name==="objects")setMode("objects");
-else if(name==="skeleton")setMode("skeleton");
-else setMode("paint");
-});
-const up=button("↑",null,function(){moveLayer(name,-1);});
-const down=button("↓",null,function(){moveLayer(name,1);});
-up.disabled=index===0;
-down.disabled=index===order.length-1;
+label.className="ceLayerName";
+label.textContent=record.name;
+label.title=record.kind==="object"?"Objects":record.kind==="route"?"Route":"Tiles";
+label.addEventListener("click",function(){selectLayer(record);});
+const up=button("↑",null,function(){moveLayer(index,-1);});
+const down=button("↓",null,function(){moveLayer(index,1);});
 up.title="Move up";
 down.title="Move down";
+up.disabled=index===0;
+down.disabled=index===records.length-1;
 row.appendChild(eye);
 row.appendChild(lock);
 row.appendChild(label);
 row.appendChild(up);
 row.appendChild(down);
+if(activeLayer===record.id){
+row.appendChild(button("Rename",null,function(){renameLayerDialog(record);}));
+row.appendChild(button("Delete",null,function(){deleteLayer(record);}));
+}
 layers.appendChild(row);
 });
 return layers;
 }
 
-function moveLayer(name,dir){
-const order=map.layerOrder;
-const index=order.indexOf(name);
+function selectLayer(record){
+activeLayer=record.id;
+if(record.kind==="object")setMode("objects");
+else if(record.kind==="route")setMode("skeleton");
+else setMode("paint");
+renderSide();
+}
+
+function moveLayer(index,dir){
+const records=map.layerRecords||[];
 const next=index+dir;
-if(index<0||next<0||next>=order.length)return;
+if(index<0||next<0||next>=records.length)return;
 mutate(function(){
-const swap=order[index];
-order[index]=order[next];
-order[next]=swap;
+const swap=records[index];
+records[index]=records[next];
+records[next]=swap;
+CM.syncLayerMirrors(map);
+});
+}
+
+function addLayerDialog(){
+openDialog([
+"<h3>Add layer</h3>",
+"<label class='ceField'>Layer name<input id='ceLayerName' value='Layer'></label>",
+"<label class='ceField'>Type<select id='ceLayerKind'><option value='tile'>Tiles</option><option value='object'>Objects</option><option value='route'>Route</option></select></label>",
+"<div class='ceRow'><button type='button' id='ceLayerOk'>Add</button><button type='button' id='ceLayerCancel'>Cancel</button></div>"
+].join(""),function(){
+document.getElementById("ceLayerCancel").onclick=closeDialog;
+document.getElementById("ceLayerOk").onclick=function(){
+const name=document.getElementById("ceLayerName").value;
+const kind=document.getElementById("ceLayerKind").value;
+mutate(function(){
+const record=CM.addLayer(map,name,kind);
+activeLayer=record.id;
+});
+closeDialog();
+if(kind==="object")setMode("objects");
+else if(kind==="route")setMode("skeleton");
+else setMode("paint");
+};
+});
+}
+
+function renameLayerDialog(record){
+openDialog([
+"<h3>Rename layer</h3>",
+"<label class='ceField'>Layer name<input id='ceRenameLayer' value='"+escapeAttr(record.name)+"'></label>",
+"<div class='ceRow'><button type='button' id='ceRenameLayerOk'>Rename</button><button type='button' id='ceRenameLayerCancel'>Cancel</button></div>"
+].join(""),function(){
+document.getElementById("ceRenameLayerCancel").onclick=closeDialog;
+document.getElementById("ceRenameLayerOk").onclick=function(){
+mutate(function(){
+record.name=document.getElementById("ceRenameLayer").value.trim().slice(0,32)||record.name;
+if(record.kind==="tile"&&/road|path/i.test(record.name))record.role="road";
+else if(record.kind==="tile"&&/build/i.test(record.name))record.role="building";
+});
+closeDialog();
+};
+});
+}
+
+function deleteLayer(record){
+openDialog("<h3>Delete "+escapeHtml(record.name)+"?</h3><p class='ceEmpty'>Tiles on this layer are removed. The route graph stays.</p><div class='ceRow'><button type='button' id='ceLayerDel'>Delete</button><button type='button' id='ceLayerDelCancel'>Cancel</button></div>",function(){
+document.getElementById("ceLayerDelCancel").onclick=closeDialog;
+document.getElementById("ceLayerDel").onclick=function(){
+mutate(function(){
+map.layerRecords=map.layerRecords.filter(function(item){return item.id!==record.id;});
+if(map.layers)delete map.layers[record.id];
+CM.syncLayerMirrors(map);
+if(activeLayer===record.id){
+const tile=(map.layerRecords||[]).filter(function(item){return item.kind==="tile";})[0];
+activeLayer=tile?tile.id:"";
+}
+});
+closeDialog();
+};
 });
 }
 
@@ -324,24 +393,27 @@ const sel=selection[0];
 if(sel.kind==="spawn"||sel.kind==="destination"||sel.kind==="intersection"){
 const obj=objectOf(sel);
 if(!obj)return wrap;
-wrap.appendChild(el("<p class='ceEmpty'>"+(sel.kind==="spawn"?"Spawn":sel.kind==="destination"?"Destination":"Intersection")+" "+obj.id+"</p>"));
+const heading=sel.kind==="destination"?"DESTINATION "+(obj.label||obj.accepts||obj.id):sel.kind==="spawn"?"Spawn "+obj.id:"Intersection "+obj.id;
+wrap.appendChild(el("<p class='ceEmpty'>"+heading+"</p>"));
 wrap.appendChild(field("X",input("number",Math.round(obj.x),function(value){mutate(function(){obj.x=Number(value)||0;CM.syncLinkedPoint(map,sel.kind,obj.id);});})));
 wrap.appendChild(field("Y",input("number",Math.round(obj.y),function(value){mutate(function(){obj.y=Number(value)||0;CM.syncLinkedPoint(map,sel.kind,obj.id);});})));
 if(sel.kind==="spawn"){
 wrap.appendChild(field("Enabled",input("text",obj.enabled?"yes":"no",function(value){mutate(function(){obj.enabled=value!=="no"&&value!=="false";});})));
 wrap.appendChild(el("<p class='ceEmpty'>Visual</p>"));
-wrap.appendChild(stylePicker(["decoration","prop","building"],obj.visual&&obj.visual.src,function(asset){
-if(layerLocked("objects")){setStatus("Objects layer is locked");return;}
+wrap.appendChild(stylePicker("object",obj.visual&&obj.visual.src,function(asset){
+if(objectRecord()&&objectRecord().locked){setStatus("Objects layer is locked");return;}
 mutate(function(){obj.visual=visualFrom(asset,obj.visual);});
 }));
 if(obj.visual)wrap.appendChild(button("Remove visual",null,function(){mutate(function(){obj.visual=null;});}));
 }
 if(sel.kind==="destination"){
 wrap.appendChild(el("<p class='ceEmpty'>Label: "+(obj.label||"")+"</p>"));
-wrap.appendChild(el("<p class='ceEmpty'>Accepts cart: "+(obj.accepts||"")+"</p>"));
+wrap.appendChild(el("<p class='ceEmpty'>Accepted cart</p>"));
+wrap.appendChild(cartPicker(obj));
 wrap.appendChild(el("<p class='ceEmpty'>Building</p>"));
-wrap.appendChild(stylePicker(["building"],obj.visual&&obj.visual.src,function(asset){
-if(layerLocked("buildings")){setStatus("Buildings layer is locked");return;}
+wrap.appendChild(stylePicker("building",obj.visual&&obj.visual.src,function(asset){
+const buildingRecord=(map.layerRecords||[]).filter(function(record){return record.role==="building"||record.id==="buildings";})[0];
+if(buildingRecord&&buildingRecord.locked){setStatus("Buildings layer is locked");return;}
 mutate(function(){obj.visual=visualFrom(asset,obj.visual);});
 }));
 if(obj.visual){
@@ -401,28 +473,23 @@ wrap.appendChild(el("<p class='ceEmpty'>Path "+path.id+" · "+pathLength(path)+"
 wrap.appendChild(el("<p class='ceEmpty'>"+endName(path.from)+" → "+endName(path.to)+"</p>"));
 wrap.appendChild(field("Path width",input("number",path.width,function(value){mutate(function(){path.width=clamp(Number(value)||64,8,256);});})));
 wrap.appendChild(el("<p class='ceEmpty'>Road style</p>"));
-if(path.visualStyle&&path.visualStyle.src){
-const preview=document.createElement("img");
-preview.className="cePreview";
-preview.src=path.visualStyle.src;
-preview.alt=path.visualStyle.assetId||"Current road style";
-wrap.appendChild(preview);
-}else wrap.appendChild(el("<p class='ceEmpty'>No road style yet.</p>"));
 const picked=roadChoice.pathId===path.id?roadChoice:null;
-wrap.appendChild(stylePicker(["road","ground"],(picked&&picked.src)||(path.visualStyle&&path.visualStyle.src),function(asset){
-roadChoice={pathId:path.id,src:asset.src,id:asset.id||asset.src,name:asset.name||""};
+wrap.appendChild(stylePicker("road",(picked&&picked.src)||(path.visualStyle&&path.visualStyle.src),function(asset){
+roadChoice={pathId:path.id,src:CM.spriteRef(asset),id:asset.id||asset.src,name:asset.name||""};
 renderSide();
 setStatus("Chosen "+(asset.name||"tile")+". Click Apply.");
 }));
 wrap.appendChild(button("Apply",null,function(){
 if(roadChoice.pathId!==path.id||!roadChoice.src){setStatus("Choose a road tile first");return;}
-if(layerLocked("roads")){setStatus("Road layer is locked");return;}
+const road=(map.layerRecords||[]).filter(function(record){return record.role==="road"||record.id==="roads";})[0];
+if(road&&road.locked){setStatus("Road layer is locked");return;}
 const choice=roadChoice;
 mutate(function(){path.visualStyle={src:choice.src,assetId:choice.id||choice.src};});
 setStatus("Road style applied to "+path.id);
 }));
 if(path.visualStyle)wrap.appendChild(button("Remove style",null,function(){
-if(layerLocked("roads")){setStatus("Road layer is locked");return;}
+const road=(map.layerRecords||[]).filter(function(record){return record.role==="road"||record.id==="roads";})[0];
+if(road&&road.locked){setStatus("Road layer is locked");return;}
 mutate(function(){path.visualStyle=null;});
 }));
 }
@@ -476,7 +543,7 @@ return out;
 }
 function visualFrom(asset,previous){
 return {
-src:asset.src,
+src:CM.spriteRef(asset),
 offsetX:previous&&previous.offsetX||0,
 offsetY:previous&&previous.offsetY||0,
 scale:previous&&previous.scale||1,
@@ -484,35 +551,64 @@ rotation:previous&&previous.rotation||0
 };
 }
 function assetRole(asset){
+if(asset.role)return asset.role;
 const cat=String(asset.category||"").toLowerCase();
 const name=String(asset.name||"").toLowerCase();
-if(cat.indexOf("village")>=0)return "building";
-if(name.indexOf("path")===0||name.indexOf("road")>=0||cat.indexOf("transition")>=0)return "road";
-if(name.indexOf("grass")>=0)return "ground";
-if(cat.indexOf("vegetation")>=0||cat.indexOf("falling")>=0||name.indexOf("fence")>=0||name.indexOf("tree")>=0)return "decoration";
-return "prop";
+if(cat.indexOf("building")>=0||cat.indexOf("village")>=0)return "building";
+if(name.indexOf("path")===0||name.indexOf("road")>=0||cat.indexOf("path")>=0)return "road";
+if(cat.indexOf("grass")>=0||name.indexOf("grass")>=0)return "tile";
+if(cat.indexOf("tree")>=0||cat.indexOf("plant")>=0)return "nature";
+if(cat.indexOf("character")>=0||cat.indexOf("animal")>=0)return "character";
+return asset.kind==="object"?"decoration":"tile";
 }
-function stylePicker(roles,current,onPick){
+function stylePicker(context,current,onPick){
+const wrap=document.createElement("div");
+const match=assets.filter(function(asset){return (asset.ref||asset.src)===current||asset.src===current;})[0];
+if(match)wrap.appendChild(thumb(match,48));
+else if(current)wrap.appendChild(el("<p class='ceEmpty'>Using a saved image.</p>"));
 const grid=document.createElement("div");
 grid.className="cePick";
-const list=assets.filter(function(asset){return roles.indexOf(assetRole(asset))!==-1;});
-if(!list.length){
-grid.appendChild(el("<p class='ceEmpty'>No matching images yet.</p>"));
-return grid;
-}
-list.forEach(function(asset){
+assets.filter(function(asset){return assetFits(asset,context);}).slice(0,36).forEach(function(asset){
 const node=document.createElement("button");
 node.type="button";
 node.title=asset.name;
-if(asset.src===current)node.classList.add("active");
-const img=document.createElement("img");
-img.src=asset.src;
-img.alt=asset.name;
-node.appendChild(img);
+if((asset.ref||asset.src)===current||asset.src===current)node.classList.add("active");
+node.appendChild(thumb(asset,32));
 node.addEventListener("click",function(){onPick(asset);});
 grid.appendChild(node);
 });
-return grid;
+wrap.appendChild(grid);
+wrap.appendChild(button("Choose",null,function(){openLibrary(context,onPick);}));
+return wrap;
+}
+function cartPicker(dest){
+const wrap=document.createElement("div");
+const current=CM.cartById(dest.acceptedCart);
+wrap.appendChild(el("<p class='ceEmpty'>"+(current?current.name:"Select a cart")+"</p>"));
+if(current){
+const preview=document.createElement("img");
+preview.className="cePreview";
+preview.alt=current.name;
+preview.src=current.image;
+wrap.appendChild(preview);
+}
+const grid=document.createElement("div");
+grid.className="ceCarts";
+CM.CARTS.forEach(function(cart){
+const node=document.createElement("button");
+node.type="button";
+node.title=cart.name;
+if(dest.acceptedCart===cart.id)node.classList.add("active");
+const img=document.createElement("img");
+img.src=cart.image;
+img.alt=cart.name;
+node.appendChild(img);
+node.appendChild(document.createTextNode(cart.name));
+node.addEventListener("click",function(){mutate(function(){dest.acceptedCart=cart.id;});});
+grid.appendChild(node);
+});
+wrap.appendChild(grid);
+return wrap;
 }
 
 function objectOf(sel){
@@ -536,14 +632,28 @@ function renderPalette(){
 const host=document.getElementById("ceAssets");
 if(!host)return;
 host.innerHTML="";
-if(mode==="skeleton"){
-host.appendChild(el("<p class='ceEmpty'>Select a path or destination. Its style choices appear on the right.</p>"));
-return;
-}
 host.appendChild(el("<h3>ASSETS</h3>"));
-const search=input("text",assetQuery,function(value){assetQuery=value;renderPalette();});
-search.placeholder="Search assets";
-host.appendChild(field("Search",search));
+if(selectedAsset){
+host.appendChild(thumb(selectedAsset,48));
+host.appendChild(el("<p class='ceEmpty'>"+selectedAsset.name+"</p>"));
+}
+const context=mode==="objects"?"object":mode==="paint"?"tile":"tile";
+host.appendChild(button("Open library",null,function(){
+openLibrary(context,function(asset){selectedAsset=asset;renderPalette();setStatus(asset.name);});
+}));
+const grid=document.createElement("div");
+grid.className="ceGrid";
+libraryAssets(context).slice(0,80).forEach(function(asset){
+const node=document.createElement("button");
+node.type="button";
+node.title=(asset.category||"")+" / "+asset.name;
+if(selectedAsset&&CM.spriteRef(selectedAsset)===CM.spriteRef(asset))node.classList.add("active");
+node.appendChild(thumb(asset,32));
+node.addEventListener("click",function(){selectedAsset=asset;renderPalette();setStatus(asset.name);});
+grid.appendChild(node);
+});
+host.appendChild(grid);
+if(mode==="paint"){
 host.appendChild(field("Brush",selectBrush()));
 const random=document.createElement("label");
 random.className="ceField";
@@ -554,35 +664,29 @@ box.addEventListener("change",function(){randomOn=box.checked;});
 random.appendChild(box);
 random.appendChild(document.createTextNode(" Random variation"));
 host.appendChild(random);
-const cats=document.createElement("div");
-cats.className="ceCats";
-const names=["all"].concat(categories());
-names.forEach(function(name){
-const node=button(name,null,function(){assetCategory=name;renderPalette();});
-if(name===assetCategory)node.classList.add("active");
-cats.appendChild(node);
-});
-host.appendChild(cats);
-const grid=document.createElement("div");
-grid.className="ceGrid";
-filteredAssets().forEach(function(asset){
-const node=document.createElement("button");
-node.type="button";
-node.title=asset.category+" / "+asset.name;
-if(selectedAsset&&selectedAsset.src===asset.src)node.classList.add("active");
-const img=document.createElement("img");
-img.src=asset.src;
-img.alt=asset.name;
-node.appendChild(img);
-node.addEventListener("click",function(){selectedAsset=asset;renderPalette();setStatus(asset.name);});
-grid.appendChild(node);
-});
-host.appendChild(grid);
-host.appendChild(el("<p class='ceEmpty'>A tile fills one grid cell. Larger props belong in Objects.</p>"));
-if(!filteredAssets().length){
-host.appendChild(el("<p class='ceEmpty'>No images under assets/carts yet. Add category folders and reload.</p>"));
+host.appendChild(el("<p class='ceEmpty'>A tile fills one grid cell. Larger pieces belong on an Objects layer.</p>"));
+}else if(mode==="skeleton"){
+host.appendChild(el("<p class='ceEmpty'>Choose a road or building from the selection panel.</p>"));
+}else host.appendChild(el("<p class='ceEmpty'>Place the selected piece. It keeps its own pixel size.</p>"));
 }
-if(selectedAsset)host.appendChild(el("<p class='ceEmpty'>Selected: "+selectedAsset.name+"</p>"));
+function assetFits(asset,context){
+const role=assetRole(asset);
+if(asset.kind==="reference"||role==="reference")return false;
+if(context==="road")return role==="road";
+if(context==="building")return role==="building";
+if(context==="object")return role==="building"||role==="nature"||role==="decoration"||role==="character"||asset.kind==="object";
+if(context==="tile")return role==="tile"||role==="road"||role==="ground";
+return true;
+}
+function libraryAssets(context){
+return assets.filter(function(asset){
+if(!assetFits(asset,context))return false;
+if(librarySheet&&asset.sheet!==librarySheet)return false;
+if(assetCategory!=="all"&&asset.category!==assetCategory)return false;
+if(!assetQuery)return true;
+const hay=(asset.name+" "+asset.category+" "+(asset.sheet||"")).toLowerCase();
+return hay.indexOf(assetQuery.toLowerCase())!==-1;
+});
 }
 
 function selectBrush(){
@@ -597,18 +701,101 @@ node.appendChild(opt);
 node.addEventListener("change",function(){brush=Number(node.value)||1;});
 return node;
 }
-function categories(){
+let librarySheet="";
+function categoriesFor(context){
 const found={};
-assets.forEach(function(asset){found[asset.category||"uncategorized"]=true;});
+assets.forEach(function(asset){
+if(!assetFits(asset,context))return;
+if(librarySheet&&asset.sheet!==librarySheet)return;
+found[asset.category||"Other"]=true;
+});
 return Object.keys(found).sort();
 }
-function filteredAssets(){
-return assets.filter(function(asset){
-if(assetCategory!=="all"&&asset.category!==assetCategory)return false;
-if(!assetQuery)return true;
-const hay=(asset.name+" "+asset.category+" "+asset.src).toLowerCase();
-return hay.indexOf(assetQuery.toLowerCase())!==-1;
+function thumb(asset,size){
+const node=document.createElement("span");
+node.className="ceThumb";
+node.style.width=size+"px";
+node.style.height=size+"px";
+const part=CM.parseSprite(CM.spriteRef(asset));
+if(!part.rect){
+node.style.backgroundImage="url(\""+part.src+"\")";
+node.style.backgroundSize="contain";
+node.style.backgroundPosition="center";
+return node;
+}
+const scale=size/Math.max(part.rect.w,part.rect.h);
+node.style.backgroundImage="url(\""+part.src+"\")";
+node.style.backgroundRepeat="no-repeat";
+node.style.backgroundPosition=(-part.rect.x*scale)+"px "+(-part.rect.y*scale)+"px";
+node.style.backgroundSize=((asset.sheetWidth||part.rect.w)*scale)+"px "+((asset.sheetHeight||part.rect.h)*scale)+"px";
+return node;
+}
+function openLibrary(context,onPick){
+libraryContext=context||"tile";
+if(assetCategory!=="all"&&categoriesFor(libraryContext).indexOf(assetCategory)<0)assetCategory="all";
+const root=document.createElement("div");
+root.className="ceLibrary";
+function paint(){
+root.innerHTML="";
+const title=document.createElement("h3");
+title.textContent=librarySheet?"Spritesheet":"Tile / asset library";
+root.appendChild(title);
+const search=document.createElement("input");
+search.type="text";
+search.placeholder="Search";
+search.value=assetQuery;
+search.addEventListener("input",function(){assetQuery=search.value;paint();});
+root.appendChild(search);
+const body=document.createElement("div");
+body.className="ceLibraryBody";
+const cats=document.createElement("div");
+cats.className="ceLibCats";
+["all"].concat(categoriesFor(libraryContext)).forEach(function(name){
+const node=button(name,null,function(){assetCategory=name;librarySheet="";paint();});
+if(name===assetCategory&&!librarySheet)node.classList.add("active");
+cats.appendChild(node);
 });
+body.appendChild(cats);
+const grid=document.createElement("div");
+grid.className="ceLibGrid";
+const list=libraryAssets(libraryContext).slice(0,600);
+if(!list.length)grid.appendChild(el("<p class='ceEmpty'>No matching pieces.</p>"));
+list.forEach(function(asset){
+const node=document.createElement("button");
+node.type="button";
+node.title=asset.name;
+if(selectedAsset&&CM.spriteRef(selectedAsset)===CM.spriteRef(asset))node.classList.add("active");
+node.appendChild(thumb(asset,48));
+const caption=document.createElement("span");
+caption.textContent=asset.name;
+node.appendChild(caption);
+node.addEventListener("click",function(){
+selectedAsset=asset;
+if(asset.sheet)librarySheet=asset.sheet;
+onPick(asset);
+if(!asset.sheet)closeDialog();
+else paint();
+});
+grid.appendChild(node);
+});
+body.appendChild(grid);
+root.appendChild(body);
+const row=document.createElement("div");
+row.className="ceRow";
+if(librarySheet){
+row.appendChild(button("Whole library",null,function(){librarySheet="";paint();}));
+row.appendChild(button("Use selected sprite",null,function(){if(selectedAsset){onPick(selectedAsset);closeDialog();}}));
+}
+row.appendChild(button("Close",null,closeDialog));
+root.appendChild(row);
+const shown=libraryAssets(libraryContext).length;
+root.appendChild(el("<p class='ceEmpty'>"+(librarySheet?"Pieces from this sheet. ":"")+(shown>600?"Showing 600 of "+shown+".":shown+" pieces.")+"</p>"));
+}
+paint();
+const dialog=document.getElementById("ceDialog");
+dialog.innerHTML="";
+dialog.appendChild(root);
+dialog.classList.remove("hidden");
 }
 
 function setStatus(text){
@@ -797,8 +984,27 @@ gestureEnd();
 dirty=true;draw();
 }
 
-function skeletonLocked(){return map.layerState.skeleton.locked;}
-function layerLocked(name){return map.layerState[name]&&map.layerState[name].locked;}
+function objectRecord(){
+return (map.layerRecords||[]).filter(function(record){return record.kind==="object";})[0]||null;
+}
+function skeletonLocked(){
+const route=(map.layerRecords||[]).filter(function(record){return record.kind==="route";})[0];
+return !!(route&&route.locked);
+}
+function layerVisible(id){
+const records=map.layerRecords||[];
+const record=records.filter(function(item){
+return item.id===id||(id==="skeleton"&&item.kind==="route");
+})[0];
+if(!record)return true;
+return record.visible!==false;
+}
+function layerLocked(name){
+if(!name)return false;
+const record=(map.layerRecords||[]).filter(function(item){return item.id===name;})[0];
+if(record)return !!record.locked;
+return !!(map.layerState&&map.layerState[name]&&map.layerState[name].locked);
+}
 
 function skeletonDown(event,world){
 if(tool!=="select"&&tool!=="pan"&&skeletonLocked()){setStatus("Skeleton layer is locked");return;}
@@ -817,8 +1023,9 @@ if(pasteArmed&&clipboard){pasteAt(world);return;}
 if(tool==="select"){drag={kind:"cells",start:world,current:world};dirty=true;return;}
 if(tool==="area"){gestureStart();drag={kind:"area",start:world,current:world};return;}
 const layerName=activeLayer;
-if(!map.layers[layerName]){setStatus("Choose Ground, Road, Buildings, or Decorations");return;}
-if(layerLocked(layerName)&&tool!=="eyedropper"){setStatus(LAYER_LABELS[layerName]+" is locked");return;}
+const paintLayer=(map.layerRecords||[]).filter(function(record){return record.id===layerName&&record.kind==="tile";})[0];
+if(!paintLayer){setStatus("Add a tile layer first");return;}
+if(layerLocked(layerName)&&tool!=="eyedropper"){setStatus((paintLayer.name||"Layer")+" is locked");return;}
 if(tool==="eyedropper")return pickTile(world);
 if(tool==="bucket")return doFlood(world);
 if(tool==="pencil"||tool==="eraser"){
@@ -834,7 +1041,7 @@ drag={kind:"rect",start:world,current:world,erase:false};
 }
 
 function objectsDown(event,world){
-if(layerLocked("objects")&&tool!=="select"){setStatus("Objects layer is locked");return;}
+if(objectRecord()&&objectRecord().locked&&tool!=="select"){setStatus("Objects layer is locked");return;}
 if(tool==="select")return selectDown(event,world,false);
 if(tool==="place")return placeObject(world);
 if(tool==="rotate"||tool==="scale")return nudgeObject(world,tool,event.shiftKey);
@@ -867,7 +1074,7 @@ map.skeleton.spawns.push(spawn);
 selection=[{kind:"spawn",id:spawn.id}];
 }else{
 const letter=CM.nextCartLetter(map);
-const dest={id:CM.newId(map,"d"),x:point.x,y:point.y,pathId:"",accepts:letter,label:letter};
+const dest={id:CM.newId(map,"d"),x:point.x,y:point.y,pathId:"",accepts:letter,label:letter,acceptedCart:"cart"};
 map.skeleton.destinations.push(dest);
 selection=[{kind:"destination",id:dest.id}];
 }
@@ -958,16 +1165,17 @@ return null;
 
 function finishDraft(attach){
 if(!draft)return;
-const points=draft.points.map(function(p){return {x:p.x,y:p.y};});
-if(draft.extend){
-if(!points.length){draft=null;return;}
-mutate(function(){
-const path=draft.extend.path;
-if(draft.extend.end==="to")path.points=path.points.concat(points);
-else path.points=points.reverse().concat(path.points);
-if(attach)CM.linkPath(map,path,draft.extend.end,asTarget(attach));
-});
+const pending=draft;
 draft=null;
+const points=pending.points.map(function(p){return {x:p.x,y:p.y};});
+if(pending.extend){
+if(!points.length)return;
+mutate(function(){
+const path=pending.extend.path;
+if(pending.extend.end==="to")path.points=path.points.concat(points);
+else path.points=points.reverse().concat(path.points);
+if(attach)CM.linkPath(map,path,pending.extend.end,asTarget(attach));
+});
 return;
 }
 if(points.length<2){draft=null;dirty=true;draw();return;}
@@ -981,12 +1189,11 @@ from:{kind:"open",id:""},
 to:{kind:"open",id:""}
 };
 map.skeleton.paths.push(path);
-if(draft.from)CM.linkPath(map,path,"from",asTarget(draft.from));
+if(pending.from)CM.linkPath(map,path,"from",asTarget(pending.from));
 if(attach)CM.linkPath(map,path,"to",asTarget(attach));
 straighten(path);
 selection=[{kind:"path",id:path.id}];
 });
-draft=null;
 }
 
 function asTarget(link){
@@ -1066,7 +1273,7 @@ else selection.push(hit);
 }else if(!selection.some(function(item){return item.kind===hit.kind&&item.id===hit.id&&item.index===hit.index;})){
 selection=[hit];
 }
-const locked=skeletonMode?skeletonLocked():layerLocked("objects");
+const locked=skeletonMode?skeletonLocked():!!(objectRecord()&&objectRecord().locked);
 if(locked){renderSide();dirty=true;draw();return;}
 gestureStart();
 drag={
@@ -1102,7 +1309,7 @@ movePoint(path,item.index,item.x+dx,item.y+dy);
 return;
 }
 if(item.kind==="object"){
-if(layerLocked("objects"))return;
+if(objectRecord()&&objectRecord().locked)return;
 const obj=CM.byId(map.objects,item.id);
 if(obj){obj.x=item.x+dx;obj.y=item.y+dy;}
 return;
@@ -1114,7 +1321,10 @@ if(!path)return;
 item.points.forEach(function(point,index){movePoint(path,index,point.x+dx,point.y+dy);});
 return;
 }
-if(item.kind==="destination"&&layerLocked("buildings"))return;
+if(item.kind==="destination"){
+const buildingRecord=(map.layerRecords||[]).filter(function(record){return record.role==="building"||record.id==="buildings";})[0];
+if(buildingRecord&&buildingRecord.locked)return;
+}
 const obj=objectOf(item);
 if(!obj)return;
 obj.x=item.x+dx;
@@ -1174,13 +1384,16 @@ if(layerLocked("roads")){setStatus("Road layer is locked");return null;}
 return {kind:"path",id:body.id};
 }
 }
-if(!skeletonMode&&map.layerState.objects.visible&&!layerLocked("objects")){
+if(!skeletonMode){
+const objectLayer=(map.layerRecords||[]).filter(function(record){return record.kind==="object"&&record.visible!==false&&!record.locked;})[0];
+if(objectLayer){
 for(let i=map.objects.length-1;i>=0;i--){
 const obj=map.objects[i];
 if(Math.abs(obj.x-x)<=obj.w*obj.scale/2&&Math.abs(obj.y-y)<=obj.h*obj.scale/2)return {kind:"object",id:obj.id};
 }
 }
 return null;
+}
 }
 
 function nearestSegment(x,y,reach){
@@ -1241,15 +1454,17 @@ if(mode==="skeleton"&&selection.some(function(sel){return sel.kind==="object";})
 setStatus("Switch to Objects to delete decorations");
 return;
 }
-if(layerLocked("roads")&&selection.some(function(sel){return sel.kind==="path"||sel.kind==="point";})){
+const roadRecord=(map.layerRecords||[]).filter(function(record){return record.role==="road"||record.id==="roads";})[0];
+if(roadRecord&&roadRecord.locked&&selection.some(function(sel){return sel.kind==="path"||sel.kind==="point";})){
 setStatus("Road layer is locked");
 return;
 }
-if(layerLocked("objects")&&selection.some(function(sel){return sel.kind==="object";})){
+if(objectRecord()&&objectRecord().locked&&selection.some(function(sel){return sel.kind==="object";})){
 setStatus("Objects layer is locked");
 return;
 }
-if(layerLocked("buildings")&&selection.some(function(sel){return sel.kind==="destination";})){
+const buildingRecord=(map.layerRecords||[]).filter(function(record){return record.role==="building"||record.id==="buildings";})[0];
+if(buildingRecord&&buildingRecord.locked&&selection.some(function(sel){return sel.kind==="destination";})){
 setStatus("Buildings layer is locked");
 return;
 }
@@ -1366,10 +1581,10 @@ if(obj)obj.rotation=(obj.rotation||0)+delta;
 
 function assetSrc(){
 if(!selectedAsset)return "";
-if(!randomOn)return selectedAsset.src;
+if(!randomOn)return CM.spriteRef(selectedAsset);
 const group=CM.variationGroup(assets,selectedAsset);
 const pick=group[Math.floor(Math.random()*group.length)];
-return pick?pick.src:selectedAsset.src;
+return pick?CM.spriteRef(pick):CM.spriteRef(selectedAsset);
 }
 function paintAt(world,erase){
 if(layerLocked(activeLayer))return;
@@ -1408,34 +1623,40 @@ if(layerLocked(activeLayer))return;
 if(!selectedAsset){setStatus("Select a tile first");return;}
 const cell=CM.cellOf(map,world.x,world.y);
 mutate(function(){
-const result=CM.flood(map,activeLayer,cell.c,cell.r,selectedAsset.src);
+const result=CM.flood(map,activeLayer,cell.c,cell.r,CM.spriteRef(selectedAsset));
 if(result.capped)setStatus("Fill stopped at "+CM.FLOOD_LIMIT+" tiles");
 else setStatus("Filled "+result.filled+" tiles");
 });
 }
 function pickTile(world){
 const cell=CM.cellOf(map,world.x,world.y);
-const src=map.layers[activeLayer][cell.c+","+cell.r]||"";
+const layer=map.layers[activeLayer];
+if(!layer){setStatus("Add a tile layer first");return;}
+const src=layer[cell.c+","+cell.r]||"";
 if(!src){setStatus("Empty cell");return;}
-selectedAsset=assets.filter(function(asset){return asset.src===src;})[0]||{id:src,name:src,category:"picked",src:src};
+selectedAsset=assets.filter(function(asset){return CM.spriteRef(asset)===src||asset.src===src;})[0]||{id:src,name:src,category:"picked",src:src,ref:src};
 if(assets.indexOf(selectedAsset)===-1&&selectedAsset.category==="picked")assets.push(selectedAsset);
 setStatus("Picked "+selectedAsset.name);
 renderPalette();
 }
 function placeObject(world){
 if(!selectedAsset){setStatus("Select an asset first");return;}
-if(layerLocked("objects")){setStatus("Objects layer is locked");return;}
+const objectLayer=(map.layerRecords||[]).filter(function(record){return record.kind==="object";})[0];
+if(!objectLayer){setStatus("Add an Objects layer first");return;}
+if(objectLayer.locked){setStatus("Objects layer is locked");return;}
 const point=CM.snapPoint(map,world.x,world.y);
-const img=imageOf(selectedAsset.src);
+const part=CM.parseSprite(CM.spriteRef(selectedAsset));
+const img=imageOf(part.src);
 const size=map.grid.size||32;
 mutate(function(){
 const obj={
 id:CM.newId(map,"o"),
-asset:selectedAsset.src,
+asset:CM.spriteRef(selectedAsset),
+layerId:objectLayer.id,
 x:point.x,y:point.y,
 rotation:0,scale:1,
-w:img&&img.naturalWidth?img.naturalWidth:size,
-h:img&&img.naturalHeight?img.naturalHeight:size
+w:part.rect?part.rect.w:(img&&img.naturalWidth?img.naturalWidth:size),
+h:part.rect?part.rect.h:(img&&img.naturalHeight?img.naturalHeight:size)
 };
 map.objects.push(obj);
 selection=[{kind:"object",id:obj.id}];
@@ -1449,9 +1670,11 @@ const c1=Math.max(area.a.c,area.b.c);
 const r0=Math.min(area.a.r,area.b.r);
 const r1=Math.max(area.a.r,area.b.r);
 const layers={};
-CM.TILE_LAYERS.forEach(function(name){
+(map.layerRecords||[]).forEach(function(record){
+if(record.kind!=="tile"||!map.layers[record.id])return;
+const name=record.id;
 layers[name]={};
-Object.keys(map.layers[name]).forEach(function(key){
+Object.keys(map.layers[name]||{}).forEach(function(key){
 const parts=key.split(",");
 const c=Number(parts[0]);
 const r=Number(parts[1]);
@@ -1477,8 +1700,8 @@ if(!clipboard)return;
 const cell=CM.cellOf(map,world.x,world.y);
 const size=map.grid.size;
 mutate(function(){
-CM.TILE_LAYERS.forEach(function(name){
-if(layerLocked(name))return;
+Object.keys(clipboard.layers||{}).forEach(function(name){
+if(layerLocked(name)||!map.layers[name])return;
 Object.keys(clipboard.layers[name]||{}).forEach(function(key){
 const parts=key.split(",");
 const c=cell.c+Number(parts[0]);
@@ -1486,7 +1709,8 @@ const r=cell.r+Number(parts[1]);
 if(CM.inMapCell(map,c,r))map.layers[name][c+","+r]=clipboard.layers[name][key];
 });
 });
-if(!layerLocked("objects")){
+const objectLayer=(map.layerRecords||[]).filter(function(record){return record.kind==="object"&&!record.locked;})[0];
+if(objectLayer){
 clipboard.objects.forEach(function(obj){
 const copy=CM.clone(obj);
 copy.id=CM.newId(map,"o");
@@ -1700,6 +1924,8 @@ draft=null;
 validation=null;
 mode="skeleton";
 tool="select";
+const firstTile=(map.layerRecords||[]).filter(function(record){return record.kind==="tile";})[0];
+activeLayer=firstTile?firstTile.id:"";
 active=true;
 setMode("skeleton");
 fitCanvas();
@@ -1734,6 +1960,7 @@ const rect=canvas.getBoundingClientRect();
 if(rect.width<2)return;
 const dpr=canvas.width/rect.width||1;
 ctx.setTransform(dpr,0,0,dpr,0,0);
+ctx.imageSmoothingEnabled=false;
 ctx.clearRect(0,0,rect.width,rect.height);
 ctx.fillStyle="#c5ced8";
 ctx.fillRect(0,0,rect.width,rect.height);
@@ -1756,22 +1983,36 @@ if(drag&&(drag.kind==="rect"||drag.kind==="area"||drag.kind==="marquee"||drag.ki
 ctx.restore();
 dirty=false;
 }
-function layerVisible(name){
-return !map.layerState[name]||map.layerState[name].visible!==false;
+function drawSpriteRef(ref,x,y,w,h){
+const part=CM.parseSprite(ref);
+const img=imageOf(part.src);
+ctx.imageSmoothingEnabled=false;
+if(!img){ctx.fillStyle="#d5dbe3";ctx.fillRect(x,y,w,h);return;}
+if(part.rect)ctx.drawImage(img,part.rect.x,part.rect.y,part.rect.w,part.rect.h,x,y,w,h);
+else ctx.drawImage(img,x,y,w,h);
 }
 function drawStacked(){
-const order=map.layerOrder&&map.layerOrder.length?map.layerOrder:CM.DEFAULT_ORDER;
-order.forEach(function(name){
-if(!layerVisible(name))return;
-if(name==="skeleton"){
-drawSkeleton(mode!=="skeleton");
-return;
-}
-if(map.layers[name])drawTileLayer(name);
-if(name==="roads")drawStyledRoads();
-if(name==="buildings")drawStyledBuildings();
-if(name==="objects")drawObjects();
+const records=map.layerRecords||[];
+let route=false;
+let roads=false;
+let buildings=false;
+let objects=false;
+records.forEach(function(record){
+if(record.kind==="route")route=true;
+if(record.role==="road"||record.id==="roads")roads=true;
+if(record.role==="building"||record.id==="buildings")buildings=true;
+if(record.kind==="object")objects=true;
+if(record.visible===false)return;
+if(record.kind==="route"){drawSkeleton(mode!=="skeleton");return;}
+if(record.kind==="object"){drawObjects();return;}
+drawTileLayer(record.id);
+if(record.role==="road"||record.id==="roads")drawStyledRoads();
+if(record.role==="building"||record.id==="buildings")drawStyledBuildings();
 });
+if(!roads)drawStyledRoads();
+if(!buildings)drawStyledBuildings();
+if(!objects)drawObjects();
+if(!route)drawSkeleton(mode!=="skeleton");
 }
 function visibleWorld(){
 const rect=canvas.getBoundingClientRect();
@@ -1791,9 +2032,7 @@ if(!CM.inMapCell(map,c,r))return;
 const x=c*size;
 const y=r*size;
 if(x>view.x1||y>view.y1||x+size<view.x0||y+size<view.y0)return;
-const img=imageOf(layer[key]);
-if(img)ctx.drawImage(img,x,y,size,size);
-else{ctx.fillStyle="#d5dbe3";ctx.fillRect(x,y,size,size);}
+drawSpriteRef(layer[key],x,y,size,size);
 });
 }
 function drawGrid(){
@@ -1836,9 +2075,9 @@ const size=map.grid.size||32;
 const origin=CM.cellOf(map,hover.x,hover.y);
 if(!CM.inMapCell(map,origin.c,origin.r))return;
 const span=tool==="pencil"||tool==="eraser"?brush:1;
-const img=tool!=="eraser"&&tool!=="select"&&selectedAsset?imageOf(selectedAsset.src):null;
+const ref=tool!=="eraser"&&tool!=="select"&&selectedAsset?CM.spriteRef(selectedAsset):"";
 ctx.save();
-ctx.globalAlpha=img?0.72:1;
+ctx.globalAlpha=ref?0.72:1;
 for(let x=0;x<span;x++){
 for(let y=0;y<span;y++){
 const c=origin.c+x;
@@ -1847,7 +2086,7 @@ if(!CM.inMapCell(map,c,r))continue;
 const px=c*size;
 const py=r*size;
 if(tool==="eraser"){ctx.fillStyle="rgba(229,57,53,.28)";ctx.fillRect(px,py,size,size);}
-else if(img)ctx.drawImage(img,px,py,size,size);
+else if(ref)drawSpriteRef(ref,px,py,size,size);
 ctx.strokeStyle=tool==="eraser"?"#e53935":"#1565c0";
 ctx.lineWidth=2/camera.zoom;
 ctx.strokeRect(px,py,size,size);
@@ -1871,7 +2110,7 @@ const view=visibleWorld();
 const size=map.grid.size||32;
 map.skeleton.paths.forEach(function(path){
 if(!path.visualStyle||!path.visualStyle.src)return;
-const img=imageOf(path.visualStyle.src);
+const ref=path.visualStyle.src;
 CM.roadCells(map,path).forEach(function(key){
 const parts=key.split(",");
 const c=Number(parts[0]);
@@ -1880,8 +2119,7 @@ if(!CM.inMapCell(map,c,r))return;
 const x=c*size;
 const y=r*size;
 if(x>view.x1||y>view.y1||x+size<view.x0||y+size<view.y0)return;
-if(img)ctx.drawImage(img,x,y,size,size);
-else{ctx.fillStyle="#c4a574";ctx.fillRect(x,y,size,size);}
+drawSpriteRef(ref,x,y,size,size);
 });
 });
 }
@@ -1891,11 +2129,12 @@ if(dest.visual)drawLinkedSprite(dest.visual,dest.x,dest.y,128);
 });
 }
 function drawLinkedSprite(visual,x,y,maxSize){
-const img=imageOf(visual.src);
+const part=CM.parseSprite(visual.src);
+const img=imageOf(part.src);
 const scale=visual.scale||1;
-let w=maxSize;
-let h=maxSize;
-if(img&&img.naturalWidth){
+let w=part.rect?part.rect.w:maxSize;
+let h=part.rect?part.rect.h:maxSize;
+if(!part.rect&&img&&img.naturalWidth){
 w=img.naturalWidth;
 h=img.naturalHeight||maxSize;
 const fit=Math.min(1,maxSize/Math.max(w,h));
@@ -1904,7 +2143,9 @@ w*=fit;h*=fit;
 ctx.save();
 ctx.translate(x+(visual.offsetX||0),y+(visual.offsetY||0));
 ctx.rotate((visual.rotation||0)*Math.PI/180);
-if(img)ctx.drawImage(img,-w*scale/2,-h*scale/2,w*scale,h*scale);
+ctx.imageSmoothingEnabled=false;
+if(img&&part.rect)ctx.drawImage(img,part.rect.x,part.rect.y,part.rect.w,part.rect.h,-w*scale/2,-h*scale/2,w*scale,h*scale);
+else if(img)ctx.drawImage(img,-w*scale/2,-h*scale/2,w*scale,h*scale);
 else{ctx.strokeStyle="#333";ctx.strokeRect(-maxSize*scale/2,-maxSize*scale/2,maxSize*scale,maxSize*scale);}
 ctx.restore();
 }
@@ -1914,8 +2155,11 @@ ctx.save();
 ctx.translate(obj.x,obj.y);
 ctx.rotate((obj.rotation||0)*Math.PI/180);
 ctx.scale(obj.scale||1,obj.scale||1);
-const img=imageOf(obj.asset);
-if(img)ctx.drawImage(img,-obj.w/2,-obj.h/2,obj.w,obj.h);
+const part=CM.parseSprite(obj.asset);
+const img=imageOf(part.src);
+ctx.imageSmoothingEnabled=false;
+if(img&&part.rect)ctx.drawImage(img,part.rect.x,part.rect.y,part.rect.w,part.rect.h,-obj.w/2,-obj.h/2,obj.w,obj.h);
+else if(img)ctx.drawImage(img,-obj.w/2,-obj.h/2,obj.w,obj.h);
 else{ctx.strokeStyle="#333";ctx.strokeRect(-obj.w/2,-obj.h/2,obj.w,obj.h);}
 ctx.restore();
 const selected=selection.some(function(sel){return sel.kind==="object"&&sel.id===obj.id;});
@@ -1995,6 +2239,7 @@ const img=imageOf(CM.ARROW_SRC);
 ctx.save();
 ctx.translate(inter.x,inter.y);
 ctx.rotate(angle);
+ctx.imageSmoothingEnabled=true;
 if(img)ctx.drawImage(img,-CM.ARROW_W/2,-CM.ARROW_H/2,CM.ARROW_W,CM.ARROW_H);
 else{
 ctx.fillStyle="#f5c542";
@@ -2079,6 +2324,7 @@ if(response.ok)data=await response.json();
 }catch(err){data=null;}
 }
 const found=(data&&data.assets)||[];
+found.forEach(function(asset){asset.ref=CM.spriteRef(asset);});
 assets=extraAssets.concat(found);
 renderPalette();
 if(map)renderSide();

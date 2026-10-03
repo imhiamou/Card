@@ -16,6 +16,23 @@ const DIRECTION_ANGLE={up:0,right:90,down:180,left:270};
 const ARROW_SRC="assets/carts/arrow_up.png";
 const ARROW_W=64;
 const ARROW_H=128;
+const CARTS=[
+{id:"cart",name:"Cart",image:"assets/carts/carts/cart.png",sound:"assets/carts/carts/cart.mp3"},
+{id:"barn",name:"Barn",image:"assets/carts/carts/barn_cart.png",sound:"assets/carts/carts/barn.mp3"},
+{id:"mine",name:"Mine",image:"assets/carts/carts/mine_cart.png",sound:"assets/carts/carts/mine.mp3"},
+{id:"princess",name:"Princess",image:"assets/carts/carts/princess_cart.png",sound:"assets/carts/carts/castle.mp3"},
+{id:"sawmill",name:"Sawmill",image:"assets/carts/carts/sawmill_cart.png",sound:"assets/carts/carts/sawmill.mp3"},
+{id:"tavern",name:"Tavern",image:"assets/carts/carts/tavern_cart.png",sound:"assets/carts/carts/tavern.mp3"},
+{id:"windmill",name:"Windmill",image:"assets/carts/carts/windmill_cart.png",sound:"assets/carts/carts/windmill.mp3"}
+];
+const LEGACY_LAYERS=[
+{id:"ground",name:"Ground",kind:"tile"},
+{id:"roads",name:"Road",kind:"tile",role:"road"},
+{id:"skeleton",name:"Skeleton",kind:"route"},
+{id:"buildings",name:"Buildings",kind:"tile",role:"building"},
+{id:"decorations",name:"Decorations",kind:"tile"},
+{id:"objects",name:"Objects",kind:"object"}
+];
 
 function clone(value){
 return JSON.parse(JSON.stringify(value));
@@ -48,10 +65,11 @@ height:height||1216,
 grid:{size:32,visible:true,snap:true},
 roadWidth:64,
 skeleton:{paths:[],intersections:[],spawns:[],destinations:[]},
-layers:emptyLayers(),
+layers:{},
 objects:[],
-layerState:layerState(),
-layerOrder:DEFAULT_ORDER.slice(),
+layerRecords:[],
+layerState:{},
+layerOrder:[],
 updated:Date.now()
 };
 }
@@ -61,6 +79,11 @@ const map=blank("Prototype",736,640);
 map.id="builtin";
 map.grid.size=32;
 map.roadWidth=64;
+LEGACY_LAYERS.forEach(function(layer){
+map.layerRecords.push({id:layer.id,name:layer.name,kind:layer.kind,role:layer.role||"",visible:true,locked:false});
+if(layer.kind==="tile")map.layers[layer.id]={};
+});
+syncLayerMirrors(map);
 map.skeleton={
 paths:[
 {id:"pIn",width:64,branchId:"",points:[{x:360,y:560},{x:360,y:300}],from:{kind:"spawn",id:"s1"},to:{kind:"intersection",id:"i1"}},
@@ -387,6 +410,122 @@ return String(item.name||"").toLowerCase().replace(/[\s_-]*\d+$/,"")===prefix;
 return group.length?group:[asset];
 }
 
+function cartById(id){
+return CARTS.filter(function(cart){return cart.id===id;})[0]||null;
+}
+
+function parseSprite(ref){
+const text=String(ref||"");
+const pipe=text.lastIndexOf("|");
+if(pipe<0)return {src:text,rect:null};
+const src=text.slice(0,pipe);
+const parts=text.slice(pipe+1).split(",");
+if(parts.length!==4)return {src:text,rect:null};
+const rect={x:Number(parts[0]),y:Number(parts[1]),w:Number(parts[2]),h:Number(parts[3])};
+if(![rect.x,rect.y,rect.w,rect.h].every(Number.isFinite)||rect.w<1||rect.h<1)return {src:text,rect:null};
+return {src:src,rect:rect};
+}
+
+function spriteRef(asset){
+if(!asset)return "";
+if(asset.ref)return asset.ref;
+if(asset.rect&&Number(asset.rect.width)>0)return asset.src+"|"+asset.rect.x+","+asset.rect.y+","+asset.rect.width+","+asset.rect.height;
+return asset.src||"";
+}
+
+function cleanTiles(src){
+const out={};
+if(!src||typeof src!=="object"||Array.isArray(src))return out;
+Object.keys(src).forEach(function(key){
+if(!/^-?\d+,-?\d+$/.test(key))return;
+const value=src[key];
+if(typeof value==="string"&&value)out[key]=value.slice(0,400);
+});
+return out;
+}
+
+function legacyDocument(raw){
+if(!raw||Array.isArray(raw.layerRecords))return false;
+const order=raw.layerOrder;
+if(Array.isArray(order)&&order.some(function(name){return LEGACY_LAYERS.some(function(layer){return layer.id===name;});}))return true;
+const layers=raw.layers;
+if(!layers||typeof layers!=="object"||Array.isArray(layers))return false;
+return LEGACY_LAYERS.some(function(layer){return layers[layer.id]&&typeof layers[layer.id]==="object";});
+}
+
+function applyLayers(out,raw){
+out.layers={};
+out.layerRecords=[];
+out.layerState={};
+const records=Array.isArray(raw.layerRecords)?raw.layerRecords:(legacyDocument(raw)?legacyRecords(raw):[]);
+records.forEach(function(record){
+const clean=cleanRecord(record,raw);
+if(!clean)return;
+if(out.layerRecords.some(function(item){return item.id===clean.id;}))return;
+out.layerRecords.push(clean);
+if(clean.kind==="tile")out.layers[clean.id]=cleanTiles((raw.layers&&raw.layers[clean.id])||record.tiles);
+});
+out.layerOrder=out.layerRecords.map(function(record){return record.id;});
+out.layerRecords.forEach(function(record){
+out.layerState[record.id]={visible:record.visible!==false,locked:!!record.locked};
+});
+}
+
+function legacyRecords(raw){
+const known={};
+LEGACY_LAYERS.forEach(function(layer){known[layer.id]=layer;});
+const order=Array.isArray(raw.layerOrder)&&raw.layerOrder.length?raw.layerOrder:LEGACY_LAYERS.map(function(layer){return layer.id;});
+const records=[];
+order.forEach(function(id){
+if(typeof id!=="string"||!known[id]||records.some(function(item){return item.id===id;}))return;
+const state=raw.layerState&&raw.layerState[id]||{};
+records.push({
+id:id,
+name:known[id].name,
+kind:known[id].kind,
+role:known[id].role||"",
+visible:state.visible!==false,
+locked:!!state.locked
+});
+});
+return records;
+}
+
+function cleanRecord(record){
+if(!record||typeof record.id!=="string"||!record.id)return null;
+const kind=record.kind==="object"||record.kind==="route"?"object"===record.kind?"object":"route":"tile";
+const name=typeof record.name==="string"&&record.name.trim()?record.name.trim().slice(0,32):record.id.slice(0,32);
+const out={id:record.id.slice(0,32),name:name,kind:kind,visible:record.visible!==false,locked:!!record.locked};
+if(record.role==="road"||record.role==="building")out.role=record.role;
+else if(kind==="tile"&&/road|path/i.test(name))out.role="road";
+else if(kind==="tile"&&/build/i.test(name))out.role="building";
+return out;
+}
+
+function addLayer(map,name,kind){
+if(!map.layerRecords)map.layerRecords=[];
+if(!map.layers)map.layers={};
+const used={};
+map.layerRecords.forEach(function(record){used[record.id]=true;});
+const base=(String(name||"layer").toLowerCase().replace(/[^a-z0-9]+/g,"")||"layer").slice(0,24);
+let id=base;
+let n=2;
+while(used[id]){id=base+n;n+=1;}
+const record=cleanRecord({id:id,name:name||"Layer",kind:kind||"tile",visible:true,locked:false});
+map.layerRecords.push(record);
+if(record.kind==="tile")map.layers[record.id]={};
+syncLayerMirrors(map);
+return record;
+}
+
+function syncLayerMirrors(map){
+map.layerOrder=(map.layerRecords||[]).map(function(record){return record.id;});
+map.layerState={};
+(map.layerRecords||[]).forEach(function(record){
+map.layerState[record.id]={visible:record.visible!==false,locked:!!record.locked};
+});
+}
+
 function normalize(raw){
 const map=raw&&typeof raw==="object"?raw:{};
 const out=blank(map.name,Number(map.width)||1600,Number(map.height)||1200);
@@ -409,26 +548,8 @@ out.skeleton.intersections.forEach(function(inter){
 if(DIRECTIONS.indexOf(inter.direction)<0)inter.direction=inferDirection(out,inter);
 syncIntersectionDirection(out,inter);
 });
-TILE_LAYERS.forEach(function(name){
-const src=map.layers&&map.layers[name];
-out.layers[name]={};
-if(!src||typeof src!=="object")return;
-Object.keys(src).forEach(function(key){
-if(!/^-?\d+,-?\d+$/.test(key))return;
-const value=src[key];
-if(typeof value==="string"&&value)out.layers[name][key]=value.slice(0,240);
-});
-});
 out.objects=Array.isArray(map.objects)?map.objects.map(cleanObject).filter(Boolean):[];
-out.layerOrder=cleanOrder(map.layerOrder);
-if(map.layerState){
-Object.keys(out.layerState).forEach(function(name){
-const src=map.layerState[name];
-if(!src)return;
-out.layerState[name].visible=src.visible!==false;
-out.layerState[name].locked=!!src.locked;
-});
-}
+applyLayers(out,map);
 return out;
 }
 
@@ -561,13 +682,14 @@ y:Number(dest.y)||0,
 pathId:typeof dest.pathId==="string"?dest.pathId.slice(0,32):"",
 accepts:typeof dest.accepts==="string"?dest.accepts.slice(0,16):"",
 label:typeof dest.label==="string"?dest.label.slice(0,16):"",
+acceptedCart:CARTS.some(function(cart){return cart.id===dest.acceptedCart;})?dest.acceptedCart:"",
 visual:cleanVisual(dest.visual)
 };
 }
 
 function cleanStyle(style){
 if(!style||typeof style.src!=="string"||!style.src)return null;
-const out={src:style.src.slice(0,240)};
+const out={src:style.src.slice(0,400)};
 if(typeof style.assetId==="string"&&style.assetId)out.assetId=style.assetId.slice(0,160);
 return out;
 }
@@ -575,7 +697,7 @@ return out;
 function cleanVisual(visual){
 if(!visual||typeof visual.src!=="string"||!visual.src)return null;
 return {
-src:visual.src.slice(0,240),
+src:visual.src.slice(0,400),
 offsetX:clamp(Number(visual.offsetX)||0,-2000,2000),
 offsetY:clamp(Number(visual.offsetY)||0,-2000,2000),
 scale:clamp(Number(visual.scale)||1,0.1,8),
@@ -629,7 +751,7 @@ function cleanObject(obj){
 if(!obj||typeof obj.id!=="string"||typeof obj.asset!=="string")return null;
 return {
 id:obj.id.slice(0,32),
-asset:obj.asset.slice(0,240),
+asset:obj.asset.slice(0,400),
 x:Number(obj.x)||0,
 y:Number(obj.y)||0,
 rotation:Number(obj.rotation)||0,
@@ -798,6 +920,12 @@ DIRECTION_ANGLE:DIRECTION_ANGLE,
 ARROW_SRC:ARROW_SRC,
 ARROW_W:ARROW_W,
 ARROW_H:ARROW_H,
+CARTS:CARTS,
+cartById:cartById,
+parseSprite:parseSprite,
+spriteRef:spriteRef,
+addLayer:addLayer,
+syncLayerMirrors:syncLayerMirrors,
 pathCompass:pathCompass,
 setIntersectionDirection:setIntersectionDirection,
 nextCartLetter:nextCartLetter,
