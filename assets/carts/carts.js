@@ -136,7 +136,7 @@ const end=cart.terminal||{kind:"open"};
 if(end.kind==="intersection"&&!cart.lockedAt[end.id]){
 const inter=graph().intersections.filter(function(item){return item.id===end.id;})[0];
 const choice=(inter&&(choices[end.id]||inter.defaultDirection))||"";
-const branch=inter&&inter.outgoing.filter(function(item){return item.id===choice;})[0]||(inter&&inter.outgoing[0]);
+const branch=inter&&inter.outgoing.filter(function(item){return item.id===choice;})[0];
 cart.lockedDirection=branch?branch.id:choice;
 cart.lockedAt[end.id]=cart.lockedDirection;
 cart.phase="toDestination";
@@ -346,17 +346,7 @@ ctx.textBaseline="middle";
 ctx.fillText(dest.label||dest.accepts||"?",dest.x,dest.y);
 });
 compiled.intersections.forEach(function(inter){
-ctx.beginPath();
-ctx.moveTo(inter.x,inter.y-28);
-ctx.lineTo(inter.x+28,inter.y);
-ctx.lineTo(inter.x,inter.y+28);
-ctx.lineTo(inter.x-28,inter.y);
-ctx.closePath();
-ctx.fillStyle="#e53935";
-ctx.fill();
-ctx.lineWidth=3;
-ctx.strokeStyle="#7f1010";
-ctx.stroke();
+drawIntersectionArrow(inter);
 });
 if(cart){
 ctx.beginPath();
@@ -372,6 +362,31 @@ ctx.textAlign="center";
 ctx.textBaseline="middle";
 ctx.fillText(cart.type,cart.x,cart.y+1);
 }
+}
+
+function liveCompass(inter){
+const choice=choices[inter.id]||inter.defaultDirection;
+const branch=(inter.outgoing||[]).filter(function(item){return item.id===choice;})[0];
+return (branch&&branch.compass)||inter.direction||"up";
+}
+function drawIntersectionArrow(inter){
+const direction=liveCompass(inter);
+const angle=((CM.DIRECTION_ANGLE&&CM.DIRECTION_ANGLE[direction])||0)*Math.PI/180;
+const img=imageOf(CM.ARROW_SRC);
+ctx.save();
+ctx.translate(inter.x,inter.y);
+ctx.rotate(angle);
+if(img)ctx.drawImage(img,-CM.ARROW_W/2,-CM.ARROW_H/2,CM.ARROW_W,CM.ARROW_H);
+else{
+ctx.fillStyle="#e53935";
+ctx.beginPath();
+ctx.moveTo(0,-28);
+ctx.lineTo(22,20);
+ctx.lineTo(-22,20);
+ctx.closePath();
+ctx.fill();
+}
+ctx.restore();
 }
 
 function fitTransform(){
