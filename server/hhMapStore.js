@@ -336,6 +336,9 @@ function validateMap(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     return { ok: false, error: "Cannot save map: the map data is invalid." };
   }
+  if (raw.type === "carts" || raw.game === "carts") {
+    return { ok: false, error: "Cannot save map: this is a Carts map." };
+  }
   const width = Math.round(Number(raw.width));
   const height = Math.round(Number(raw.height));
   if (!Number.isFinite(width) || !Number.isFinite(height) || width < MIN_SIZE || height < MIN_SIZE || width > MAX_SIZE || height > MAX_SIZE) {
