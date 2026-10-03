@@ -11,6 +11,11 @@ const VERSION=1;
 const TILE_LAYERS=["ground","roads","buildings","decorations"];
 const DEFAULT_ORDER=["ground","roads","skeleton","buildings","decorations","objects"];
 const FLOOD_LIMIT=20000;
+const DIRECTIONS=["up","right","down","left"];
+const DIRECTION_ANGLE={up:0,right:90,down:180,left:270};
+const ARROW_SRC="assets/carts/arrow_up.png";
+const ARROW_W=64;
+const ARROW_H=128;
 
 function clone(value){
 return JSON.parse(JSON.stringify(value));
@@ -35,6 +40,7 @@ function blank(name,width,height){
 return {
 version:VERSION,
 type:"carts",
+game:"carts",
 id:"",
 name:name||"Untitled map",
 width:width||1600,
@@ -62,7 +68,7 @@ paths:[
 {id:"pB",width:64,branchId:"B",points:[{x:360,y:300},{x:96,y:300}],from:{kind:"intersection",id:"i1"},to:{kind:"destination",id:"dB"}}
 ],
 intersections:[
-{id:"i1",x:360,y:300,defaultDirection:"A"}
+{id:"i1",x:360,y:300,direction:"up",defaultDirection:"A"}
 ],
 spawns:[
 {id:"s1",x:360,y:560,pathId:"pIn",enabled:true}
@@ -167,7 +173,8 @@ const branch=path.branchId||(dest&&(dest.accepts||dest.label))||path.id;
 outgoing.push({
 id:String(branch),
 pathId:path.id,
-label:dest&&dest.label?dest.label:String(branch)
+label:dest&&dest.label?dest.label:String(branch),
+compass:pathCompass(path)
 });
 }
 if(fromHere&&!toHere){
@@ -176,12 +183,14 @@ if(fromHere&&!toHere){
 incoming.push(path.id);
 }
 });
-let fallback=inter.defaultDirection||(outgoing[0]&&outgoing[0].id)||"";
-if(!outgoing.some(function(b){return b.id===fallback;}))fallback=outgoing[0]?outgoing[0].id:"";
+const direction=DIRECTIONS.indexOf(inter.direction)>=0?inter.direction:"up";
+const aimed=outgoing.filter(function(branch){return branch.compass===direction;})[0];
+const fallback=aimed?aimed.id:"";
 return {
 id:inter.id,
 x:inter.x,
 y:inter.y,
+direction:direction,
 incoming:incoming,
 outgoing:outgoing,
 defaultDirection:fallback
@@ -385,6 +394,7 @@ out.id=typeof map.id==="string"?map.id:"";
 out.name=typeof map.name==="string"&&map.name.trim()?map.name.trim().slice(0,48):"Untitled map";
 out.version=VERSION;
 out.type="carts";
+out.game="carts";
 out.roadWidth=clamp(Number(map.roadWidth)||64,8,256);
 out.grid.size=gridLimits(map.grid&&map.grid.size).size;
 setTileCounts(out,Math.round((Number(map.width)||1600)/out.grid.size),Math.round((Number(map.height)||1200)/out.grid.size));
@@ -395,6 +405,10 @@ out.skeleton.paths=Array.isArray(map.skeleton&&map.skeleton.paths)?map.skeleton.
 out.skeleton.intersections=Array.isArray(map.skeleton&&map.skeleton.intersections)?map.skeleton.intersections.map(cleanIntersection).filter(Boolean):[];
 out.skeleton.spawns=Array.isArray(map.skeleton&&map.skeleton.spawns)?map.skeleton.spawns.map(cleanSpawn).filter(Boolean):[];
 out.skeleton.destinations=Array.isArray(map.skeleton&&map.skeleton.destinations)?map.skeleton.destinations.map(cleanDestination).filter(Boolean):[];
+out.skeleton.intersections.forEach(function(inter){
+if(DIRECTIONS.indexOf(inter.direction)<0)inter.direction=inferDirection(out,inter);
+syncIntersectionDirection(out,inter);
+});
 TILE_LAYERS.forEach(function(name){
 const src=map.layers&&map.layers[name];
 out.layers[name]={};
@@ -451,12 +465,79 @@ visualStyle:cleanStyle(path.visualStyle)
 
 function cleanIntersection(inter){
 if(!inter||typeof inter.id!=="string")return null;
+const direction=DIRECTIONS.indexOf(inter.direction)>=0?inter.direction:"";
 return {
 id:inter.id.slice(0,32),
 x:Number(inter.x)||0,
 y:Number(inter.y)||0,
+direction:direction,
 defaultDirection:typeof inter.defaultDirection==="string"?inter.defaultDirection.slice(0,32):""
 };
+}
+
+function pathCompass(path){
+if(!path||!path.points||path.points.length<2)return "";
+const a=path.points[0];
+const b=path.points[1];
+const dx=b.x-a.x;
+const dy=b.y-a.y;
+if(Math.abs(dx)>=Math.abs(dy))return dx>=0?"right":"left";
+return dy>=0?"down":"up";
+}
+
+function outgoingPaths(map,interId){
+return (map.skeleton.paths||[]).filter(function(path){
+return path.from&&path.from.kind==="intersection"&&path.from.id===interId&&path.points&&path.points.length>=2;
+});
+}
+
+function branchOf(map,path){
+const dest=path.to&&path.to.kind==="destination"?byId(map.skeleton.destinations,path.to.id):null;
+return path.branchId||(dest&&(dest.accepts||dest.label))||path.id;
+}
+
+function inferDirection(map,inter){
+const paths=outgoingPaths(map,inter.id);
+const wanted=inter.defaultDirection||"";
+const match=paths.filter(function(path){return branchOf(map,path)===wanted;})[0]||paths[0];
+return match?pathCompass(match):"up";
+}
+
+function syncIntersectionDirection(map,inter){
+if(DIRECTIONS.indexOf(inter.direction)<0)inter.direction="up";
+const match=outgoingPaths(map,inter.id).filter(function(path){return pathCompass(path)===inter.direction;})[0];
+inter.defaultDirection=match?branchOf(map,match):"";
+}
+
+function setIntersectionDirection(map,inter,direction){
+if(!inter)return;
+inter.direction=DIRECTIONS.indexOf(direction)>=0?direction:"up";
+syncIntersectionDirection(map,inter);
+}
+
+function cartLetter(index){
+let n=index;
+let text="";
+do{
+text=String.fromCharCode(65+(n%26))+text;
+n=Math.floor(n/26)-1;
+}while(n>=0);
+return text;
+}
+
+function nextCartLetter(map){
+const used={};
+(map.skeleton.destinations||[]).forEach(function(dest){
+[dest.accepts,dest.label].forEach(function(value){
+const key=String(value||"").trim().toUpperCase();
+if(key)used[key]=true;
+});
+});
+for(let i=0;i<702;i++){
+const letter=cartLetter(i);
+if(!used[letter])return letter;
+}
+return cartLetter((map.skeleton.destinations||[]).length);
 }
 
 function cleanSpawn(spawn){
@@ -712,6 +793,14 @@ VERSION:VERSION,
 TILE_LAYERS:TILE_LAYERS,
 DEFAULT_ORDER:DEFAULT_ORDER,
 FLOOD_LIMIT:FLOOD_LIMIT,
+DIRECTIONS:DIRECTIONS,
+DIRECTION_ANGLE:DIRECTION_ANGLE,
+ARROW_SRC:ARROW_SRC,
+ARROW_W:ARROW_W,
+ARROW_H:ARROW_H,
+pathCompass:pathCompass,
+setIntersectionDirection:setIntersectionDirection,
+nextCartLetter:nextCartLetter,
 clone:clone,
 blank:blank,
 builtin:builtin,

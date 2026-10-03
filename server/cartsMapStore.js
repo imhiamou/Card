@@ -66,7 +66,7 @@ async function ready() {
   await persist.connect();
   const rows = await persist.loadAll();
   rows.forEach((row) => {
-    if (row.document && row.document.type === "carts") writeCache(CM.normalize(row.document));
+    if (row.document && row.document.type === "carts" && (!row.document.game || row.document.game === "carts")) writeCache(CM.normalize(row.document));
   });
   return { ok: true, persisted: "postgres", count: rows.length };
 }
@@ -78,7 +78,7 @@ async function listMaps() {
       ok: true,
       maps: rows
         .map((row) => row.document)
-        .filter((doc) => doc && doc.type === "carts")
+        .filter((doc) => doc && doc.type === "carts" && (!doc.game || doc.game === "carts"))
         .map((doc) => summary(CM.normalize(doc)))
     };
   }
@@ -90,7 +90,7 @@ async function loadMap(id) {
   if (persist.enabled()) {
     const rows = await persist.loadAll();
     const found = rows.filter((row) => row.id === id)[0];
-    if (!found || !found.document || found.document.type !== "carts") {
+    if (!found || !found.document || found.document.type !== "carts" || (found.document.game && found.document.game !== "carts")) {
       return { ok: false, error: "Unknown Carts map" };
     }
     return { ok: true, map: CM.normalize(found.document) };
@@ -102,7 +102,10 @@ async function loadMap(id) {
 
 async function saveMap(body) {
   if (body && body.type && body.type !== "carts") return { ok: false, error: "Not a Carts map" };
+  if (body && body.game && body.game !== "carts") return { ok: false, error: "Not a Carts map" };
+  if (body && body.spawns && body.spawns.hunter && !body.skeleton) return { ok: false, error: "Not a Carts map" };
   const map = CM.normalize(body || {});
+  if (map.game !== "carts" || map.type !== "carts") return { ok: false, error: "Not a Carts map" };
   if (map.type !== "carts") return { ok: false, error: "Not a Carts map" };
   if (!ID_PATTERN.test(map.id)) map.id = createId();
   map.updated = Date.now();

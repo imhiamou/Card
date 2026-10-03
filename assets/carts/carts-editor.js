@@ -337,8 +337,8 @@ mutate(function(){obj.visual=visualFrom(asset,obj.visual);});
 if(obj.visual)wrap.appendChild(button("Remove visual",null,function(){mutate(function(){obj.visual=null;});}));
 }
 if(sel.kind==="destination"){
-wrap.appendChild(field("Label",input("text",obj.label,function(value){mutate(function(){obj.label=value.slice(0,16);syncBranchForDest(obj);});})));
-wrap.appendChild(field("Accepts cart",input("text",obj.accepts,function(value){mutate(function(){obj.accepts=value.slice(0,16);syncBranchForDest(obj);});})));
+wrap.appendChild(el("<p class='ceEmpty'>Label: "+(obj.label||"")+"</p>"));
+wrap.appendChild(el("<p class='ceEmpty'>Accepts cart: "+(obj.accepts||"")+"</p>"));
 wrap.appendChild(el("<p class='ceEmpty'>Building</p>"));
 wrap.appendChild(stylePicker(["building"],obj.visual&&obj.visual.src,function(asset){
 if(layerLocked("buildings")){setStatus("Buildings layer is locked");return;}
@@ -355,8 +355,19 @@ wrap.appendChild(field("Rotation",input("number",obj.visual.rotation||0,function
 if(sel.kind==="intersection"){
 const graph=CM.compile(map).intersections.filter(function(item){return item.id===obj.id;})[0];
 const options=graph&&graph.outgoing||[];
+wrap.appendChild(el("<p class='ceEmpty'>Direction</p>"));
+const dirs=document.createElement("div");
+dirs.className="ceRow";
+[["up","↑"],["right","→"],["down","↓"],["left","←"]].forEach(function(pair){
+const node=button(pair[1],null,function(){mutate(function(){CM.setIntersectionDirection(map,obj,pair[0]);});});
+node.title=pair[0];
+if((obj.direction||"up")===pair[0])node.classList.add("active");
+dirs.appendChild(node);
+});
+wrap.appendChild(dirs);
 wrap.appendChild(el("<p class='ceEmpty'>Connections: "+(options.map(branchLabel).join(", ")||"none")+"</p>"));
-wrap.appendChild(field("Default direction",branchSelect(obj,options)));
+const aimed=options.filter(function(branch){return branch.compass===obj.direction;})[0];
+wrap.appendChild(el("<p class='ceEmpty'>"+(aimed?"Sends carts "+obj.direction+" on "+aimed.id:"No path "+(obj.direction||"up")+" yet")+"</p>"));
 }
 }
 if(sel.kind==="path"||sel.kind==="point")appendPathFields(wrap,sel);
@@ -735,7 +746,11 @@ if(path.from&&path.from.kind==="intersection"&&path.to&&path.to.kind==="destinat
 const dest=CM.byId(map.skeleton.destinations,path.to.id);
 path.branchId=dest&&(dest.accepts||dest.label)?(dest.accepts||dest.label):path.id;
 const inter=CM.byId(map.skeleton.intersections,path.from.id);
-if(inter&&!inter.defaultDirection)inter.defaultDirection=path.branchId;
+if(!inter)return;
+const aimed=(map.skeleton.paths||[]).some(function(item){
+return item.from&&item.from.kind==="intersection"&&item.from.id===inter.id&&CM.pathCompass(item)===(inter.direction||"up");
+});
+if(!aimed)CM.setIntersectionDirection(map,inter,CM.pathCompass(path)||"up");
 }
 }
 
@@ -851,7 +866,8 @@ const spawn={id:CM.newId(map,"s"),x:point.x,y:point.y,pathId:"",enabled:true};
 map.skeleton.spawns.push(spawn);
 selection=[{kind:"spawn",id:spawn.id}];
 }else{
-const dest={id:CM.newId(map,"d"),x:point.x,y:point.y,pathId:"",accepts:"",label:""};
+const letter=CM.nextCartLetter(map);
+const dest={id:CM.newId(map,"d"),x:point.x,y:point.y,pathId:"",accepts:letter,label:letter};
 map.skeleton.destinations.push(dest);
 selection=[{kind:"destination",id:dest.id}];
 }
@@ -863,7 +879,8 @@ const hit=nearestSegment(world.x,world.y,18);
 if(hit){insertIntersection(hit);return;}
 const point=CM.snapPoint(map,world.x,world.y);
 mutate(function(){
-const inter={id:CM.newId(map,"i"),x:point.x,y:point.y,defaultDirection:""};
+const inter={id:CM.newId(map,"i"),x:point.x,y:point.y,direction:"up",defaultDirection:""};
+CM.setIntersectionDirection(map,inter,"up");
 map.skeleton.intersections.push(inter);
 selection=[{kind:"intersection",id:inter.id}];
 });
@@ -873,7 +890,7 @@ function insertIntersection(hit){
 mutate(function(){
 const path=hit.path;
 const point={x:hit.x,y:hit.y};
-const inter={id:CM.newId(map,"i"),x:point.x,y:point.y,defaultDirection:""};
+const inter={id:CM.newId(map,"i"),x:point.x,y:point.y,direction:"up",defaultDirection:""};
 const after=[{x:point.x,y:point.y}].concat(path.points.slice(hit.index+1));
 const before=path.points.slice(0,hit.index+1);
 before.push({x:point.x,y:point.y});
@@ -895,7 +912,7 @@ if(neu.to&&neu.to.kind==="destination"){
 const dest=CM.byId(map.skeleton.destinations,neu.to.id);
 if(dest){dest.pathId=neu.id;neu.branchId=dest.accepts||dest.label||neu.id;}
 }
-inter.defaultDirection=neu.branchId||"";
+CM.setIntersectionDirection(map,inter,CM.pathCompass(neu)||"up");
 selection=[{kind:"intersection",id:inter.id}];
 });
 }
@@ -1138,7 +1155,7 @@ map.skeleton.spawns.forEach(function(spawn){
 if(Math.hypot(spawn.x-x,spawn.y-y)<=16)marker={kind:"spawn",id:spawn.id};
 });
 map.skeleton.intersections.forEach(function(inter){
-if(Math.abs(inter.x-x)+Math.abs(inter.y-y)<=22)marker={kind:"intersection",id:inter.id};
+if(Math.hypot(inter.x-x,inter.y-y)<=40)marker={kind:"intersection",id:inter.id};
 });
 if(marker)return marker;
 const link=CM.nearestLink(map,x,y,18/Math.max(camera.zoom,0.4));
@@ -1323,6 +1340,11 @@ const copy=CM.clone(obj);
 copy.id=CM.newId(map,sel.kind==="spawn"?"s":sel.kind==="destination"?"d":"i");
 copy.x+=offset;copy.y+=offset;
 if(copy.pathId)copy.pathId="";
+if(sel.kind==="destination"){
+const letter=CM.nextCartLetter(map);
+copy.accepts=letter;
+copy.label=letter;
+}
 const list=sel.kind==="spawn"?"spawns":sel.kind==="destination"?"destinations":"intersections";
 map.skeleton[list].push(copy);
 next.push({kind:sel.kind,id:copy.id});
@@ -1663,6 +1685,7 @@ if(body.map&&(!doc||(body.map.updated||0)>=(doc.updated||0)))doc=body.map;
 }
 }catch(err){}
 if(!doc){setStatus("Map not found");return;}
+if((doc.type&&doc.type!=="carts")||(doc.game&&doc.game!=="carts")){setStatus("That is not a Carts map");return;}
 loadDocument(doc);
 closeDialog();
 setStatus("Loaded "+map.name);
@@ -1724,6 +1747,7 @@ ctx.strokeStyle="#111";
 ctx.lineWidth=2/camera.zoom;
 ctx.strokeRect(0,0,map.width,map.height);
 drawStacked();
+if(mode==="skeleton"&&layerVisible("skeleton"))drawDestinationLabels();
 if(!drag)drawHoverPreview();
 if(map.grid.visible)drawGrid();
 drawCellSelection();
@@ -1961,18 +1985,42 @@ ctx.textBaseline="middle";
 ctx.fillText(dest.label||dest.accepts||dest.id,dest.x,dest.y);
 });
 map.skeleton.intersections.forEach(function(inter){
-ctx.beginPath();
-ctx.moveTo(inter.x,inter.y-16);
-ctx.lineTo(inter.x+16,inter.y);
-ctx.lineTo(inter.x,inter.y+16);
-ctx.lineTo(inter.x-16,inter.y);
-ctx.closePath();
-ctx.fillStyle="#e53935";
-ctx.fill();
-ctx.strokeStyle="#7f1010";
-ctx.stroke();
+drawIntersectionArrow(inter,inter.direction||"up");
 });
 ctx.restore();
+}
+function drawIntersectionArrow(inter,direction){
+const angle=((CM.DIRECTION_ANGLE&&CM.DIRECTION_ANGLE[direction])||0)*Math.PI/180;
+const img=imageOf(CM.ARROW_SRC);
+ctx.save();
+ctx.translate(inter.x,inter.y);
+ctx.rotate(angle);
+if(img)ctx.drawImage(img,-CM.ARROW_W/2,-CM.ARROW_H/2,CM.ARROW_W,CM.ARROW_H);
+else{
+ctx.fillStyle="#f5c542";
+ctx.beginPath();
+ctx.moveTo(0,-22);
+ctx.lineTo(14,16);
+ctx.lineTo(-14,16);
+ctx.closePath();
+ctx.fill();
+}
+ctx.restore();
+}
+function drawDestinationLabels(){
+map.skeleton.destinations.forEach(function(dest){
+if(!dest.visual||!dest.visual.src)return;
+const text=dest.label||dest.accepts||"";
+if(!text)return;
+ctx.font="bold 20px Arial";
+ctx.textAlign="center";
+ctx.textBaseline="middle";
+ctx.lineWidth=4/camera.zoom;
+ctx.strokeStyle="#fff";
+ctx.strokeText(text,dest.x,dest.y);
+ctx.fillStyle="#111";
+ctx.fillText(text,dest.x,dest.y);
+});
 }
 function drawArrow(a,b,color){
 const ang=Math.atan2(b.y-a.y,b.x-a.x);
