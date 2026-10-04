@@ -1,11 +1,11 @@
 name: Publish Hidden Hunter Windows release
 
-# Production updates come only from a published GitHub Release whose tag
-# matches desktop/package.json (v1.0.2 for version 1.0.2).
+# The GitHub Release tag is the application version.
+# v1.0.4 becomes desktop version 1.0.4 inside this job only.
+# The committed desktop/package.json does not have to match beforehand.
+# This job does not create a commit or another Git tag.
 # Drafts and pre-releases do not publish installers.
-# workflow_dispatch builds the selected commit and attaches the installer
-# to the already-published release for that same version. Use it to repair
-# v1.0.2 after this workflow is on main. It does not delete that release.
+# workflow_dispatch uses the same tag, for example v1.0.4.
 
 on:
   release:
@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Published release tag that should receive the installer, for example v1.0.2"
+        description: "Release tag to publish, for example v1.0.4"
         required: true
         type: string
 
@@ -42,15 +42,15 @@ jobs:
         working-directory: desktop
         run: npm ci
 
-      - name: Test desktop update flow
-        working-directory: desktop
-        run: npm test
-
-      - name: Require the release tag to match the desktop version
+      - name: Set the desktop version from the release tag
         shell: bash
         env:
           RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.event.release.tag_name }}
         run: node desktop/release-tag.js
+
+      - name: Test desktop update flow
+        working-directory: desktop
+        run: npm test
 
       - name: Build and publish Windows installer
         working-directory: desktop
