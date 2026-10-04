@@ -49,7 +49,7 @@ const MONSTER_HP = DAMAGE * 3;
 const INITIAL_MONSTER_COUNT = 3;
 const MONSTER_DIFFICULTY_COUNTS = { easy: 3, normal: 6, hard: 10 };
 const MONSTER_COUNT_CAP = 16;
-const MAGAZINE_SIZE = 3;
+const MAGAZINE_SIZE = 6;
 const FIRE_COOLDOWN_MS = 500;
 const RELOAD_MS = 1500;
 const INPUT_STALE_MS = 350;
@@ -904,6 +904,14 @@ function angerMonster(hh, m, now) {
   m.lastY = m.y;
 }
 
+function healTeam(hh) {
+  const gain = Math.round(PLAYER_MAX_HEALTH * 0.5);
+  Object.values(hh.players || {}).forEach((p) => {
+    if (!p || p.dead || p.hp <= 0) return;
+    p.hp = Math.min(PLAYER_MAX_HEALTH, p.hp + gain);
+  });
+}
+
 function killMonster(m) {
   if (!m) return;
   m.hp = 0;
@@ -1211,7 +1219,10 @@ function stepProjectiles(room, io, roomCode, dt) {
         m.hp = Math.max(0, m.hp - DAMAGE);
         m.hitUntil = hitAt + 220;
         if (m.hp > 0) angerMonster(hh, m, hitAt);
-        else killMonster(m);
+        else {
+          killMonster(m);
+          healTeam(hh);
+        }
         addImpact(hh, b.x, b.y, "hit");
         io.to(hh.trackerId).emit("hiddenHunterHit", {
           monsterId: m.id,
