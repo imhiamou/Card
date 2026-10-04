@@ -6,7 +6,7 @@ const { EventEmitter } = require("events");
 const fs = require("fs");
 const path = require("path");
 const { createUpdateController, UPDATE_MESSAGE, UPDATE_NOW, LATER } = require("./updater");
-const { releaseTagMatches } = require("./release-tag");
+const { releaseTagMatches, versionFromReleaseTag, applyReleaseTag } = require("./release-tag");
 const { verifyDist } = require("./verify-dist");
 const { missingReleaseAssets, releaseAssetNames } = require("./verify-release-assets");
 
@@ -191,7 +191,7 @@ describe("release configuration", () => {
   const rootPackage = require("../package.json");
 
   it("publishes the desktop app to the public Card GitHub Releases", () => {
-    assert.equal(desktopPackage.version, "1.0.3");
+    assert.match(desktopPackage.version, /^\d+\.\d+\.\d+$/);
     assert.equal(desktopPackage.build.files.includes("release-tag.js"), false);
     assert.equal(desktopPackage.build.files.includes("verify-dist.js"), false);
     assert.equal(desktopPackage.build.files.includes("verify-release-assets.js"), false);
@@ -241,6 +241,9 @@ describe("release configuration", () => {
     assert.match(workflow, /node-version: 22/);
     assert.match(workflow, /npm test/);
     assert.match(workflow, /node desktop\/release-tag\.js/);
+    const syncAt = workflow.indexOf("node desktop/release-tag.js");
+    const testAt = workflow.indexOf("npm test");
+    assert.ok(syncAt >= 0 && testAt > syncAt);
     assert.match(workflow, /npm run dist:publish/);
     assert.match(workflow, /GH_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}/);
     assert.match(workflow, /CSC_IDENTITY_AUTO_DISCOVERY: false/);
@@ -253,6 +256,7 @@ describe("release configuration", () => {
     assert.match(installer, /branches: \[main\]/);
     assert.match(installer, /npm test/);
     assert.match(installer, /npm run dist\b/);
+    assert.equal(installer.includes("release-tag.js"), false);
     assert.equal(installer.includes("dist:publish"), false);
     assert.equal(installer.includes("GH_TOKEN"), false);
     assert.match(installer, /contents: read/);
@@ -262,6 +266,46 @@ describe("release configuration", () => {
 });
 
 describe("release tag gate", () => {
+  const os = require("os");
+
+  function fixture(version) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hh-release-"));
+    const pkg = {
+      name: "hidden-hunter-desktop",
+      version,
+      private: true
+    };
+    const lock = {
+      name: "hidden-hunter-desktop",
+      version,
+      lockfileVersion: 3,
+      requires: true,
+      packages: {
+        "": {
+          name: "hidden-hunter-desktop",
+          version
+        },
+        "node_modules/left-pad": {
+          version: "1.0.2"
+        }
+      }
+    };
+    fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify(pkg, null, 2) + "\n");
+    fs.writeFileSync(path.join(dir, "package-lock.json"), JSON.stringify(lock, null, 2) + "\n");
+    return dir;
+  }
+
+  function versions(dir) {
+    const pkg = JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8"));
+    const lock = JSON.parse(fs.readFileSync(path.join(dir, "package-lock.json"), "utf8"));
+    return {
+      packageJson: pkg.version,
+      lockfile: lock.version,
+      packagesRoot: lock.packages[""].version,
+      dependency: lock.packages["node_modules/left-pad"].version
+    };
+  }
+
   it("accepts only v plus the exact desktop version", () => {
     assert.equal(releaseTagMatches("v1.0.2", "1.0.2"), true);
     assert.equal(releaseTagMatches("v1.0.1", "1.0.2"), false);
@@ -269,6 +313,60 @@ describe("release tag gate", () => {
     assert.equal(releaseTagMatches("v1.0.2-beta", "1.0.2"), false);
     assert.equal(releaseTagMatches("v1.0.2", "1.0.2-beta"), false);
     assert.equal(releaseTagMatches("", "1.0.2"), false);
+  });
+
+  it("derives a strict application version from the release tag", () => {
+    assert.equal(versionFromReleaseTag("v1.0.4"), "1.0.4");
+    assert.equal(versionFromReleaseTag("v1.2.3"), "1.2.3");
+    assert.equal(versionFromReleaseTag("v2.0.0"), "2.0.0");
+    assert.equal(versionFromReleaseTag("v10.20.30"), "10.20.30");
+    for (const tag of ["", "1.0.4", "v1.0.4-beta", "v1.0", "v1.0.4.1", "v1.0.4 ", "V1.0.4", "vv1.0.4", "v01.0.4"]) {
+      assert.equal(versionFromReleaseTag(tag), null, tag);
+    }
+  });
+
+  it("synchronizes package 1.0.3 to release tag v1.0.4", () => {
+    const dir = fixture("1.0.3");
+    const result = applyReleaseTag(dir, "v1.0.4");
+    const synced = versions(dir);
+    assert.equal(result.ok, true);
+    assert.equal(result.version, "1.0.4");
+    assert.equal(synced.packageJson, "1.0.4");
+    assert.equal(synced.lockfile, "1.0.4");
+    assert.equal(synced.packagesRoot, "1.0.4");
+    assert.equal(synced.dependency, "1.0.2");
+    assert.equal(releaseTagMatches("v1.0.4", synced.packageJson), true);
+  });
+
+  it("synchronizes package 1.0.4 to the next release tag v1.0.5", () => {
+    const dir = fixture("1.0.4");
+    const result = applyReleaseTag(dir, "v1.0.5");
+    const synced = versions(dir);
+    assert.equal(result.ok, true);
+    assert.equal(synced.packageJson, "1.0.5");
+    assert.equal(synced.lockfile, "1.0.5");
+    assert.equal(synced.packagesRoot, "1.0.5");
+    assert.equal(releaseTagMatches("v1.0.5", synced.packageJson), true);
+  });
+
+  it("accepts a tag that already matches the package version", () => {
+    const dir = fixture("1.0.4");
+    const result = applyReleaseTag(dir, "v1.0.4");
+    assert.equal(result.ok, true);
+    assert.equal(versions(dir).packageJson, "1.0.4");
+    assert.equal(versions(dir).lockfile, "1.0.4");
+  });
+
+  it("rejects malformed tags without changing the package version", () => {
+    for (const tag of ["", "1.0.4", "v1.0.4-beta", "v1.0", "v1.0.4.1", "V1.0.4"]) {
+      const dir = fixture("1.0.3");
+      const result = applyReleaseTag(dir, tag);
+      assert.equal(result.ok, false, tag);
+      assert.match(result.message, /Refusing to publish/);
+      assert.equal(versions(dir).packageJson, "1.0.3");
+      assert.equal(versions(dir).lockfile, "1.0.3");
+      assert.equal(versions(dir).packagesRoot, "1.0.3");
+    }
   });
 });
 
