@@ -92,13 +92,55 @@ x:spawn.x,
 y:spawn.y,
 phase:leg.end.kind==="intersection"?"toIntersection":"toDestination",
 lockedDirection:null,
-lockedAt:{},
 resolved:false,
 route:leg.points,
 routeIndex:0,
-terminal:leg.end
+terminal:leg.end,
+facing:headingFrom(spawn.x,spawn.y,leg.points),
+anim:0,
+moving:false
 };
 state="playing";
+}
+function headingBetween(ax,ay,bx,by){
+return Math.atan2(by-ay,bx-ax)+Math.PI/2;
+}
+function headingFrom(x,y,points){
+const list=points||[];
+for(let i=0;i<list.length;i++){
+if(Math.hypot(list[i].x-x,list[i].y-y)>1)return headingBetween(x,y,list[i].x,list[i].y);
+}
+if(list.length>=2)return headingBetween(list[list.length-2].x,list[list.length-2].y,list[list.length-1].x,list[list.length-1].y);
+return 0;
+}
+function angleDelta(from,to){
+let d=to-from;
+d=(d+Math.PI)%(Math.PI*2);
+if(d<0)d+=Math.PI*2;
+return d-Math.PI;
+}
+function desiredHeading(){
+if(!cart)return 0;
+return headingFrom(cart.x,cart.y,cart.route&&cart.route.slice(cart.routeIndex));
+}
+function stepFacing(dt,moving){
+if(!cart)return;
+const want=desiredHeading();
+if(!Number.isFinite(cart.facing))cart.facing=want;
+const diff=angleDelta(cart.facing,want);
+const max=10*Math.max(0,dt);
+if(Math.abs(diff)<=max)cart.facing=want;
+else cart.facing+=Math.sign(diff)*max;
+cart.moving=!!moving;
+if(moving)cart.anim=(cart.anim||0)+dt*7;
+}
+function takeLeg(leg){
+cart.route=leg.points;
+cart.terminal=leg.end;
+cart.phase=leg.end&&leg.end.kind==="intersection"?"toIntersection":"toDestination";
+cart.routeIndex=0;
+const first=cart.route[0];
+if(first&&Math.hypot(first.x-cart.x,first.y-cart.y)<=1)cart.routeIndex=1;
 }
 
 function failCart(){
@@ -140,18 +182,15 @@ waitUntil=performance.now()+CART_SPAWN_DELAY;
 function arrive(){
 if(!cart)return;
 const end=cart.terminal||{kind:"open"};
-if(end.kind==="intersection"&&!cart.lockedAt[end.id]){
+if(end.kind==="intersection"){
 const inter=graph().intersections.filter(function(item){return item.id===end.id;})[0];
 const choice=(inter&&(choices[end.id]||inter.defaultDirection))||"";
 const branch=inter&&inter.outgoing.filter(function(item){return item.id===choice;})[0];
 cart.lockedDirection=branch?branch.id:choice;
-cart.lockedAt[end.id]=cart.lockedDirection;
-cart.phase="toDestination";
 if(!branch){failCart();return;}
 const leg=CM.legAlong(doc,branch.pathId,"intersection",inter.id);
-cart.route=leg.points;
-cart.routeIndex=0;
-cart.terminal=leg.end;
+if(!leg.points||leg.points.length<2){failCart();return;}
+takeLeg(leg);
 return;
 }
 if(end.kind==="destination"){resolveDestination(end.id);return;}
@@ -163,7 +202,11 @@ if(state==="gameover")return;
 if(state==="waiting"&&!cart&&lives>0&&now>=waitUntil)spawnCart();
 if(state!=="playing"||!cart||cart.resolved)return;
 const target=cart.route[cart.routeIndex];
-if(!target){arrive();return;}
+if(!target){
+arrive();
+if(cart&&!cart.resolved)stepFacing(dt,true);
+return;
+}
 const dx=target.x-cart.x;
 const dy=target.y-cart.y;
 const dist=Math.hypot(dx,dy);
@@ -172,11 +215,17 @@ if(dist<=step||dist<=1){
 cart.x=target.x;
 cart.y=target.y;
 cart.routeIndex+=1;
-if(cart.routeIndex>=cart.route.length)arrive();
+if(cart.routeIndex>=cart.route.length){
+arrive();
+if(cart&&!cart.resolved)stepFacing(dt,true);
+return;
+}
+stepFacing(dt,true);
 return;
 }
 cart.x+=dx/dist*step;
 cart.y+=dy/dist*step;
+stepFacing(dt,true);
 }
 
 function syncHud(){
@@ -389,12 +438,15 @@ if(cart)drawCartBody();
 function drawCartBody(){
 const spec=CM.cartById(cart.type);
 const img=spec&&imageOf(spec.image);
+const moving=!!cart.moving;
+const bob=moving?Math.sin(cart.anim||0)*2.2:0;
+const rock=moving?Math.sin((cart.anim||0)*2)*0.03:0;
 ctx.save();
-ctx.translate(cart.x,cart.y);
+ctx.translate(cart.x,cart.y+bob);
 ctx.imageSmoothingEnabled=false;
 if(img){
 const turn=CM.cartSpriteTransform?CM.cartSpriteTransform(cart.type):{rotation:Math.PI,scale:1,base:56};
-ctx.rotate(turn.rotation);
+ctx.rotate(turn.rotation+(cart.facing||0)+rock);
 ctx.imageSmoothingEnabled=true;
 const max=turn.base*turn.scale;
 const fit=Math.min(max/img.naturalWidth,max/img.naturalHeight);
@@ -610,6 +662,8 @@ x:cart.x,
 y:cart.y,
 phase:cart.phase,
 lockedDirection:cart.lockedDirection,
+facing:cart.facing,
+moving:!!cart.moving,
 resolved:cart.resolved
 }:null
 };

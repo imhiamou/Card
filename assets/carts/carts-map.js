@@ -29,7 +29,9 @@ const CART_PREFS_KEY="carts.editor.v1";
 const CART_ROTATION=Math.PI;
 const CART_DRAW=56;
 const CART_SCALE_MIN=0.5;
-const CART_SCALE_MAX=2;
+const CART_SCALE_MAX=4;
+const CART_SCALE_DEFAULT=3.5;
+const CART_SCALE_REV=2;
 const LEGACY_LAYERS=[
 {id:"ground",name:"Ground",kind:"tile"},
 {id:"roads",name:"Road",kind:"tile",role:"road"},
@@ -427,7 +429,7 @@ const rounded=Math.round(n*100)/100;
 return Math.max(CART_SCALE_MIN,Math.min(CART_SCALE_MAX,rounded));
 }
 function emptyPrefs(){
-return {cartScale:1,cartScales:{},favorites:[]};
+return {cartScale:CART_SCALE_DEFAULT,cartScales:{},favorites:[],scaleRev:CART_SCALE_REV};
 }
 function syncRegistryScales(){
 if(!memoryPrefs)return;
@@ -462,6 +464,12 @@ seen[key]=true;
 memoryPrefs.favorites.push(key);
 });
 }
+if((Number(parsed.scaleRev)||0)<CART_SCALE_REV){
+memoryPrefs.cartScale=CART_SCALE_DEFAULT;
+memoryPrefs.cartScales={};
+memoryPrefs.scaleRev=CART_SCALE_REV;
+writePrefs();
+}else memoryPrefs.scaleRev=CART_SCALE_REV;
 }
 }catch(err){}
 }
@@ -1043,6 +1051,9 @@ CARTS:CARTS,
 CART_PREFS_KEY:CART_PREFS_KEY,
 CART_ROTATION:CART_ROTATION,
 CART_DRAW:CART_DRAW,
+CART_SCALE_MIN:CART_SCALE_MIN,
+CART_SCALE_MAX:CART_SCALE_MAX,
+CART_SCALE_DEFAULT:CART_SCALE_DEFAULT,
 cartById:cartById,
 cartVisualScale:cartVisualScale,
 cartScaleIsCustom:cartScaleIsCustom,
