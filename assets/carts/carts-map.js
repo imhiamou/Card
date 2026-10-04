@@ -30,8 +30,8 @@ const CART_ROTATION=Math.PI;
 const CART_DRAW=56;
 const CART_SCALE_MIN=0.5;
 const CART_SCALE_MAX=4;
-const CART_SCALE_DEFAULT=3.5;
-const CART_SCALE_REV=2;
+const CART_SCALE_DEFAULT=3;
+const CART_SCALE_REV=3;
 const LEGACY_LAYERS=[
 {id:"ground",name:"Ground",kind:"tile"},
 {id:"roads",name:"Road",kind:"tile",role:"road"},
