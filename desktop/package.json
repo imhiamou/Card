@@ -1,6 +1,6 @@
 {
   "name": "hidden-hunter-desktop",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "private": true,
   "author": "Hidden Hunter",
   "description": "Electron shell for Hidden Hunter. Serves the local frontend and connects to the Render multiplayer server.",

@@ -191,7 +191,7 @@ describe("release configuration", () => {
   const rootPackage = require("../package.json");
 
   it("publishes the desktop app to the public Card GitHub Releases", () => {
-    assert.equal(desktopPackage.version, "1.0.2");
+    assert.equal(desktopPackage.version, "1.0.3");
     assert.equal(desktopPackage.build.files.includes("release-tag.js"), false);
     assert.equal(desktopPackage.build.files.includes("verify-dist.js"), false);
     assert.equal(desktopPackage.build.files.includes("verify-release-assets.js"), false);
