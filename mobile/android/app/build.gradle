@@ -34,6 +34,7 @@ android {
                 storePassword gamewebKeystorePassword
                 keyAlias gamewebKeyAlias
                 keyPassword gamewebKeyPassword
+                v2SigningEnabled true
             }
         }
     }
@@ -44,6 +45,24 @@ android {
                 signingConfig signingConfigs.release
             }
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+// Assign the release signing config again after the android block.
+// AGP can otherwise leave the release variant unsigned even when the
+// signing config above was filled in.
+if (gamewebReleaseSigning) {
+    android.buildTypes.release.signingConfig = android.signingConfigs.release
+}
+
+afterEvaluate {
+    tasks.matching { it.name == "assembleRelease" || it.name == "packageRelease" }.configureEach {
+        doFirst {
+            def config = android.buildTypes.release.signingConfig
+            if (config == null || config.storeFile == null || !config.storeFile.isFile()) {
+                throw new GradleException("The release build variant has no signing config. Refusing to build an unsigned APK.")
+            }
         }
     }
 }
