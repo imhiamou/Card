@@ -280,9 +280,17 @@ let connectNoticeShown=false;
 
 function endLobbyWait(){
 if(lobbyWaitTimer){clearTimeout(lobbyWaitTimer);lobbyWaitTimer=null;}
+setLobbyButtonsDisabled(false);
+}
+function setLobbyButtonsDisabled(disabled){
+const createBtn=document.getElementById("createBtn");
+const joinBtn=document.getElementById("joinBtn");
+if(createBtn)createBtn.disabled=disabled;
+if(joinBtn)joinBtn.disabled=disabled;
 }
 function beginLobbyWait(){
 endLobbyWait();
+setLobbyButtonsDisabled(true);
 lobbyWaitTimer=setTimeout(()=>{
 lobbyWaitTimer=null;
 const waiting=status&&(status.textContent==="Creating lobby..."||status.textContent==="Joining...");
@@ -297,6 +305,7 @@ if(window.AppNotice)window.AppNotice.alert(msg,focusId||null);
 else alert(msg);
 }
 function releaseWaitingControls(){
+setLobbyButtonsDisabled(false);
 if(startBotsBtn&&startBotsBtn.disabled){
 startBotsBtn.disabled=false;
 if(String(startBotsBtn.textContent).indexOf("Starting")===0){
@@ -398,7 +407,23 @@ status.textContent="Joining...";
 beginLobbyWait();
 };
 
-socket.on("connect",()=>{connectNoticeShown=false;});
+let statusBeforeDisconnect="";
+function restoreConnectionStatus(){
+if(!status)return;
+if(status.textContent!=="Connecting..."&&status.textContent!=="Reconnecting...")return;
+status.textContent=statusBeforeDisconnect==="Connecting..."?"":statusBeforeDisconnect;
+statusBeforeDisconnect="";
+}
+socket.on("connect",()=>{
+connectNoticeShown=false;
+restoreConnectionStatus();
+});
+socket.on("disconnect",(reason)=>{
+if(reason==="io client disconnect"||!status)return;
+if(status.textContent==="Reconnecting...")return;
+statusBeforeDisconnect=status.textContent;
+status.textContent="Reconnecting...";
+});
 socket.on("connect_error",()=>{
 const waiting=status&&(status.textContent==="Creating lobby..."||status.textContent==="Joining..."||(startBotsBtn&&startBotsBtn.disabled));
 if(!waiting||connectNoticeShown)return;

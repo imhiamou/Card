@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Gameweb</string>
+    <string name="title_activity_main">Gameweb</string>
+    <string name="package_name">com.imhiamou.gameweb</string>
+    <string name="custom_url_scheme">com.imhiamou.gameweb</string>
+</resources>

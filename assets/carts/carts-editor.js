@@ -2713,7 +2713,7 @@ requestAnimationFrame(loop);
 async function loadAssets(){
 let data=null;
 try{
-const response=await fetch("/api/carts-assets");
+const response=await fetch(cartsApi("/api/carts-assets"));
 if(response.ok)data=await response.json();
 }catch(err){data=null;}
 if(!data||!Array.isArray(data.assets)){

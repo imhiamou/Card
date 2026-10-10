@@ -1,3 +1,6 @@
+html{
+overflow-x:hidden;
+}
 body{
 margin:0;
 background:#181c24;
@@ -5,8 +8,11 @@ display:flex;
 justify-content:center;
 align-items:center;
 min-height:100vh;
+min-height:100dvh;
 font-family:Arial;
 color:white;
+overflow-x:hidden;
+touch-action:manipulation;
 }
 
 /* Prevent background scroll while Dominoes phone play is fullscreen */
@@ -176,9 +182,12 @@ background:#3a4256;
 border:2px solid transparent;
 border-radius:8px;
 padding:10px;
+min-height:44px;
+box-sizing:border-box;
 text-align:center;
 cursor:pointer;
 user-select:none;
+touch-action:manipulation;
 }
 .charOption:hover{
 background:#4a5470;
@@ -543,9 +552,11 @@ min-width:0;
 #lobbyScreen .lobbyIdentity select,
 #lobbyScreen .lobbyActions input,
 #lobbyScreen .lobbyActions button,
-#lobbyScreen .lobbyConfig select{
+#lobbyScreen .lobbyConfig select,
+#lobbyScreen button{
 margin:0 0 12px;
-font-size:15px;
+min-height:44px;
+font-size:16px;
 }
 #lobbyScreen #createBtn,
 #lobbyScreen #joinBtn{
@@ -613,6 +624,44 @@ width:min(420px,100%);
 display:block;
 margin:10px auto 0;
 }
+html.carts-play,
+body.carts-play,
+html.hh-play,
+body.hh-play{
+overflow:hidden;
+height:100%;
+overscroll-behavior:none;
+}
+
+html.gameweb-app,
+html.gameweb-app body{
+height:100%;
+min-height:100dvh;
+overflow:hidden;
+overscroll-behavior:none;
+}
+html.gameweb-app body{
+box-sizing:border-box;
+padding:
+  env(safe-area-inset-top)
+  env(safe-area-inset-right)
+  env(safe-area-inset-bottom)
+  env(safe-area-inset-left);
+}
+html.gameweb-app #lobbyScreen.box,
+html.gameweb-app #placementScreen,
+html.gameweb-app #gameScreen{
+max-height:100%;
+overflow-y:auto;
+-webkit-overflow-scrolling:touch;
+}
+html.gameweb-app #hiddenHunterScreen,
+html.gameweb-app #cartsScreen.cartsScreen,
+html.gameweb-app #dominoScreen,
+html.gameweb-app #unoScreen{
+max-height:100%;
+}
+
 @media(max-width:900px){
 #lobbyScreen.box{
 width:min(460px, calc(100vw - 20px));
