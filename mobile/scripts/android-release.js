@@ -62,23 +62,128 @@ function exportEnvLines(env) {
   ];
 }
 
-function assertSignedApk(apkPath) {
-  const listing = spawnSync("unzip", ["-l", apkPath], { encoding: "utf8" });
-  if (listing.error) throw listing.error;
-  if (listing.status !== 0) {
-    throw new Error((listing.stderr || "Could not read the APK.").trim());
-  }
-  if (!/META-INF\/[^/\s]+\.(RSA|DSA|EC)\b/i.test(listing.stdout)) {
-    throw new Error("The APK is not signed. Refusing to publish it.");
-  }
+const EXPECTED_PACKAGE = "com.imhiamou.gameweb";
+
+function normalizeDigest(value) {
+  return String(value || "").toLowerCase().replace(/[^a-f0-9]/g, "");
 }
 
-function writeMetadata(apkPath, destDir, version) {
+function redactSecrets(text, env) {
+  let out = String(text || "");
+  ["ANDROID_KEYSTORE_BASE64", "ANDROID_KEYSTORE_PASSWORD", "ANDROID_KEY_PASSWORD"].forEach((name) => {
+    const secret = env && env[name];
+    if (secret) out = out.split(secret).join("[redacted]");
+  });
+  return out.slice(0, 500);
+}
+
+function findAndroidTool(name, env) {
+  const home = (env && (env.ANDROID_HOME || env.ANDROID_SDK_ROOT)) || "";
+  if (home) {
+    const tools = path.join(home, "build-tools");
+    if (fs.existsSync(tools)) {
+      const versions = fs.readdirSync(tools).filter((entry) => {
+        return fs.existsSync(path.join(tools, entry, name));
+      }).sort();
+      if (versions.length) return path.join(tools, versions[versions.length - 1], name);
+    }
+  }
+  return name;
+}
+
+function assessApksignerReport(text) {
+  const report = String(text || "");
+  const scheme = (label) => new RegExp("Verified using " + label + " scheme \\([^)]+\\): (true|false)", "i").exec(report);
+  const verified = ["v1", "v2", "v3"].some((label) => {
+    const match = scheme(label);
+    return match && match[1].toLowerCase() === "true";
+  });
+  const digest = /Signer #1 certificate SHA-256 digest:\s*([A-Fa-f0-9:]+)/.exec(report);
+  if (!verified) return { ok: false, error: "The APK is not signed. Refusing to publish it." };
+  if (!digest) return { ok: false, error: "apksigner did not print the APK signing certificate." };
+  return { ok: true, sha256: normalizeDigest(digest[1]) };
+}
+
+function assessBadging(text) {
+  const match = /package: name='([^']+)'/.exec(String(text || ""));
+  if (!match || match[1] !== EXPECTED_PACKAGE) {
+    return { ok: false, error: "The APK application ID is not " + EXPECTED_PACKAGE + "." };
+  }
+  return { ok: true, packageName: match[1] };
+}
+
+function assessKeytoolList(text) {
+  const match = /(?:Certificate fingerprint \(SHA-256\)|SHA256):\s*([A-Fa-f0-9:]+)/.exec(String(text || ""));
+  if (!match) return { ok: false, error: "The release keystore certificate could not be read." };
+  return { ok: true, sha256: normalizeDigest(match[1]) };
+}
+
+function verifyReleaseApk(apkPath, env) {
+  env = env || process.env;
+  if (!apkPath || !fs.existsSync(apkPath)) {
+    throw new Error("The release APK was not produced.");
+  }
+  const apksigner = findAndroidTool("apksigner", env);
+  const signed = spawnSync(apksigner, ["verify", "--verbose", "--print-certs", apkPath], {
+    encoding: "utf8",
+    env: env
+  });
+  if (signed.error) {
+    throw new Error("apksigner could not be run. Refusing to publish an unverified APK.");
+  }
+  const signedText = (signed.stdout || "") + "\n" + (signed.stderr || "");
+  if (signed.status !== 0) {
+    throw new Error("The APK is not signed. Refusing to publish it.");
+  }
+  const signature = assessApksignerReport(signedText);
+  if (!signature.ok) throw new Error(signature.error);
+
+  const aapt = findAndroidTool("aapt", env);
+  const badging = spawnSync(aapt, ["dump", "badging", apkPath], { encoding: "utf8", env: env });
+  if (badging.error || badging.status !== 0) {
+    throw new Error("The APK application ID could not be read.");
+  }
+  const pkg = assessBadging(badging.stdout || "");
+  if (!pkg.ok) throw new Error(pkg.error);
+
+  const keystore = env.ANDROID_KEYSTORE_PATH;
+  const storepass = env.ANDROID_KEYSTORE_PASSWORD;
+  const alias = env.ANDROID_KEY_ALIAS;
+  if (!keystore || !storepass || !alias) {
+    throw new Error("The release keystore path, password, or alias is missing. Refusing to publish.");
+  }
+  const listed = spawnSync("keytool", [
+    "-list",
+    "-keystore", keystore,
+    "-storepass", storepass,
+    "-alias", alias
+  ], { encoding: "utf8", env: env });
+  const listedText = (listed.stdout || "") + "\n" + (listed.stderr || "");
+  if (listed.error || listed.status !== 0) {
+    const detail = redactSecrets(listedText, env);
+    if (/password was incorrect/i.test(detail)) {
+      throw new Error("The keystore could not be opened. Check ANDROID_KEYSTORE_PASSWORD.");
+    }
+    if (/does not exist/i.test(detail)) {
+      throw new Error("ANDROID_KEY_ALIAS was not found in the release keystore.");
+    }
+    throw new Error("The decoded release keystore could not be read. " + detail);
+  }
+  const cert = assessKeytoolList(listed.stdout || "");
+  if (!cert.ok) throw new Error(cert.error);
+  if (cert.sha256 !== signature.sha256) {
+    throw new Error("The APK signature does not match the release keystore. Refusing to publish it.");
+  }
+  return { packageName: pkg.packageName, sha256: signature.sha256 };
+}
+
+function writeMetadata(apkPath, destDir, version, options) {
   const versionCode = update.versionCodeFromVersion(version);
   if (!versionCode) throw new Error(invalidTagMessage("v" + version));
   const bytes = fs.readFileSync(apkPath);
   if (!bytes.length) throw new Error("The APK is empty. Refusing to publish it.");
-  assertSignedApk(apkPath);
+  if (options && options.verify) options.verify(apkPath);
+  else verifyReleaseApk(apkPath, (options && options.env) || process.env);
   const sha256 = update.sha256Hex(bytes);
   const apkName = update.apkFileName(version);
   fs.mkdirSync(destDir, { recursive: true });
@@ -196,6 +301,16 @@ function main(argv, env) {
     else lines.forEach((line) => console.log(line));
     return 0;
   }
+  if (command === "verify") {
+    const apkPath = argv[3];
+    if (!apkPath) {
+      console.error("Usage: android-release.js verify <apk>");
+      return 1;
+    }
+    const result = verifyReleaseApk(apkPath, env);
+    console.log("Verified " + result.packageName + " certificate " + result.sha256);
+    return 0;
+  }
   if (command === "metadata") {
     const apkPath = argv[3];
     const destDir = argv[4];
@@ -233,8 +348,13 @@ if (require.main === module) {
 
 module.exports = {
   SIGNING_SECRETS: SIGNING_SECRETS,
+  EXPECTED_PACKAGE: EXPECTED_PACKAGE,
   checkEnvironment: checkEnvironment,
   exportEnvLines: exportEnvLines,
+  assessApksignerReport: assessApksignerReport,
+  assessBadging: assessBadging,
+  assessKeytoolList: assessKeytoolList,
+  verifyReleaseApk: verifyReleaseApk,
   writeMetadata: writeMetadata,
   publishDir: publishDir,
   releaseNotes: releaseNotes,

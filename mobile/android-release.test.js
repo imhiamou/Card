@@ -74,9 +74,30 @@ describe("android version metadata", () => {
     assert.equal(update.releaseDownloadUrl("1.0.5/../../other"), null);
   });
 
+  it("accepts an APK Signature Scheme v2 report and rejects an unsigned APK", () => {
+    const v2 = [
+      "Verifies",
+      "Verified using v1 scheme (JAR signing): false",
+      "Verified using v2 scheme (APK Signature Scheme v2): true",
+      "Verified using v3 scheme (APK Signature Scheme v3): false",
+      "Signer #1 certificate SHA-256 digest: 874942775d56224cb04f657e5972a671a918b0ec6040e3643a771d02a1a970bc"
+    ].join("\n");
+    const signed = release.assessApksignerReport(v2);
+    assert.equal(signed.ok, true);
+    const keystore = release.assessKeytoolList("Certificate fingerprint (SHA-256): 87:49:42:77:5D:56:22:4C:B0:4F:65:7E:59:72:A6:71:A9:18:B0:EC:60:40:E3:64:3A:77:1D:02:A1:A9:70:BC");
+    assert.equal(keystore.ok, true);
+    assert.equal(signed.sha256, keystore.sha256);
+    const unsigned = v2.replace("v2 scheme (APK Signature Scheme v2): true", "v2 scheme (APK Signature Scheme v2): false");
+    assert.equal(release.assessApksignerReport(unsigned).ok, false);
+    assert.equal(release.assessBadging("package: name='com.imhiamou.gameweb' versionCode='1000005'").ok, true);
+    assert.equal(release.assessBadging("package: name='com.example.other'").ok, false);
+  });
+
   it("writes signed release metadata and refuses to publish without secrets", () => {
     const dest = fs.mkdtempSync(path.join(os.tmpdir(), "gameweb-meta-"));
-    const manifest = release.writeMetadata(signedApk(), dest, "1.0.5");
+    const manifest = release.writeMetadata(signedApk(), dest, "1.0.5", {
+      verify() {}
+    });
     assert.equal(manifest.versionCode, 1000005);
     assert.equal(manifest.sha256.length, 64);
     const apk = fs.readFileSync(path.join(dest, "Gameweb-1.0.5.apk"));
@@ -106,6 +127,9 @@ describe("android version metadata", () => {
     assert.match(android, /assembleRelease/);
     assert.match(android, /tags:/);
     assert.match(android, /android-release\.js check/);
+    const verifyAt = android.indexOf("android-release.js verify");
+    const metadataAt = android.indexOf("android-release.js metadata");
+    assert.ok(verifyAt > 0 && metadataAt > verifyAt);
     assert.match(android, /android-latest\.json/);
     assert.match(android, /--clobber/);
     release.SIGNING_SECRETS.forEach((name) => assert.match(android, new RegExp(name)));

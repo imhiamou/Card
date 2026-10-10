@@ -126,10 +126,19 @@ jobs:
       - name: Decode the release keystore
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
           umask 077
-          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/gameweb-release.keystore"
-          test -s "$RUNNER_TEMP/gameweb-release.keystore"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | tr -d '[:space:]' | base64 -d > "$RUNNER_TEMP/gameweb-release.keystore"
+          if [ ! -s "$RUNNER_TEMP/gameweb-release.keystore" ]; then
+            echo "ANDROID_KEYSTORE_BASE64 did not decode to a keystore file."
+            exit 1
+          fi
+          if ! keytool -list -keystore "$RUNNER_TEMP/gameweb-release.keystore" -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" >/dev/null; then
+            echo "The decoded keystore could not be opened with ANDROID_KEYSTORE_PASSWORD and ANDROID_KEY_ALIAS."
+            exit 1
+          fi
 
       - name: Build the signed release APK
         working-directory: mobile/android
@@ -140,16 +149,20 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: ./gradlew assembleRelease --no-daemon -PgamewebVersionName="$VERSION_NAME" -PgamewebVersionCode="$VERSION_CODE"
 
+      - name: Verify the APK signature
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/gameweb-release.keystore
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: node mobile/scripts/android-release.js verify mobile/android/app/build/outputs/apk/release/app-release.apk
+
       - name: Write Android update metadata
         env:
           RELEASE_TAG: ${{ github.ref_name }}
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/gameweb-release.keystore
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: node mobile/scripts/android-release.js metadata mobile/android/app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/android-release"
-
-      - name: Verify the APK signature
-        run: |
-          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort | tail -n 1)"
-          test -n "$APKSIGNER"
-          "$APKSIGNER" verify --print-certs "$RUNNER_TEMP/android-release/Gameweb-${VERSION_NAME}.apk"
 
       - name: Publish the APK to the GitHub Release
         # Uploads Gameweb-<version>.apk, Gameweb-<version>.apk.sha256, and
