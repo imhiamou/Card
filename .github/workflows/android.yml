@@ -149,6 +149,32 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: ./gradlew assembleRelease --no-daemon -PgamewebVersionName="$VERSION_NAME" -PgamewebVersionCode="$VERSION_CODE"
 
+      - name: Inspect the release APK signature
+        run: |
+          APK="mobile/android/app/build/outputs/apk/release/app-release.apk"
+          if [ ! -f "$APK" ]; then
+            echo "assembleRelease did not write app-release.apk."
+            ls -l mobile/android/app/build/outputs/apk/release || true
+            exit 1
+          fi
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort | tail -n 1)"
+          ZIPALIGN="$(find "$ANDROID_HOME/build-tools" -type f -name zipalign | sort | tail -n 1)"
+          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort | tail -n 1)"
+          test -n "$APKSIGNER"
+          test -n "$ZIPALIGN"
+          test -n "$AAPT"
+          export PATH="$(dirname "$APKSIGNER"):$(dirname "$ZIPALIGN"):$(dirname "$AAPT"):$PATH"
+          BADGING="$(aapt dump badging "$APK" | head -n 1)"
+          echo "$BADGING"
+          echo "$BADGING" | grep -q "name='com.imhiamou.gameweb'"
+          apksigner verify --verbose --print-certs "$APK"
+          if ! zipalign -c -v 4 "$APK" > "$RUNNER_TEMP/zipalign.txt"; then
+            echo "zipalign check failed."
+            tail -n 30 "$RUNNER_TEMP/zipalign.txt"
+            exit 1
+          fi
+          tail -n 5 "$RUNNER_TEMP/zipalign.txt"
+
       - name: Verify the APK signature
         env:
           ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/gameweb-release.keystore

@@ -61,7 +61,7 @@ The Android workflow then:
 2. Fails before building if the signing secrets below are missing.
 3. Sets Android `versionName` to `1.0.5` and `versionCode` to `1000005` (`major * 1000000 + minor * 1000 + patch`).
 4. Builds a release APK signed with the saved keystore. Android Gradle Plugin signs this app with APK Signature Scheme v2. That signature is not a `META-INF` JAR certificate, because `minSdk` is 24.
-5. Runs `apksigner verify --verbose --print-certs`, checks the application id is `com.imhiamou.gameweb`, and checks the certificate matches the release keystore. Checksum metadata is written only after that verification succeeds.
+5. Immediately after `assembleRelease`, prints `apksigner verify --verbose --print-certs` and checks `zipalign -c -v 4`. It then checks that the application id is `com.imhiamou.gameweb` and that the certificate matches the release keystore. Checksum metadata is written only after that verification succeeds.
 6. Uploads these assets to the GitHub Release for that tag, replacing those three names if the job is run again:
    - `Gameweb-1.0.5.apk`
    - `Gameweb-1.0.5.apk.sha256`
