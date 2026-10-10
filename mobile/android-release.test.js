@@ -127,9 +127,13 @@ describe("android version metadata", () => {
     assert.match(android, /assembleRelease/);
     assert.match(android, /tags:/);
     assert.match(android, /android-release\.js check/);
+    const gradleAt = android.indexOf("assembleRelease");
+    const diagAt = android.indexOf("apksigner verify --verbose --print-certs");
+    const alignAt = android.indexOf("zipalign -c -v 4");
     const verifyAt = android.indexOf("android-release.js verify");
     const metadataAt = android.indexOf("android-release.js metadata");
-    assert.ok(verifyAt > 0 && metadataAt > verifyAt);
+    assert.ok(gradleAt > 0 && diagAt > gradleAt && alignAt > gradleAt);
+    assert.ok(diagAt < verifyAt && verifyAt < metadataAt);
     assert.match(android, /android-latest\.json/);
     assert.match(android, /--clobber/);
     release.SIGNING_SECRETS.forEach((name) => assert.match(android, new RegExp(name)));
