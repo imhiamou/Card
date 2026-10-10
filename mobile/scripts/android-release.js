@@ -91,6 +91,17 @@ function findAndroidTool(name, env) {
   return name;
 }
 
+function certificateSha256Digests(report) {
+  const pattern = /(?:Signer #\d+|V\d+(?:\.\d+)? Signer):?\s*certificate SHA-256 digest:\s*([A-Fa-f0-9:]+)/gi;
+  const digests = [];
+  let match = pattern.exec(report);
+  while (match) {
+    digests.push(normalizeDigest(match[1]));
+    match = pattern.exec(report);
+  }
+  return Array.from(new Set(digests));
+}
+
 function assessApksignerReport(text) {
   const report = String(text || "");
   const scheme = (label) => new RegExp("Verified using " + label + " scheme \\([^)]+\\): (true|false)", "i").exec(report);
@@ -98,10 +109,15 @@ function assessApksignerReport(text) {
     const match = scheme(label);
     return match && match[1].toLowerCase() === "true";
   });
-  const digest = /Signer #1 certificate SHA-256 digest:\s*([A-Fa-f0-9:]+)/.exec(report);
   if (!verified) return { ok: false, error: "The APK is not signed. Refusing to publish it." };
-  if (!digest) return { ok: false, error: "apksigner did not print the APK signing certificate." };
-  return { ok: true, sha256: normalizeDigest(digest[1]) };
+  const digests = certificateSha256Digests(report);
+  if (digests.length === 0) {
+    return { ok: false, error: "apksigner did not print the APK signing certificate." };
+  }
+  if (digests.length !== 1) {
+    return { ok: false, error: "The APK has conflicting signing certificates. Refusing to publish it." };
+  }
+  return { ok: true, sha256: digests[0] };
 }
 
 function assessBadging(text) {
