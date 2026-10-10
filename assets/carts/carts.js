@@ -592,6 +592,7 @@ const editor=document.getElementById("cartsEditorScreen");
 if(lobby)lobby.classList.add("hidden");
 if(editor)editor.classList.add("hidden");
 if(screen)screen.classList.remove("hidden");
+document.documentElement.classList.add("carts-play");
 active=true;
 }
 
@@ -632,6 +633,7 @@ draw();
 function stop(opts){
 running=false;
 active=false;
+document.documentElement.classList.remove("carts-play");
 if(raf)cancelAnimationFrame(raf);
 raf=0;
 lastTime=0;
@@ -676,6 +678,7 @@ if(lobbyBtn)lobbyBtn.addEventListener("click",function(){stop();});
 if(restartBtn)restartBtn.addEventListener("click",restart);
 if(editorBtn)editorBtn.addEventListener("click",function(){stop({toEditor:true});});
 window.addEventListener("resize",fitCanvas);
+document.addEventListener("visibilitychange",function(){if(!document.hidden)fitCanvas();});
 const stage=document.querySelector(".cartsStage");
 if(stage&&window.ResizeObserver)new ResizeObserver(fitCanvas).observe(stage);
 

@@ -1,2 +1,6 @@
 node_modules/
 server/data/carts-maps/
+mobile/node_modules/
+mobile/www/
+*.keystore
+*.jks

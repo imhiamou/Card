@@ -2,8 +2,17 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Hidden Duel</title>
+<script>
+(function(){
+  var cap=window.Capacitor;
+  if(cap&&typeof cap.isNativePlatform==="function"&&cap.isNativePlatform()){
+    document.documentElement.classList.add("gameweb-app");
+    document.title="Gameweb";
+  }
+})();
+</script>
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="domino.css">
 <link rel="stylesheet" href="uno.css">
@@ -138,7 +147,7 @@
 </div>
 
 <div class="lobbyFeedback">
-<h2 id="status"></h2>
+<h2 id="status">Connecting...</h2>
 <h3 id="code"></h3>
 <!-- Shown to the creator of a bots-enabled Dominoes/UNO lobby -->
 <button id="startBotsBtn" class="hidden">Start Now (fill empty seats with bots)</button>

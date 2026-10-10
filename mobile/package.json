@@ -1,0 +1,19 @@
+{
+  "name": "gameweb-mobile",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Capacitor shell for the Gameweb frontend. The multiplayer server stays on Render.",
+  "scripts": {
+    "copy": "node scripts/copy-www.js",
+    "sync": "npm run copy && cap sync",
+    "android": "npm run sync && cap open android",
+    "ios": "npm run sync && cap open ios",
+    "test": "node --test mobile.test.js"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.5.3",
+    "@capacitor/cli": "8.5.3",
+    "@capacitor/core": "8.5.3",
+    "@capacitor/ios": "8.5.3"
+  }
+}

@@ -378,12 +378,21 @@
     return (navigator.maxTouchPoints || 0) > 0 && !hover;
   }
 
+  function lockPlayOrientation(lock) {
+    const orientation = window.screen && window.screen.orientation;
+    if (!orientation || typeof orientation.lock !== "function") return;
+    const job = lock ? orientation.lock("landscape") : (typeof orientation.unlock === "function" ? orientation.unlock() : null);
+    if (job && typeof job.catch === "function") job.catch(function () {});
+  }
+
   function showScreen() {
     active = true;
     otherScreens().forEach((el) => { if (el) el.classList.add("hidden"); });
     hiddenHunterScreen.classList.remove("hidden");
+    document.documentElement.classList.add("hh-play");
     touchMode = preferTouch();
     hiddenHunterScreen.classList.toggle("hh-touch", touchMode);
+    lockPlayOrientation(true);
     sizeCanvas();
     startLoops();
   }
@@ -391,6 +400,8 @@
   function hideScreen() {
     active = false;
     stopLoops();
+    document.documentElement.classList.remove("hh-play");
+    lockPlayOrientation(false);
     if (hiddenHunterScreen) hiddenHunterScreen.classList.add("hidden");
     if (document.fullscreenElement === hiddenHunterScreen) {
       const ex = document.exitFullscreen || document.webkitExitFullscreen;
@@ -1263,6 +1274,7 @@
       };
     }
     window.addEventListener("resize", () => { if (active) sizeCanvas(); });
+    document.addEventListener("visibilitychange", () => { if (!document.hidden && active) sizeCanvas(); });
   }
 
   function init(sharedSocket) {

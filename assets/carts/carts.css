@@ -37,7 +37,9 @@ padding:11px;
 
 #cartsScreen.cartsScreen{
 width:min(760px, calc(100vw - 24px));
-max-width:calc(100vw - 16px);
+max-width:100%;
+max-height:100dvh;
+overflow:hidden;
 background:#f7f8fa;
 color:#111;
 padding:12px 14px 16px;
@@ -84,7 +86,8 @@ color:#333;
 }
 .cartsStage{
 position:relative;
-width:min(100%, calc((100vh - 168px) * 736 / 640));
+width:min(100%, calc((100dvh - 220px) * 736 / 640));
+max-width:100%;
 aspect-ratio:736 / 640;
 margin:0 auto;
 background:#fff;

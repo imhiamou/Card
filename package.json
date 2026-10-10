@@ -4,7 +4,10 @@
   "description": "Hidden Duel - frontend (GitHub Pages) + Socket.IO backend in server/ (Render)",
   "main": "server/server.js",
   "scripts": {
-    "start": "node server/server.js"
+    "start": "node server/server.js",
+    "mobile:copy": "npm --prefix mobile run copy",
+    "mobile:sync": "npm --prefix mobile run sync",
+    "mobile:test": "npm --prefix mobile test"
   },
   "engines": {
     "node": ">=18"

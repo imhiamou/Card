@@ -1,0 +1,15 @@
+{
+  "appId": "com.imhiamou.gameweb",
+  "appName": "Gameweb",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false
+  },
+  "ios": {
+    "allowsLinkPreview": false
+  },
+  "server": {
+    "androidScheme": "https",
+    "iosScheme": "https"
+  }
+}
