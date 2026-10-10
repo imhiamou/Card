@@ -49,7 +49,7 @@ The APK is written to:
 mobile/android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-GitHub Actions workflow `.github/workflows/android.yml` builds that same debug APK. It does not use a release keystore.
+GitHub Actions workflow `.github/workflows/android.yml` builds that same debug APK. It installs Android platform 36, build-tools 35.0.0, and platform-tools, then accepts the SDK licenses. It does not use a release keystore.
 
 ## Release build
 

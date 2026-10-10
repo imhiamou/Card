@@ -48,6 +48,12 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # The action default is "tools platform-tools". sdkmanager no longer
+          # ships "tools". This project compiles against Android 36 and AGP
+          # 8.13 uses build-tools 35.0.0.
+          accept-android-sdk-licenses: true
+          packages: platform-tools platforms;android-36 build-tools;35.0.0
 
       - name: Copy the frontend and sync Capacitor
         run: npm ci --prefix mobile && npm --prefix mobile run sync
