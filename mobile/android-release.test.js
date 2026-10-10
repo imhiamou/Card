@@ -87,6 +87,21 @@ describe("android version metadata", () => {
     const keystore = release.assessKeytoolList("Certificate fingerprint (SHA-256): 87:49:42:77:5D:56:22:4C:B0:4F:65:7E:59:72:A6:71:A9:18:B0:EC:60:40:E3:64:3A:77:1D:02:A1:A9:70:BC");
     assert.equal(keystore.ok, true);
     assert.equal(signed.sha256, keystore.sha256);
+    const buildTools36 = [
+      "Verifies",
+      "Verified using v1 scheme (JAR signing): false",
+      "Verified using v2 scheme (APK Signature Scheme v2): true",
+      "Verified using v3 scheme (APK Signature Scheme v3): false",
+      "Verified using v3.1 scheme (APK Signature Scheme v3.1): false",
+      "Verified using v3.2 scheme (APK Signature Scheme v3.2): false",
+      "V2 Signer: certificate DN: CN=Gameweb, OU=Android, O=imhiamou, C=US",
+      "V2 Signer: certificate SHA-256 digest: 874942775d56224cb04f657e5972a671a918b0ec6040e3643a771d02a1a970bc",
+      "V2 Signer: public key SHA-256 digest: 9199ea64017da99ae2dbb9a3963638fa603477867cb5472d9faa67e506180d0f"
+    ].join("\n");
+    const newer = release.assessApksignerReport(buildTools36);
+    assert.equal(newer.ok, true);
+    assert.equal(newer.sha256, signed.sha256);
+    assert.equal(release.assessApksignerReport(v2 + "\nSigner #1 certificate SHA-256 digest: aaaa").ok, false);
     const unsigned = v2.replace("v2 scheme (APK Signature Scheme v2): true", "v2 scheme (APK Signature Scheme v2): false");
     assert.equal(release.assessApksignerReport(unsigned).ok, false);
     assert.equal(release.assessBadging("package: name='com.imhiamou.gameweb' versionCode='1000005'").ok, true);
