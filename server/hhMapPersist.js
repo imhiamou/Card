@@ -8,7 +8,11 @@
 const { Pool } = require("pg");
 
 let pool = null;
+let lastError = null;
+let connecting = null;
+let lastAttemptAt = 0;
 const TABLE = "hh_maps";
+const RETRY_FALLBACK_MS = 15000;
 
 function redact(text) {
   return String(text || "")
@@ -72,11 +76,20 @@ function safeMessage(err) {
   return (code + message).trim();
 }
 
+function retryDelayMs() {
+  const raw = process.env.MAP_DB_RETRY_MS;
+  if (raw == null || String(raw).trim() === "") return RETRY_FALLBACK_MS;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0) return RETRY_FALLBACK_MS;
+  return parsed;
+}
+
 function failureReason(err) {
   if (!databaseUrl()) return "DATABASE_URL is missing";
-  if (!pool && !err) return "database connection is not open";
-  if (!err) return "the database write did not succeed";
-  return safeMessage(err);
+  const reason = err || lastError;
+  if (!pool && !reason) return "database connection is not open";
+  if (!reason) return "the database write did not succeed";
+  return safeMessage(reason);
 }
 
 function logFields(fields) {
@@ -90,6 +103,7 @@ function logFields(fields) {
 }
 
 function logFailure(action, err, map) {
+  const reason = err || lastError;
   logFields({
     event: action + " failed",
     "connection status": pool ? "connected" : "not connected",
@@ -99,20 +113,21 @@ function logFailure(action, err, map) {
     "map id": map && map.id,
     "map name": map && map.name,
     operation: action,
-    "error message": err ? safeMessage(err) : failureReason(null),
-    "error code": err && err.code ? String(err.code) : ""
+    "error message": reason ? safeMessage(reason) : failureReason(null),
+    "error code": reason && reason.code ? String(reason.code) : ""
   });
-  if (err && err.stack) console.error(redact(err.stack));
+  if (reason && reason.stack) console.error(redact(reason.stack));
 }
 
 function enabled() {
   return !!pool;
 }
 
-async function connect() {
+async function openPool() {
   const url = databaseUrl();
   if (!url) {
     const err = new Error("DATABASE_URL is missing");
+    lastError = err;
     logFields({
       event: "database initialization failed",
       DATABASE_URL: "missing",
@@ -129,43 +144,75 @@ async function connect() {
   console.log("[hh-maps] tls: " + (ssl ? "enabled" : "disabled"));
   console.log("[hh-maps] operation: connect");
   console.log("[hh-maps] operation: CREATE TABLE IF NOT EXISTS " + TABLE);
-  pool = new Pool({
+  // The pool is published only after the first queries succeed. A failed
+  // pool is ended and is never reused as if it were an open client.
+  const created = new Pool({
     connectionString: connectionStringForPg(url),
     ssl: ssl,
     max: 4,
     connectionTimeoutMillis: 10000
   });
-  pool.on("error", (err) => {
+  created.on("error", (err) => {
     logFailure("idle database client", err, null);
   });
   try {
-    await pool.query(
+    await created.query(
       "CREATE TABLE IF NOT EXISTS hh_maps (id text PRIMARY KEY, document jsonb NOT NULL)"
     );
-    await pool.query("SELECT 1");
+    await created.query("SELECT 1");
+    pool = created;
+    lastError = null;
     console.log("[hh-maps] database connected");
     console.log("[hh-maps] connection status: connected");
     console.log("[hh-maps] table " + TABLE + ": ready");
     return true;
   } catch (err) {
-    const failed = pool;
-    pool = null;
-    logFailure("connect", err, null);
+    lastError = err;
     try {
-      await failed.end();
+      await created.end();
     } catch (endErr) {
       /* The failed pool is discarded either way. */
     }
+    logFailure("connect", err, null);
     throw err;
   }
 }
 
+async function connect() {
+  if (pool) return true;
+  if (connecting) return connecting;
+  lastAttemptAt = Date.now();
+  connecting = openPool().finally(() => {
+    connecting = null;
+  });
+  return connecting;
+}
+
+async function ensure() {
+  if (pool) return true;
+  if (!databaseUrl()) return false;
+  if (connecting) {
+    try {
+      return await connecting;
+    } catch (err) {
+      return false;
+    }
+  }
+  if (lastError && (Date.now() - lastAttemptAt) < retryDelayMs()) return false;
+  try {
+    return await connect();
+  } catch (err) {
+    return false;
+  }
+}
+
 async function loadAll() {
-  if (!pool) {
+  if (!(await ensure())) {
     const err = new Error(failureReason(null));
-    logFailure("SELECT id, document FROM hh_maps", err, null);
+    logFailure("SELECT id, document FROM hh_maps", null, null);
     throw err;
   }
+  // pool.query checks a client out of the pool and releases it.
   const result = await pool.query("SELECT id, document FROM hh_maps");
   return result.rows.map((row) => ({
     id: row.id,
@@ -174,14 +221,14 @@ async function loadAll() {
 }
 
 async function loadOne(id) {
-  if (!pool) return null;
+  if (!(await ensure())) return null;
   const result = await pool.query("SELECT document FROM hh_maps WHERE id = $1", [id]);
   if (!result.rows.length) return null;
   return result.rows[0].document;
 }
 
 async function save(map) {
-  if (!pool) throw new Error(failureReason(null));
+  if (!(await ensure())) throw new Error(failureReason(null));
   console.log("[hh-maps] operation: INSERT INTO hh_maps (id, document) ON CONFLICT (id) DO UPDATE");
   console.log("[hh-maps] map id: " + map.id);
   console.log("[hh-maps] map name: " + map.name);
@@ -203,6 +250,7 @@ async function save(map) {
 
 module.exports = {
   connect,
+  ensure,
   loadAll,
   loadOne,
   save,

@@ -60,6 +60,27 @@ function tooBig(map) {
   return Buffer.byteLength(JSON.stringify(map)) > MAX_BYTES;
 }
 
+async function openDatabase() {
+  if (!persist.databaseUrl()) return false;
+  if (typeof persist.ensure === "function") {
+    try {
+      await persist.ensure();
+    } catch (err) {
+      return false;
+    }
+  }
+  return !!persist.enabled();
+}
+
+function databaseFailure(action) {
+  const reason = typeof persist.failureReason === "function"
+    ? persist.failureReason()
+    : "database connection is not open";
+  console.error("[carts-maps] " + action + " failed");
+  console.error(persist.safeMessage(new Error(reason)));
+  return "Failed to " + action + " Carts map. The server could not use persistent storage. " + reason;
+}
+
 async function ready() {
   ensureDir();
   if (!persist.databaseUrl()) return { ok: true, persisted: "cache", count: readCache().length };
@@ -72,6 +93,7 @@ async function ready() {
 }
 
 async function listMaps() {
+  await openDatabase();
   if (persist.enabled()) {
     const rows = await persist.loadAll();
     return {
@@ -88,6 +110,7 @@ async function listMaps() {
 
 async function loadMap(id) {
   if (!ID_PATTERN.test(id)) return { ok: false, error: "Unknown Carts map" };
+  await openDatabase();
   if (persist.enabled()) {
     const rows = await persist.loadAll();
     const found = rows.filter((row) => row.id === id)[0];
@@ -114,8 +137,9 @@ async function saveMap(body) {
   console.log("[carts-maps] save requested");
   console.log("[carts-maps] map id: " + map.id);
   console.log("[carts-maps] map name: " + map.name);
+  const open = await openDatabase();
   writeCache(map);
-  if (persist.enabled()) {
+  if (open && persist.enabled()) {
     console.log("[carts-maps] persistence: postgres");
     try {
       await persist.save(map);
@@ -126,6 +150,9 @@ async function saveMap(body) {
     }
     console.log("[carts-maps] database write confirmed for map id: " + map.id);
     return { ok: true, map: map, persisted: "postgres" };
+  }
+  if (persist.databaseUrl()) {
+    return { ok: false, error: databaseFailure("save") };
   }
   console.log("[carts-maps] persistence: cache");
   return {
@@ -138,6 +165,10 @@ async function saveMap(body) {
 
 async function deleteMap(id) {
   if (!ID_PATTERN.test(id)) return { ok: false, error: "Unknown Carts map" };
+  const open = await openDatabase();
+  if (persist.databaseUrl() && !open) {
+    return { ok: false, error: databaseFailure("delete") };
+  }
   const file = fileFor(id);
   if (fs.existsSync(file)) fs.unlinkSync(file);
   if (persist.enabled()) await persist.remove(id);

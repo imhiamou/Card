@@ -464,7 +464,9 @@ function readStored(id) {
 }
 
 async function ensureStored(id) {
-  if (!safeId(id) || !persist.enabled()) return null;
+  if (!safeId(id)) return null;
+  if (!persist.enabled()) await persist.ensure();
+  if (!persist.enabled()) return null;
   const cached = readStored(id);
   if (cached) return cached;
   let document = null;
@@ -507,6 +509,7 @@ function fallbackList(error) {
 }
 
 async function listMaps() {
+  await persist.ensure();
   if (!persist.enabled()) {
     persist.logFailure("SELECT id, document FROM hh_maps", null, null);
     return { ok: false, error: LOAD_FAIL + " " + persist.failureReason(null), maps: [summary(builtinMap())] };
@@ -606,7 +609,7 @@ async function loadSnapshot(id) {
 }
 
 async function customMapCount() {
-  if (!persist.enabled()) return 0;
+  if (!(await persist.ensure())) return 0;
   const rows = await persist.loadAll();
   return rows.filter((row) => row && row.id !== "default" && safeId(row.id)).length;
 }
@@ -664,6 +667,7 @@ async function saveMap(raw) {
   console.log("[hh-maps] save reached");
   console.log("[hh-maps] map id: " + (map.id || raw.id || "new"));
   console.log("[hh-maps] map name: " + map.name);
+  await persist.ensure();
   if (!persist.enabled()) {
     return { ok: false, error: storageError(PERSIST_FAIL, null, map) };
   }
@@ -733,9 +737,12 @@ async function saveMap(raw) {
 async function loadForEditor(id) {
   const wanted = typeof id === "string" && id ? id : "default";
   if (!safeId(wanted)) return { ok: false, error: "That map could not be loaded." };
-  if (wanted !== "default" && !persist.enabled()) {
-    persist.logFailure("load map", null, { id: wanted });
-    return { ok: false, error: LOAD_FAIL + " " + persist.failureReason(null) };
+  if (wanted !== "default") {
+    await persist.ensure();
+    if (!persist.enabled()) {
+      persist.logFailure("load map", null, { id: wanted });
+      return { ok: false, error: LOAD_FAIL + " " + persist.failureReason(null) };
+    }
   }
   const stored = readStored(wanted) || await ensureStored(wanted);
   if (stored) return { ok: true, map: stored };

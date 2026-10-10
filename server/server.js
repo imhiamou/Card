@@ -1545,7 +1545,7 @@ hhMaps.ready().then(async (storage) => {
   if (message.indexOf("DATABASE_URL is missing") !== -1) {
     console.error("DATABASE_URL is missing. Hidden Hunter map saves cannot persist until DATABASE_URL points at a Postgres database.");
   } else {
-    console.error("Postgres is unreachable. The game server will keep running. Map saves stay unavailable until DATABASE_URL points at a live database.");
+    console.error("Postgres is unreachable. The game server will keep running and will retry the connection on map requests. Saved maps stay unavailable until DATABASE_URL points at a live database. Existing rows are left unchanged.");
   }
   cartsMaps.ready().then((cartsStorage) => {
     console.log("Carts maps storage " + cartsStorage.persisted + " (" + cartsStorage.count + ").");

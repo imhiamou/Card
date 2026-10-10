@@ -44,3 +44,11 @@ Saving a new map inserts a row. Saving an existing map updates the row with the 
 ## After it is set
 
 Redeploy or let Render finish the restart caused by the new variable. Save a map, reload the site, and restart the backend. The map should still be listed. This repository cannot confirm that the live service is connected until `DATABASE_URL` is set on that service.
+
+## If saved maps fail to load
+
+Hidden Hunter and Carts use the same `DATABASE_URL`. Each one keeps its own table (`hh_maps` and `carts_maps`) and its own connection pool. A query checks a client out of that pool and releases it. The server does not reuse a pool that failed to open.
+
+If the host cannot be reached at startup, the game server keeps running and retries the connection on a later map request. The error text is the connection failure, with the database URL removed. Nothing in that retry deletes or rewrites existing rows.
+
+A hostname that does not resolve cannot be repaired from this repository. Set `DATABASE_URL` on the Render web service to the current connection URL for the existing database, then let Render restart. Do not point the Android app at a different database.

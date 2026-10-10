@@ -1,5 +1,16 @@
 apply plugin: 'com.android.application'
 
+// Debug builds stay at versionCode 1 / versionName 1.0.
+// The release workflow passes -PgamewebVersionName and -PgamewebVersionCode
+// from the git tag and signs with ANDROID_KEYSTORE_* environment variables.
+def gamewebVersionCodeValue = (findProperty("gamewebVersionCode") ?: "1").toString().toInteger()
+def gamewebVersionNameValue = (findProperty("gamewebVersionName") ?: "1.0").toString()
+def gamewebKeystorePath = System.getenv("ANDROID_KEYSTORE_PATH")
+def gamewebKeystorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+def gamewebKeyAlias = System.getenv("ANDROID_KEY_ALIAS")
+def gamewebKeyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+def gamewebReleaseSigning = gamewebKeystorePath && gamewebKeystorePassword && gamewebKeyAlias && gamewebKeyPassword
+
 android {
     namespace = "com.imhiamou.gameweb"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +18,8 @@ android {
         applicationId "com.imhiamou.gameweb"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode gamewebVersionCodeValue
+        versionName gamewebVersionNameValue
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,9 +27,22 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (gamewebReleaseSigning) {
+                storeFile file(gamewebKeystorePath)
+                storePassword gamewebKeystorePassword
+                keyAlias gamewebKeyAlias
+                keyPassword gamewebKeyPassword
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
+            if (gamewebReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }

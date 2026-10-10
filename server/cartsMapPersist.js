@@ -6,7 +6,11 @@
 const { Pool } = require("pg");
 
 let pool = null;
+let lastError = null;
+let connecting = null;
+let lastAttemptAt = 0;
 const TABLE = "carts_maps";
+const RETRY_FALLBACK_MS = 15000;
 
 function redact(text) {
   return String(text || "").replace(/postgres(?:ql)?:\/\/[^\s'")]+/gi, "postgresql://[redacted]");
@@ -61,47 +65,94 @@ function safeMessage(err) {
   return (code + message).trim();
 }
 
+function retryDelayMs() {
+  const raw = process.env.MAP_DB_RETRY_MS;
+  if (raw == null || String(raw).trim() === "") return RETRY_FALLBACK_MS;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0) return RETRY_FALLBACK_MS;
+  return parsed;
+}
+
+function failureReason(err) {
+  if (!databaseUrl()) return "DATABASE_URL is missing";
+  const reason = err || lastError;
+  if (!pool && !reason) return "database connection is not open";
+  if (!reason) return "the database write did not succeed";
+  return safeMessage(reason);
+}
+
 function enabled() {
   return !!pool;
 }
 
-async function connect() {
+async function openPool() {
   const url = databaseUrl();
-  if (!url) return false;
-  if (pool) return true;
   const ssl = sslOption(url);
-  pool = new Pool({
+  const created = new Pool({
     connectionString: connectionStringForPg(url),
     ssl: ssl,
     max: 2,
     connectionTimeoutMillis: 10000
   });
-  pool.on("error", (err) => {
+  created.on("error", (err) => {
     console.error("[carts-maps] idle client\n" + safeMessage(err));
   });
   try {
-    await pool.query(
+    await created.query(
       "CREATE TABLE IF NOT EXISTS carts_maps (id text PRIMARY KEY, document jsonb NOT NULL)"
     );
-    await pool.query("SELECT 1");
+    await created.query("SELECT 1");
+    pool = created;
+    lastError = null;
     console.log("[carts-maps] table carts_maps ready");
     return true;
   } catch (err) {
-    const failed = pool;
-    pool = null;
-    try { await failed.end(); } catch (endErr) { /* discarded */ }
+    lastError = err;
+    console.error("[carts-maps] connect failed");
+    console.error(safeMessage(err));
+    try { await created.end(); } catch (endErr) { /* discarded */ }
     throw err;
   }
 }
 
+async function connect() {
+  if (!databaseUrl()) return false;
+  if (pool) return true;
+  if (connecting) return connecting;
+  lastAttemptAt = Date.now();
+  connecting = openPool().finally(() => {
+    connecting = null;
+  });
+  return connecting;
+}
+
+async function ensure() {
+  if (pool) return true;
+  if (!databaseUrl()) return false;
+  if (connecting) {
+    try {
+      return await connecting;
+    } catch (err) {
+      return false;
+    }
+  }
+  if (lastError && (Date.now() - lastAttemptAt) < retryDelayMs()) return false;
+  try {
+    return await connect();
+  } catch (err) {
+    return false;
+  }
+}
+
 async function loadAll() {
-  if (!pool) return [];
+  if (!pool && !(await ensure())) return [];
   const result = await pool.query("SELECT id, document FROM carts_maps");
   return result.rows.map((row) => ({ id: row.id, document: row.document }));
 }
 
 async function save(map) {
-  if (!pool) throw new Error("database connection is not open");
+  if (!pool) await ensure();
+  if (!pool) throw new Error(failureReason(null));
   await pool.query(
     "INSERT INTO carts_maps (id, document) VALUES ($1, $2::jsonb) ON CONFLICT (id) DO UPDATE SET document = EXCLUDED.document",
     [map.id, JSON.stringify(map)]
@@ -109,16 +160,19 @@ async function save(map) {
 }
 
 async function remove(id) {
-  if (!pool) return;
+  if (!pool) await ensure();
+  if (!pool) throw new Error(failureReason(null));
   await pool.query("DELETE FROM carts_maps WHERE id = $1", [id]);
 }
 
 module.exports = {
   connect,
+  ensure,
   loadAll,
   save,
   remove,
   enabled,
+  failureReason,
   safeMessage,
   databaseUrl,
   TABLE
