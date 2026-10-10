@@ -1,7 +1,11 @@
-name: Build Gameweb Android debug APK
+name: Build Gameweb Android
 
-# Debug packaging only. This does not sign a release, publish to the
-# Play Store, or touch the Windows installer.
+# Debug APKs build on pull requests and manual runs.
+# A version tag such as v1.0.5 builds a signed release APK and uploads
+# it to that GitHub Release. The tag is the version. Drafts and
+# pre-releases are not used. This workflow does not publish the
+# Windows installer; the Windows release workflow still does that
+# when the release is published.
 
 on:
   workflow_dispatch:
@@ -24,12 +28,18 @@ on:
       - "uno.html"
       - "assets/**"
       - ".github/workflows/android.yml"
+  push:
+    tags:
+      - "v*"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   debug-apk:
+    if: github.event_name != 'push'
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -68,3 +78,89 @@ jobs:
           name: Gameweb-debug
           path: mobile/android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+
+  release-apk:
+    if: github.event_name == 'push'
+    concurrency:
+      group: android-release-${{ github.ref }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the tagged commit
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Require a valid tag and the release signing secrets
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: node mobile/scripts/android-release.js check
+
+      - name: Record the version from the tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: node mobile/scripts/android-release.js export-env
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          accept-android-sdk-licenses: true
+          packages: platform-tools platforms;android-36 build-tools;35.0.0
+
+      - name: Copy the frontend and sync Capacitor
+        run: npm ci --prefix mobile && npm --prefix mobile run sync
+
+      - name: Decode the release keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          umask 077
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/gameweb-release.keystore"
+          test -s "$RUNNER_TEMP/gameweb-release.keystore"
+
+      - name: Build the signed release APK
+        working-directory: mobile/android
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/gameweb-release.keystore
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./gradlew assembleRelease --no-daemon -PgamewebVersionName="$VERSION_NAME" -PgamewebVersionCode="$VERSION_CODE"
+
+      - name: Write Android update metadata
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: node mobile/scripts/android-release.js metadata mobile/android/app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/android-release"
+
+      - name: Verify the APK signature
+        run: |
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort | tail -n 1)"
+          test -n "$APKSIGNER"
+          "$APKSIGNER" verify --print-certs "$RUNNER_TEMP/android-release/Gameweb-${VERSION_NAME}.apk"
+
+      - name: Publish the APK to the GitHub Release
+        # Uploads Gameweb-<version>.apk, Gameweb-<version>.apk.sha256, and
+        # android-latest.json. --clobber replaces those names on a rerun
+        # and leaves the Windows installer assets in place.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node mobile/scripts/android-release.js publish "$RUNNER_TEMP/android-release"
+
+      - name: Remove the keystore from the runner disk
+        if: always()
+        run: rm -f "$RUNNER_TEMP/gameweb-release.keystore"
