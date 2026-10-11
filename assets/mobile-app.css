@@ -1,0 +1,1133 @@
+/* Android app shell. Every layout rule is under html.gameweb-app so the
+   website and the Electron window keep their existing screens. */
+
+.appOnly,
+.domMenuBtn,
+.domHandPager,
+.domBoardNav,
+.unoMenuBtn,
+.unoHandPager,
+.hhMenuBtn {
+  display: none;
+}
+
+html.gameweb-app {
+  height: var(--app-height, 100dvh);
+  overflow: hidden;
+  background: #181c24;
+  overscroll-behavior: none;
+}
+
+html.gameweb-app body {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: var(--app-height, 100dvh);
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+  align-items: stretch;
+  justify-content: stretch;
+  background: #181c24;
+}
+
+html.gameweb-app .appOnly,
+html.gameweb-app .domMenuBtn,
+html.gameweb-app .unoMenuBtn,
+html.gameweb-app .hhMenuBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  min-width: 64px;
+  min-height: 40px;
+  margin: 0;
+  padding: 6px 12px;
+  border: 1px solid #4d5d78;
+  border-radius: 8px;
+  background: #243044;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+html.gameweb-app .appMenuBtn[aria-expanded="true"],
+html.gameweb-app .domMenuBtn[aria-expanded="true"],
+html.gameweb-app .unoMenuBtn[aria-expanded="true"],
+html.gameweb-app .hhMenuBtn[aria-expanded="true"],
+html.gameweb-app .appTabBar button.active,
+html.gameweb-app .appGameBtn.active,
+html.gameweb-app .appEditorTabs button.active,
+html.gameweb-app .appPager button.active {
+  background: #4f9cff;
+  color: #0b1220;
+  border-color: #4f9cff;
+}
+
+html.gameweb-app button:disabled {
+  opacity: 0.45;
+}
+
+/* Lobby: one tab at a time, plus a bottom bar. */
+html.gameweb-app #lobbyScreen.box:not(.hidden) {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  border-radius: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+  padding:
+    calc(env(safe-area-inset-top, 0px) + 8px)
+    calc(env(safe-area-inset-right, 0px) + 10px)
+    0
+    calc(env(safe-area-inset-left, 0px) + 10px);
+}
+
+html.gameweb-app #lobbyScreen h1 {
+  flex: 0 0 auto;
+  margin: 0 0 8px;
+  font-size: 22px;
+}
+
+html.gameweb-app #lobbyScreen .lobbyColumns {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+}
+
+html.gameweb-app #lobbyScreen .lobbyCol {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+html.gameweb-app #lobbyScreen:not([data-app-tab="play"]) .lobbyIdentity,
+html.gameweb-app #lobbyScreen:not([data-app-tab="play"]) .lobbyActions,
+html.gameweb-app #lobbyScreen:not([data-app-tab="setup"]) .lobbyConfig,
+html.gameweb-app #lobbyScreen:not([data-app-tab="room"]) .lobbyFeedback {
+  display: none;
+}
+
+html.gameweb-app #lobbyScreen[data-app-tab="room"] .lobbyConfig {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+html.gameweb-app #lobbyScreen[data-app-tab="room"][data-room-teams="0"] .lobbyConfig {
+  display: none;
+}
+
+html.gameweb-app #lobbyScreen[data-app-tab="room"] .lobbyConfig > :not(#dominoLobbyTeams) {
+  display: none;
+}
+
+html.gameweb-app #lobbyScreen[data-app-tab="room"] #dominoLobbyTeams.hidden {
+  display: none;
+}
+
+html.gameweb-app #lobbyScreen[data-app-tab="setup"] .lobbyConfig,
+html.gameweb-app #lobbyScreen[data-app-tab="play"] .lobbyIdentity,
+html.gameweb-app #lobbyScreen[data-app-tab="play"] .lobbyActions,
+html.gameweb-app #lobbyScreen[data-app-tab="room"] .lobbyFeedback {
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+html.gameweb-app #lobbyScreen[data-app-tab="room"] .lobbyColumns {
+  flex: 0 1 auto;
+}
+
+html.gameweb-app #lobbyScreen .appNativeSelect {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  border: 0;
+}
+
+html.gameweb-app .appGameGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+
+html.gameweb-app .appGameBtn {
+  min-height: 48px;
+  margin: 0;
+  border-radius: 10px;
+  border: 1px solid #3d4860;
+  background: #232a38;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+html.gameweb-app #lobbyScreen input,
+html.gameweb-app #lobbyScreen select,
+html.gameweb-app #lobbyScreen button {
+  min-height: 44px;
+}
+
+html.gameweb-app #lobbyScreen h3 {
+  margin: 8px 0 4px;
+}
+
+html.gameweb-app #hhMapChoices {
+  max-height: none;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+html.gameweb-app #hhMapChoices button.app-map-off {
+  display: none;
+}
+
+html.gameweb-app #lobbyScreen #hhMapPreview {
+  height: 72px;
+}
+
+html.gameweb-app #hhDifficultyChoices {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+html.gameweb-app #hhDifficultyChoices button {
+  width: 100%;
+  min-height: 40px;
+}
+
+@media (orientation: landscape) {
+  html.gameweb-app #lobbyScreen[data-app-tab="play"] .lobbyColumns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-content: start;
+  }
+}
+
+html.gameweb-app .hhDiffHint,
+html.gameweb-app .domTeamHint,
+html.gameweb-app #cartsPlayWrap p {
+  display: none;
+}
+
+html.gameweb-app #lobbyScreen .lobbyFeedback {
+  min-height: 0;
+}
+
+html.gameweb-app .appTabBar,
+html.gameweb-app .appEditorTabs {
+  flex: 0 0 auto;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 6px;
+  margin: 0;
+  padding: 8px 0 calc(env(safe-area-inset-bottom, 0px) + 8px);
+  background: #181c24;
+}
+
+html.gameweb-app .appTabBar button,
+html.gameweb-app .appEditorTabs button {
+  min-height: 44px;
+  margin: 0;
+  border-radius: 10px;
+  border: 1px solid #3d4860;
+  background: #232a38;
+  color: #e7eef8;
+  font-weight: 700;
+}
+
+html.gameweb-app .appPager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 4px 0;
+}
+
+html.gameweb-app .appPager[hidden] {
+  display: none;
+}
+
+html.gameweb-app .appPager button {
+  width: auto;
+  min-width: 72px;
+  min-height: 40px;
+  margin: 0;
+  border: 0;
+  border-radius: 8px;
+  background: #31537a;
+  color: #fff;
+  font-weight: 700;
+}
+
+html.gameweb-app .appPager span {
+  font-size: 13px;
+  color: #d5e2f5;
+  text-align: center;
+}
+
+/* In a match, the lobby bar is gone with the lobby. */
+html.gameweb-app.app-playing #lobbyScreen {
+  display: none !important;
+}
+
+html.gameweb-app #placementScreen:not(.hidden),
+html.gameweb-app #gameScreen:not(.hidden) {
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  max-width: none;
+  height: var(--app-height, 100dvh);
+  max-height: none;
+  margin: 0;
+  border-radius: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+  padding:
+    calc(env(safe-area-inset-top, 0px) + 6px)
+    calc(env(safe-area-inset-right, 0px) + 8px)
+    calc(env(safe-area-inset-bottom, 0px) + 6px)
+    calc(env(safe-area-inset-left, 0px) + 8px);
+  z-index: 5;
+}
+
+html.gameweb-app #placementScreen h2,
+html.gameweb-app #gameScreen h2 {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+
+html.gameweb-app #placementScreen > .board,
+html.gameweb-app #gameScreen #gameBoard {
+  flex: 0 0 auto;
+  width: min(100%, calc(var(--app-height, 100dvh) - 210px));
+  max-height: calc(var(--app-height, 100dvh) - 210px);
+  aspect-ratio: 1 / 1;
+  height: auto;
+  margin: 4px auto;
+  align-self: center;
+  grid-template-rows: repeat(8, minmax(0, 1fr));
+  overflow: hidden;
+}
+
+html.gameweb-app #placementScreen > .board .tile,
+html.gameweb-app #gameScreen #gameBoard .tile {
+  aspect-ratio: auto;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+}
+
+html.gameweb-app #placementScreen .charSelect.grid4 {
+  flex: 0 0 auto;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+html.gameweb-app #placementScreen .charOption {
+  min-height: 40px;
+  padding: 6px;
+}
+
+html.gameweb-app #gameScreen .gameColumns,
+html.gameweb-app #gameScreen .gameLeft {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+html.gameweb-app #gameScreen .gameRight {
+  display: none;
+}
+
+html.gameweb-app #gameScreen.app-menu-open .gameRight {
+  display: flex;
+  position: absolute;
+  z-index: 6;
+  left: 8px;
+  right: 8px;
+  top: calc(env(safe-area-inset-top, 0px) + 52px);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+  background: #232936;
+  border: 1px solid #3d4860;
+  border-radius: 12px;
+  padding: 8px;
+  overflow: hidden;
+}
+
+html.gameweb-app #gameScreen .playerInfo {
+  min-width: 0;
+  flex: 1;
+  padding: 6px;
+}
+
+html.gameweb-app #gameScreen .log {
+  min-height: 0;
+  max-height: none;
+  flex: 1;
+  overflow: hidden;
+}
+
+html.gameweb-app #gameLog p.app-page-off,
+html.gameweb-app #hand .card.app-page-off,
+html.gameweb-app #unoScreen .unoCard.app-page-off {
+  display: none;
+}
+
+html.gameweb-app #gameScreen .actionRow {
+  flex: 0 0 auto;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+html.gameweb-app #gameScreen .hand {
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
+  overflow: hidden;
+  min-height: 0;
+  min-width: 0;
+  max-width: 100%;
+  justify-content: center;
+}
+
+html.gameweb-app #gameScreen .card {
+  width: 58px;
+  padding: 8px 4px;
+}
+
+html.gameweb-app #gameScreen #huntMenuBtn {
+  align-self: flex-end;
+}
+
+html.gameweb-app #endgameReveal {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+html.gameweb-app #endgameReveal[data-end-view="mine"] .endgameMapCard:last-child,
+html.gameweb-app #endgameReveal[data-end-view="theirs"] .endgameMapCard:first-child {
+  display: none;
+}
+
+html.gameweb-app .appEndToggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin: 0 0 6px;
+}
+
+html.gameweb-app .appEndToggle button {
+  min-height: 40px;
+  margin: 0;
+}
+
+@media (orientation: landscape) {
+  html.gameweb-app #placementScreen:not(.hidden) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(168px, 240px);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    align-items: center;
+    overflow: hidden;
+  }
+
+  html.gameweb-app #placementScreen > h2 {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    margin: 0;
+  }
+
+  html.gameweb-app #placementScreen > .board {
+    grid-column: 1;
+    grid-row: 2;
+    width: auto;
+    height: min(100%, calc(var(--app-height, 100dvh) - 48px));
+    max-height: calc(var(--app-height, 100dvh) - 48px);
+    justify-self: center;
+  }
+
+  html.gameweb-app #placementScreen > h3,
+  html.gameweb-app #placementScreen .charSelect,
+  html.gameweb-app #placementScreen #confirmBtn,
+  html.gameweb-app #placementScreen #placementStatus {
+    grid-column: 2;
+    margin: 0;
+  }
+
+  html.gameweb-app #gameScreen:not(.hidden) .gameLeft {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(150px, 34vw);
+    grid-template-rows: auto auto minmax(0, 1fr);
+    height: 100%;
+    overflow: hidden;
+    align-items: center;
+  }
+
+  html.gameweb-app #gameScreen #huntMenuBtn {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+  }
+
+  html.gameweb-app #gameScreen .playerPanel {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+  }
+
+  html.gameweb-app #gameScreen #turnIndicator {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    margin: 0;
+  }
+
+  html.gameweb-app #gameScreen #gameBoard {
+    grid-column: 1;
+    grid-row: 3;
+    width: auto;
+    height: min(100%, calc(var(--app-height, 100dvh) - 64px));
+    max-height: 100%;
+    justify-self: center;
+  }
+
+  html.gameweb-app #gameScreen .actionRow {
+    grid-column: 2;
+    grid-row: 3;
+    max-height: 100%;
+    align-self: stretch;
+  }
+
+  html.gameweb-app #gameScreen .hand {
+    flex-wrap: wrap;
+    align-content: flex-start;
+  }
+}
+
+/* Dominoes: status, board, paged hand, one action. */
+html.gameweb-app #dominoScreen:not(.hidden) {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: var(--app-height, 100dvh);
+  margin: 0;
+  border-radius: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+  background: #1a2230;
+  padding:
+    calc(env(safe-area-inset-top, 0px) + 4px)
+    calc(env(safe-area-inset-right, 0px) + 6px)
+    calc(env(safe-area-inset-bottom, 0px) + 4px)
+    calc(env(safe-area-inset-left, 0px) + 6px);
+}
+
+html.gameweb-app #dominoScreen .domTopBar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+  margin: 0 0 4px;
+}
+
+html.gameweb-app #dominoScreen .domTopBar h2 {
+  font-size: 15px;
+  margin: 0;
+}
+
+html.gameweb-app #dominoScreen .domMeta {
+  display: none;
+}
+
+html.gameweb-app #dominoScreen .domScoreStrip {
+  flex: none;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+}
+
+html.gameweb-app #dominoScreen .domTopTools {
+  display: none;
+}
+
+html.gameweb-app #dominoScreen.app-menu-open .domTopTools {
+  display: flex;
+  position: absolute;
+  z-index: 40;
+  top: calc(env(safe-area-inset-top, 0px) + 48px);
+  left: 8px;
+  right: 8px;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px;
+  background: #1c2433;
+  border: 1px solid #3d4860;
+  border-radius: 12px;
+}
+
+html.gameweb-app #dominoScreen .domTableArena {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+}
+
+html.gameweb-app #dominoScreen .domBoardWrap {
+  min-height: 0;
+  position: relative;
+}
+
+html.gameweb-app #dominoScreen #domTurnIndicator {
+  margin: 0 0 4px;
+  font-size: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+html.gameweb-app #dominoScreen #domTurnIndicator.domYourTurn {
+  color: #ffd866;
+}
+
+html.gameweb-app #dominoScreen .domHandSection {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin: 4px 0 0;
+}
+
+html.gameweb-app #dominoScreen .domHand {
+  overflow: hidden;
+  justify-content: center;
+  align-items: flex-end;
+  min-height: 104px;
+  max-height: none;
+  gap: 8px;
+  padding: 6px 4px 4px;
+}
+
+html.gameweb-app #dominoScreen .domTile.inHand {
+  width: 48px;
+  height: 96px;
+}
+
+html.gameweb-app #dominoScreen .domHandPager:not([hidden]) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 2px;
+}
+
+html.gameweb-app #dominoScreen .domHandPager button,
+html.gameweb-app #dominoScreen .domBoardNav button {
+  width: auto;
+  min-width: 44px;
+  min-height: 36px;
+  margin: 0;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: #31537a;
+  color: #fff;
+  font-weight: 700;
+}
+
+html.gameweb-app #dominoScreen .domBoardNav {
+  display: grid;
+  grid-template-columns: repeat(4, 36px);
+  gap: 4px;
+  position: absolute;
+  z-index: 5;
+  top: 6px;
+  right: 6px;
+}
+
+html.gameweb-app #dominoScreen #domDrawBtn.domDrawFloat {
+  min-height: 40px;
+  bottom: 28px;
+}
+
+html.gameweb-app #dominoScreen #domMsg {
+  flex: 0 0 auto;
+  margin: 2px 0 0;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (orientation: landscape) {
+  html.gameweb-app #dominoScreen:not(.hidden) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(132px, 22vw);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    column-gap: 8px;
+  }
+
+  html.gameweb-app #dominoScreen .domTopBar,
+  html.gameweb-app #dominoScreen #domMsg,
+  html.gameweb-app #dominoScreen .domEndButtons {
+    grid-column: 1 / -1;
+  }
+
+  html.gameweb-app #dominoScreen .domTableArena {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  html.gameweb-app #dominoScreen .domHandSection {
+    grid-column: 2;
+    grid-row: 2;
+    margin: 0;
+  }
+
+  html.gameweb-app #dominoScreen .domHand {
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    flex: 1 1 auto;
+    overflow: hidden;
+  }
+}
+
+/* UNO */
+html.gameweb-app #unoScreen:not(.hidden) {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: none;
+  height: var(--app-height, 100dvh);
+  margin: 0;
+  border-radius: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+  background: #1a2230;
+  padding:
+    calc(env(safe-area-inset-top, 0px) + 4px)
+    calc(env(safe-area-inset-right, 0px) + 6px)
+    calc(env(safe-area-inset-bottom, 0px) + 4px)
+    calc(env(safe-area-inset-left, 0px) + 6px);
+}
+
+html.gameweb-app #unoScreen .unoTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px;
+}
+
+html.gameweb-app #unoScreen .unoTitleRow h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+html.gameweb-app #unoScreen .unoTableArena {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+}
+
+html.gameweb-app #unoScreen .unoHandSection {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+html.gameweb-app #unoScreen .unoHandSection h3 {
+  display: none;
+}
+
+html.gameweb-app #unoScreen .unoHand {
+  flex-wrap: nowrap;
+  overflow: hidden;
+  justify-content: center;
+  min-height: 0;
+  max-width: 100%;
+  padding: 4px;
+  gap: 6px;
+}
+
+html.gameweb-app #unoScreen .unoCard.inHand {
+  width: 52px;
+  height: 78px;
+  flex: 0 0 auto;
+}
+
+html.gameweb-app #unoScreen .unoHandPager:not([hidden]) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+html.gameweb-app #unoScreen .unoHandPager button {
+  width: auto;
+  min-width: 64px;
+  min-height: 36px;
+  margin: 0;
+  border: 0;
+  border-radius: 8px;
+  background: #31537a;
+  color: #fff;
+}
+
+html.gameweb-app #unoScreen .unoActions {
+  flex: 0 0 auto;
+  margin-top: 4px;
+}
+
+html.gameweb-app #unoScreen .unoScoreboard {
+  display: none;
+}
+
+html.gameweb-app #unoScreen.app-menu-open .unoScoreboard:not(.hidden) {
+  display: block;
+  position: absolute;
+  z-index: 40;
+  left: 8px;
+  right: 8px;
+  top: calc(env(safe-area-inset-top, 0px) + 48px);
+  max-height: 50%;
+  overflow: hidden;
+}
+
+html.gameweb-app #unoScreen .unoColorPicker:not(.hidden) {
+  position: absolute;
+  z-index: 35;
+  left: 8px;
+  right: 8px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+  margin: 0;
+  background: #1c2433;
+  padding: 8px;
+  border-radius: 12px;
+}
+
+@media (orientation: landscape) {
+  html.gameweb-app #unoScreen:not(.hidden) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(160px, 28vw);
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    column-gap: 8px;
+  }
+
+  html.gameweb-app #unoScreen .unoTitleRow,
+  html.gameweb-app #unoScreen .unoActions,
+  html.gameweb-app #unoScreen #unoMsg,
+  html.gameweb-app #unoScreen .unoEndButtons {
+    grid-column: 1 / -1;
+  }
+
+  html.gameweb-app #unoScreen .unoTableArena {
+    grid-column: 1;
+    grid-row: 2 / span 2;
+  }
+
+  html.gameweb-app #unoScreen .unoHandSection {
+    grid-column: 2;
+    grid-row: 2;
+    align-self: stretch;
+    overflow: hidden;
+  }
+
+  html.gameweb-app #unoScreen .unoActions {
+    grid-row: 4;
+  }
+
+  html.gameweb-app #unoScreen .unoHand {
+    flex-direction: column;
+    align-items: center;
+    max-height: 100%;
+  }
+
+  html.gameweb-app #unoScreen .unoCard.inHand {
+    width: 46px;
+    height: 66px;
+  }
+}
+
+/* Hidden Hunter stays landscape-first. The portrait gate is unchanged. */
+html.gameweb-app #hiddenHunterScreen:not(.hidden) {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: var(--app-height, 100dvh);
+  padding:
+    calc(env(safe-area-inset-top, 0px) + 4px)
+    calc(env(safe-area-inset-right, 0px) + 6px)
+    calc(env(safe-area-inset-bottom, 0px) + 4px)
+    calc(env(safe-area-inset-left, 0px) + 6px);
+}
+
+html.gameweb-app #hiddenHunterScreen .hhMsg,
+html.gameweb-app #hiddenHunterScreen .hhFsBtn {
+  display: none;
+}
+
+html.gameweb-app #hiddenHunterScreen.app-menu-open .hhMsg,
+html.gameweb-app #hiddenHunterScreen.app-menu-open .hhFsBtn {
+  display: block;
+}
+
+html.gameweb-app #hiddenHunterScreen.app-menu-open .hhBottom {
+  position: absolute;
+  z-index: 6;
+  left: 8px;
+  right: 8px;
+  top: calc(env(safe-area-inset-top, 0px) + 48px);
+  background: rgba(20, 16, 24, 0.94);
+  border-radius: 12px;
+  padding: 8px;
+}
+
+html.gameweb-app #hiddenHunterScreen .hhTop {
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+}
+
+html.gameweb-app #hiddenHunterScreen .hhMobile {
+  padding-bottom: 2px;
+}
+
+/* Carts */
+html.gameweb-app #cartsScreen.cartsScreen:not(.hidden) {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: none;
+  height: var(--app-height, 100dvh);
+  max-height: none;
+  margin: 0;
+  border-radius: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+  padding:
+    calc(env(safe-area-inset-top, 0px) + 4px)
+    calc(env(safe-area-inset-right, 0px) + 6px)
+    calc(env(safe-area-inset-bottom, 0px) + 4px)
+    calc(env(safe-area-inset-left, 0px) + 6px);
+}
+
+html.gameweb-app #cartsScreen .cartsHelp {
+  display: none;
+}
+
+html.gameweb-app #cartsScreen.app-menu-open .cartsHelp {
+  display: block;
+  position: absolute;
+  z-index: 4;
+  left: 8px;
+  right: 8px;
+  top: calc(env(safe-area-inset-top, 0px) + 52px);
+  margin: 0;
+  padding: 8px;
+  background: #fff;
+  border: 1px solid #111;
+  border-radius: 8px;
+}
+
+html.gameweb-app #cartsScreen .cartsTop {
+  flex: 0 0 auto;
+  margin: 0 0 4px;
+}
+
+html.gameweb-app #cartsScreen .cartsTop h2 {
+  font-size: 16px;
+}
+
+html.gameweb-app #cartsScreen .cartsHud {
+  flex: 0 0 auto;
+  font-size: 14px;
+  gap: 4px 10px;
+  margin: 0 0 4px;
+}
+
+html.gameweb-app #cartsScreen .cartsStage {
+  flex: 1 1 auto;
+  width: min(100%, calc((var(--app-height, 100dvh) - 92px) * 736 / 640));
+  max-height: calc(100% - 72px);
+  height: auto;
+  margin: auto;
+}
+
+html.gameweb-app #cartsScreen #cartsLobbyBtn,
+html.gameweb-app #cartsScreen #cartsEditorReturn {
+  min-width: 0;
+  min-height: 40px;
+}
+
+/* Map editors: the canvas stays up, tools live in tabs. */
+html.gameweb-app #hhEditorScreen:not(.hidden),
+html.gameweb-app #cartsEditorScreen:not(.hidden) {
+  padding-bottom: 0;
+}
+
+html.gameweb-app #hhEditorScreen .appEditorTabs,
+html.gameweb-app #cartsEditorScreen .appEditorTabs {
+  order: 5;
+  background: #121018;
+}
+
+html.gameweb-app #hhEditorScreen:not(.hidden) {
+  display: flex;
+}
+
+html.gameweb-app #hhEditorScreen .hheBody {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+html.gameweb-app #hhEditorScreen[data-editor-tab="map"] .hheLib,
+html.gameweb-app #hhEditorScreen[data-editor-tab="map"] .hheProps,
+html.gameweb-app #hhEditorScreen[data-editor-tab="assets"] .hheStage,
+html.gameweb-app #hhEditorScreen[data-editor-tab="assets"] .hheProps,
+html.gameweb-app #hhEditorScreen[data-editor-tab="props"] .hheStage,
+html.gameweb-app #hhEditorScreen[data-editor-tab="props"] .hheLib,
+html.gameweb-app #hhEditorScreen[data-editor-tab="settings"] .hheLib,
+html.gameweb-app #hhEditorScreen[data-editor-tab="settings"] .hheProps {
+  display: none;
+}
+
+html.gameweb-app #hhEditorScreen[data-editor-tab="assets"] .hheLib,
+html.gameweb-app #hhEditorScreen[data-editor-tab="props"] .hheProps {
+  display: flex;
+  width: 100%;
+  flex: 1;
+}
+
+html.gameweb-app #hhEditorScreen .hheTop {
+  flex-wrap: nowrap;
+  overflow: hidden;
+  gap: 6px;
+  min-width: 0;
+}
+
+html.gameweb-app #hhEditorScreen .hheStatus {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html.gameweb-app #hhEditorScreen:not([data-editor-tab="settings"]) .hheTop label,
+html.gameweb-app #hhEditorScreen:not([data-editor-tab="settings"]) #hheResize,
+html.gameweb-app #hhEditorScreen:not([data-editor-tab="settings"]) #hheFit,
+html.gameweb-app #hhEditorScreen:not([data-editor-tab="settings"]) #hheResetZoom,
+html.gameweb-app #hhEditorScreen:not([data-editor-tab="settings"]) #hheTextBtn {
+  display: none;
+}
+
+html.gameweb-app #hhEditorScreen[data-editor-tab="settings"] .hheTop {
+  flex-wrap: wrap;
+  overflow: hidden;
+  max-height: 42%;
+}
+
+html.gameweb-app #hhEditorScreen[data-editor-tab="settings"] .hheBody {
+  display: none;
+}
+
+html.gameweb-app #cartsEditorScreen .ceBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+
+html.gameweb-app #cartsEditorScreen[data-editor-tab="map"] .ceLeft,
+html.gameweb-app #cartsEditorScreen[data-editor-tab="map"] .ceRight,
+html.gameweb-app #cartsEditorScreen[data-editor-tab="tools"] .ceRight,
+html.gameweb-app #cartsEditorScreen[data-editor-tab="settings"] .ceLeft {
+  display: none;
+}
+
+html.gameweb-app #cartsEditorScreen[data-editor-tab="tools"] .ceLeft,
+html.gameweb-app #cartsEditorScreen[data-editor-tab="settings"] .ceRight {
+  display: flex;
+  flex-direction: column;
+  position: absolute;
+  z-index: 3;
+  top: 84px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 60px);
+  width: min(300px, 78vw);
+  max-height: none;
+  overflow: hidden;
+  background: #1b2330;
+}
+
+html.gameweb-app #cartsEditorScreen[data-editor-tab="tools"] .ceLeft {
+  left: 0;
+  right: auto;
+}
+
+html.gameweb-app #cartsEditorScreen[data-editor-tab="settings"] .ceRight {
+  right: 0;
+  left: auto;
+}
+
+html.gameweb-app #cartsEditorScreen .ceTop {
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+html.gameweb-app #cartsEditorScreen .ceTop button:not([data-ce="Save"]):not([data-ce="Undo"]):not([data-ce="Redo"]):not([data-ce="Fit Map"]):not([data-ce="Lobby"]) {
+  display: none;
+}
+
+html.gameweb-app #cartsEditorScreen[data-editor-tab="settings"] .ceTop {
+  position: absolute;
+  z-index: 4;
+  left: 0;
+  right: 0;
+  top: 0;
+  flex-wrap: wrap;
+  overflow: hidden;
+  max-height: 46%;
+  background: #1d2633;
+}
+
+html.gameweb-app #cartsEditorScreen[data-editor-tab="settings"] .ceTop button {
+  display: inline-flex;
+}
+
+html.gameweb-app .appNoticeCard {
+  max-height: calc(var(--app-height, 100dvh) - 32px);
+  overflow: hidden;
+}

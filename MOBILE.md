@@ -51,6 +51,12 @@ mobile/android/app/build/outputs/apk/debug/app-debug.apk
 
 GitHub Actions workflow `.github/workflows/android.yml` builds that same debug APK on pull requests and manual runs. It installs Android platform 36, build-tools 35.0.0, and platform-tools, then accepts the SDK licenses.
 
+## Installed app layout
+
+The website and the Windows app use the same files. The Android shell adds `gameweb-app` only when Capacitor reports a native platform. `assets/mobile-app.css` and `assets/mobile-app.js` apply under that class.
+
+On the phone, the lobby is three tabs: Play, Setup, and Room. A match replaces that bar with the game. Dominoes and UNO page a large hand instead of scrolling the screen, and a long domino chain is moved with the board controls. Hidden Hunter still asks for landscape. Map editors keep the canvas up and put tools, assets, and settings on tabs. Asset catalogs are the only panels that scroll.
+
 ## Release from a version tag
 
 Push a tag named `vMAJOR.MINOR.PATCH`, for example `v1.0.5`. Each number is an integer without leading zeros and must be below 1000. `v0.0.0` is rejected. The tag is the app version. Do not commit a version bump.

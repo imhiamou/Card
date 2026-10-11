@@ -11,6 +11,7 @@
     '<div class="unoTitleRow">' +
       '<h2>UNO</h2>' +
       '<div class="unoMeta" id="unoMeta"></div>' +
+      '<button type="button" id="unoMenuBtn" class="unoMenuBtn" aria-expanded="false">Menu</button>' +
     '</div>' +
     '<div class="unoTableArena" id="unoTableArena" data-count="2">' +
       '<div class="unoSeat seat-top" data-seat="top"></div>' +
@@ -45,6 +46,11 @@
     '</div>' +
     '<div class="unoHandSection">' +
       '<h3>Your hand</h3>' +
+      '<div class="unoHandPager" id="unoHandPager" hidden>' +
+        '<button type="button" id="unoHandPrev">Prev</button>' +
+        '<span id="unoHandPage">1 / 1</span>' +
+        '<button type="button" id="unoHandNext">Next</button>' +
+      '</div>' +
       '<div class="unoHand" id="unoHand"></div>' +
     '</div>' +
     '<div class="unoColorPicker hidden" id="unoColorPicker">' +
@@ -70,6 +76,8 @@
   let myTurn = false;
   let players = [];
   let hand = [];
+  let handPage = 0;
+  let unoResizeWired = false;
   let playableIds = [];
   let topCard = null;
   let currentColor = null;
@@ -433,11 +441,43 @@
     }
   }
 
+  function appShell() {
+    return document.documentElement.classList.contains("gameweb-app");
+  }
+
+  function unoPageSize() {
+    const layout = window.GamewebMobileLayout;
+    if (!appShell() || !layout || !unoHand) return Math.max(hand.length, 1);
+    const landscape = window.innerWidth > window.innerHeight;
+    if (landscape) {
+      const height = unoHand.clientHeight || Math.max(120, window.innerHeight - 160);
+      return Math.max(2, layout.tilePageSize(height, 70, 6, 0));
+    }
+    const width = unoHand.clientWidth || window.innerWidth;
+    return Math.max(4, layout.tilePageSize(width, 52, 6, 0));
+  }
+
   function renderHand(animateId) {
     if (!unoHand) return;
+    const size = unoPageSize();
+    if (animateId) {
+      const drawn = hand.findIndex((card) => card.id === animateId);
+      if (drawn >= 0) handPage = Math.floor(drawn / size);
+    }
+    const layout = window.GamewebMobileLayout;
+    const plan = layout
+      ? layout.pagePlan(hand.length, appShell() ? handPage : 0, size, -1)
+      : { page: 0, pages: 1, start: 0, end: hand.length };
+    if (!appShell()) {
+      plan.start = 0;
+      plan.end = hand.length;
+      plan.pages = 1;
+      plan.page = 0;
+    }
+    handPage = plan.page;
     unoHand.innerHTML = "";
     const playableSet = new Set(playableIds || []);
-    hand.forEach((card) => {
+    hand.slice(plan.start, plan.end).forEach((card) => {
       const playable = myTurn && !gameOver && !mustPickColor && playableSet.has(card.id);
       const forcedDrawn = drawnPlayableId && card.id === drawnPlayableId;
       const el = document.createElement("div");
@@ -451,6 +491,12 @@
       el.onclick = () => onHandClick(card);
       unoHand.appendChild(el);
     });
+    const pager = document.getElementById("unoHandPager");
+    const label = document.getElementById("unoHandPage");
+    if (pager && label) {
+      pager.hidden = !(appShell() && plan.pages > 1);
+      label.textContent = (plan.page + 1) + " / " + plan.pages + " · " + hand.length;
+    }
   }
 
   function renderChrome(data) {
@@ -562,7 +608,30 @@
     if (unoColorPicker) unoColorPicker.classList.add("hidden");
   }
 
+  function stepUnoHand(delta) {
+    const size = unoPageSize();
+    const pages = Math.max(1, Math.ceil(hand.length / Math.max(size, 1)));
+    handPage = Math.min(pages - 1, Math.max(0, handPage + delta));
+    renderHand();
+  }
+
   function wireControls() {
+    if (!unoResizeWired) {
+      unoResizeWired = true;
+      window.addEventListener("resize", () => {
+        if (appShell() && unoHand) renderHand();
+      });
+    }
+    const prev = document.getElementById("unoHandPrev");
+    const next = document.getElementById("unoHandNext");
+    if (prev && !prev.dataset.wired) {
+      prev.dataset.wired = "1";
+      prev.onclick = () => stepUnoHand(-1);
+    }
+    if (next && !next.dataset.wired) {
+      next.dataset.wired = "1";
+      next.onclick = () => stepUnoHand(1);
+    }
     if (!unoDrawBtn || unoDrawBtn.dataset.wired) return;
     unoDrawBtn.dataset.wired = "1";
     unoDrawBtn.onclick = () => {
