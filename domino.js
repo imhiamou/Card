@@ -29,6 +29,7 @@
           '<button type="button" id="domVolumeUp">Volume +</button>' +
         '</div>' +
         '<button type="button" id="domMuteBtn" aria-pressed="false">Mute</button>' +
+        '<button type="button" id="domLobbyBtn" class="domLobbyBtn">Return to Lobby</button>' +
         '<button type="button" id="domScoreToggle" class="domScoreToggle hidden">Score</button>' +
       '</div>' +
     '</div>' +
@@ -68,11 +69,6 @@
     '</div>' +
     '<div class="domHandSection">' +
       '<div class="domHandLabel" id="domHandLabel">Your hand</div>' +
-      '<div class="domHandPager" id="domHandPager" hidden>' +
-        '<button type="button" id="domHandPrev">Prev</button>' +
-        '<span id="domHandPage">1 / 1</span>' +
-        '<button type="button" id="domHandNext">Next</button>' +
-      '</div>' +
       '<div class="domHand" id="domHand"></div>' +
     '</div>' +
     '<p id="domMsg"></p>' +
@@ -90,8 +86,7 @@
   let validMoves = [];
   let board = null;
   let selectedTileId = null;
-  let handPage = 0;
-  let handPagePinned = false;
+  let leftTable = false;
   let canDraw = false;
   let teamMode = false;
   let teams = null;
@@ -253,6 +248,7 @@
 
   function showDominoScreen() {
     active = true;
+    leftTable = false;
     if (lobbyScreen) lobbyScreen.classList.add("hidden");
     if (placementScreen) placementScreen.classList.add("hidden");
     if (gameScreen) gameScreen.classList.add("hidden");
@@ -748,7 +744,10 @@
     if (window.visualViewport) {
       window.visualViewport.addEventListener("resize", () => {
         if (!active) return;
-        requestAnimationFrame(fitBoard);
+        requestAnimationFrame(() => {
+          fitBoard();
+          renderHand();
+        });
       });
     }
   }
@@ -1006,16 +1005,19 @@
     return document.documentElement.classList.contains("gameweb-app");
   }
 
-  function dominoPageSize() {
-    const layout = window.GamewebMobileLayout;
-    if (!appShell() || !layout) return Math.max(hand.length, 1);
-    const landscape = window.innerWidth > window.innerHeight;
-    if (landscape) {
-      const height = (domHand && domHand.clientHeight) || Math.max(160, window.innerHeight - 120);
-      return Math.max(3, layout.tilePageSize(height, 96, 8, 0));
-    }
-    const width = (domHand && domHand.clientWidth) || window.innerWidth;
-    return Math.max(4, layout.tilePageSize(width, 52, 8, 0));
+  function fitHandToBox() {
+    if (!appShell() || !domHand || !window.GamewebMobileLayout || !window.GamewebMobileLayout.fitHandTiles) return;
+    const style = window.getComputedStyle(domHand);
+    const padX = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
+    const padY = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
+    const width = Math.max(0, domHand.clientWidth - padX);
+    const height = Math.max(0, domHand.clientHeight - padY);
+    const fit = window.GamewebMobileLayout.fitHandTiles(hand.length, width, height);
+    if (!fit || !fit.columns) return;
+    domHand.style.setProperty("--hand-cols", String(fit.columns));
+    domHand.style.setProperty("--hand-tile-w", fit.width.toFixed(2) + "px");
+    domHand.style.setProperty("--hand-tile-h", fit.height.toFixed(2) + "px");
+    domHand.style.setProperty("--hand-gap", fit.gap + "px");
   }
 
   function nudgeBoard(dx, dy) {
@@ -1034,31 +1036,9 @@
 
   function renderHand(animateDrawId) {
     if (!domHand) return;
-    const size = dominoPageSize();
-    if (animateDrawId) {
-      const drawn = hand.findIndex((tile) => tile.id === animateDrawId);
-      if (drawn >= 0) {
-        handPage = Math.floor(drawn / size);
-        handPagePinned = true;
-      }
-    }
-    const selectedIndex = hand.findIndex((tile) => tile.id === selectedTileId);
-    if (appShell() && !handPagePinned && selectedIndex >= 0) {
-      handPage = Math.floor(selectedIndex / size);
-    }
-    const layout = window.GamewebMobileLayout;
-    const plan = layout
-      ? layout.pagePlan(hand.length, handPage, size, -1)
-      : { page: 0, pages: 1, start: 0, end: hand.length };
-    if (!appShell()) {
-      plan.start = 0;
-      plan.end = hand.length;
-      plan.pages = 1;
-      plan.page = 0;
-    }
-    handPage = plan.page;
+    fitHandToBox();
     domHand.innerHTML = "";
-    hand.slice(plan.start, plan.end).forEach((tile) => {
+    hand.forEach((tile) => {
       const moves = movesForTile(tile.id);
       const el = makeTileEl(tile.a, tile.b, {
         vertical: true,
@@ -1074,16 +1054,6 @@
       el.addEventListener("pointercancel", onTilePointerCancel);
       domHand.appendChild(el);
     });
-    const pager = $("domHandPager");
-    const label = $("domHandPage");
-    if (pager && label) {
-      const multi = appShell() && plan.pages > 1;
-      pager.hidden = !multi;
-      const off = selectedIndex >= 0 && (selectedIndex < plan.start || selectedIndex >= plan.end);
-      label.textContent = (plan.page + 1) + " / " + plan.pages +
-        " · " + hand.length +
-        (off ? " · selected " + (Math.floor(selectedIndex / size) + 1) : "");
-    }
   }
 
   function renderChrome(data) {
@@ -1810,35 +1780,34 @@
     selectedTileId = null;
   }
 
-  function stepHand(delta) {
-    handPagePinned = true;
-    const size = dominoPageSize();
-    const pages = Math.max(1, Math.ceil(hand.length / Math.max(size, 1)));
-    handPage = Math.min(pages - 1, Math.max(0, handPage + delta));
-    renderHand();
+  function returnToLobby() {
+    if (!currentRoom) return;
+    const go = () => {
+      leftTable = true;
+      if (dominoScreen) dominoScreen.classList.remove("app-menu-open");
+      const menuBtn = $("domMenuBtn");
+      if (menuBtn) menuBtn.setAttribute("aria-expanded", "false");
+      hideDominoScreen();
+      if (lobbyScreen) lobbyScreen.classList.remove("hidden");
+      const codeEl = $("code");
+      const statusEl = $("status");
+      if (codeEl) codeEl.textContent = "Lobby Code: " + currentRoom;
+      if (statusEl) statusEl.textContent = "In the lobby for " + currentRoom + ". This room is still open.";
+    };
+    if (active && !gameOver && window.AppNotice && typeof window.AppNotice.confirm === "function") {
+      window.AppNotice.confirm(
+        "Return to the lobby? You stay in this room. This device leaves the Dominoes table until the next round."
+      ).then((ok) => { if (ok) go(); });
+      return;
+    }
+    go();
   }
 
   function wireControls() {
-    const handPrev = $("domHandPrev");
-    const handNext = $("domHandNext");
-    const handLabel = $("domHandPage");
-    if (handPrev && !handPrev.dataset.wired) {
-      handPrev.dataset.wired = "1";
-      handPrev.onclick = () => stepHand(-1);
-    }
-    if (handNext && !handNext.dataset.wired) {
-      handNext.dataset.wired = "1";
-      handNext.onclick = () => stepHand(1);
-    }
-    if (handLabel && !handLabel.dataset.wired) {
-      handLabel.dataset.wired = "1";
-      handLabel.onclick = () => {
-        const index = hand.findIndex((tile) => tile.id === selectedTileId);
-        if (index < 0) return;
-        handPagePinned = true;
-        handPage = Math.floor(index / dominoPageSize());
-        renderHand();
-      };
+    const lobbyBtn = $("domLobbyBtn");
+    if (lobbyBtn && !lobbyBtn.dataset.wired) {
+      lobbyBtn.dataset.wired = "1";
+      lobbyBtn.onclick = () => returnToLobby();
     }
     const boardNav = $("domBoardNav");
     if (boardNav && !boardNav.dataset.wired) {
@@ -1921,7 +1890,11 @@
     showDominoScreen();
     requestAnimationFrame(() => {
       fitBoard();
-      requestAnimationFrame(fitBoard);
+      renderHand();
+      requestAnimationFrame(() => {
+        fitBoard();
+        renderHand();
+      });
     });
     const lobbyTeams = $("dominoLobbyTeams");
     if (lobbyTeams) lobbyTeams.classList.add("hidden");
@@ -1944,6 +1917,7 @@
 
     // "dominoState" — Dominoes only.
     socket.on("dominoState", (data) => {
+      if (leftTable) return;
       if (!active && data && data.game === "dominoes") {
         // Late sync if started event was missed.
         if (!bindDom()) return;

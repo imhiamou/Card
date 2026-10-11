@@ -1,7 +1,7 @@
 /*
  * Pure layout math for the Android app. The website and Electron build
- * do not call this. Dominoes and UNO use it only when html.gameweb-app
- * is set, to page a hand instead of scrolling the screen.
+ * do not call this. UNO pages a large hand. Dominoes uses fitHandTiles
+ * so every tile stays visible without a pager.
  */
 (function (root, factory) {
   const api = factory();
@@ -35,8 +35,50 @@
     };
   }
 
+  function fitHandTiles(count, width, height, options) {
+    const opts = options || {};
+    const gap = opts.gap == null ? 4 : Number(opts.gap);
+    const minWidth = opts.minWidth == null ? 26 : Number(opts.minWidth);
+    const maxWidth = opts.maxWidth == null ? 52 : Number(opts.maxWidth);
+    const aspect = opts.aspect == null ? 2 : Number(opts.aspect);
+    const n = Math.max(0, count | 0);
+    const boxW = Math.max(0, Number(width) || 0);
+    const boxH = Math.max(0, Number(height) || 0);
+    if (!n || boxW < 1 || boxH < 1 || !(gap >= 0) || !(aspect > 0)) {
+      return { width: 0, height: 0, columns: 0, rows: 0, gap: gap || 0 };
+    }
+    let best = null;
+    let fallback = null;
+    for (let cols = 1; cols <= n; cols++) {
+      const rows = Math.ceil(n / cols);
+      const gapsW = gap * Math.max(0, cols - 1);
+      const gapsH = gap * Math.max(0, rows - 1);
+      const cellW = (boxW - gapsW) / cols;
+      const cellH = (boxH - gapsH) / rows;
+      if (!(cellW > 1) || !(cellH > 1)) continue;
+      const tileW = Math.min(cellW, cellH / aspect, maxWidth);
+      const tileH = tileW * aspect;
+      const packed = {
+        width: tileW,
+        height: tileH,
+        columns: cols,
+        rows: rows,
+        gap: gap
+      };
+      if (!fallback || tileW > fallback.width) fallback = packed;
+      if (tileW + 0.01 < minWidth) continue;
+      if (!best || tileW > best.width + 0.01 || (Math.abs(tileW - best.width) <= 0.01 && rows < best.rows)) {
+        best = packed;
+      }
+    }
+    if (best) return best;
+    if (fallback) return Object.assign({ cramped: true }, fallback);
+    return { width: 0, height: 0, columns: 0, rows: 0, gap: gap, cramped: true };
+  }
+
   return {
     tilePageSize: tilePageSize,
-    pagePlan: pagePlan
+    pagePlan: pagePlan,
+    fitHandTiles: fitHandTiles
   };
 });

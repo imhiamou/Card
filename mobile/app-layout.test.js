@@ -26,6 +26,27 @@ describe("mobile hand paging", () => {
     assert.equal(clamped.end, 3);
   });
 
+  it("fits every Domino tile into the hand box", () => {
+    assert.deepEqual(layout.fitHandTiles(0, 340, 140), { width: 0, height: 0, columns: 0, rows: 0, gap: 4 });
+    assert.deepEqual(layout.fitHandTiles(7, 0, 140).columns, 0);
+    function contained(boxW, boxH, count) {
+      const fit = layout.fitHandTiles(count, boxW, boxH);
+      assert.ok(fit.columns * fit.rows >= count, count + " grid");
+      assert.ok(fit.width * fit.columns + fit.gap * Math.max(0, fit.columns - 1) <= boxW + 0.05);
+      assert.ok(fit.height * fit.rows + fit.gap * Math.max(0, fit.rows - 1) <= boxH + 0.05);
+      assert.ok(fit.width > 8 && fit.height > 16);
+      assert.ok(Math.abs(fit.height / fit.width - 2) < 0.02);
+      return fit;
+    }
+    const normal = contained(340, 140, 7);
+    const large = contained(336, 200, 21);
+    contained(150, 320, 21);
+    contained(412, 180, 1);
+    assert.equal(normal.rows, 1);
+    assert.ok(normal.width > large.width);
+    assert.ok(large.rows > 1);
+  });
+
   it("keeps app layout rules off the website stylesheet except the app class", () => {
     const css = fs.readFileSync(path.join(repoRoot, "assets/mobile-app.css"), "utf8");
     const index = fs.readFileSync(path.join(repoRoot, "index.html"), "utf8");
@@ -41,6 +62,16 @@ describe("mobile hand paging", () => {
     assert.match(css, /html\.gameweb-app #unoScreen/);
     assert.match(css, /html\.gameweb-app #hiddenHunterScreen/);
     assert.match(css, /html\.gameweb-app #cartsScreen/);
+    const domino = fs.readFileSync(path.join(repoRoot, "domino.js"), "utf8");
+    assert.match(domino, /id="domLobbyBtn"/);
+    assert.match(domino, /Return to Lobby/);
+    assert.equal(domino.includes("domHandPrev"), false);
+    assert.equal(domino.includes("domHandPager"), false);
+    const back = domino.slice(domino.indexOf("function returnToLobby"), domino.indexOf("function wireControls"));
+    assert.match(back, /leftTable = true/);
+    assert.match(back, /lobbyScreen\.classList\.remove\("hidden"\)/);
+    assert.equal(back.includes("socket.disconnect"), false);
+    assert.equal(back.includes("currentRoom = null"), false);
     assert.equal(css.includes("overflow-y: auto"), false);
     assert.equal(css.includes("overflow-y:auto"), false);
   });
@@ -309,14 +340,34 @@ describe("android viewport", { skip: fs.existsSync(chromeBin) ? false : "chrome 
             const domino = document.getElementById("dominoScreen");
             domino.classList.remove("hidden");
             const domHand = document.getElementById("domHand");
-            if (domHand) {
-              for (let i = 0; i < 12; i++) {
+            if (domHand && window.GamewebMobileLayout) {
+              const count = 21;
+              const style = getComputedStyle(domHand);
+              const padX = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
+              const padY = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
+              const fit = window.GamewebMobileLayout.fitHandTiles(count, domHand.clientWidth - padX, domHand.clientHeight - padY);
+              domHand.style.setProperty("--hand-cols", String(fit.columns));
+              domHand.style.setProperty("--hand-tile-w", fit.width.toFixed(2) + "px");
+              domHand.style.setProperty("--hand-tile-h", fit.height.toFixed(2) + "px");
+              domHand.style.setProperty("--hand-gap", fit.gap + "px");
+              domHand.innerHTML = "";
+              for (let i = 0; i < count; i++) {
                 const tile = document.createElement("div");
-                tile.className = "domTile inHand" + (i === 0 ? " selected" : "");
+                tile.className = "domTile inHand" + (i === 0 ? " selected" : "") + (i === 2 ? " valid" : "");
                 domHand.appendChild(tile);
               }
-              const visibleTiles = Array.from(domHand.querySelectorAll(".domTile")).filter((tile) => tile.getBoundingClientRect().height > 40).length;
-              if (visibleTiles < 1) failures.push("domino tiles not visible");
+              const handRect = domHand.getBoundingClientRect();
+              const tiles = Array.from(domHand.querySelectorAll(".domTile"));
+              if (tiles.length !== count) failures.push("domino count " + tiles.length);
+              tiles.forEach((tile) => {
+                const rect = tile.getBoundingClientRect();
+                if (rect.width < 8 || rect.height < 16) failures.push("domino tile tiny");
+                if (rect.left < handRect.left - 1 || rect.right > handRect.right + 1 || rect.top < handRect.top - 1 || rect.bottom > handRect.bottom + 1) {
+                  failures.push("domino tile outside hand");
+                }
+              });
+              const pager = document.querySelector("#domHandPrev, #domHandNext");
+              if (pager) failures.push("domino pager button");
             }
             spill("domino-hand", "#dominoScreen");
             hideAll();

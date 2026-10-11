@@ -51,6 +51,11 @@ describe("android version metadata", () => {
     assert.equal(update.isNewer(1, parsed.manifest.versionCode), true);
     assert.equal(update.isNewer(1000005, 1000005), false);
     assert.equal(update.isNewer(1000006, 1000005), false);
+    assert.equal(update.isNewer(update.versionCodeFromVersion("1.0.7"), update.versionCodeFromVersion("1.0.9")), true);
+    assert.equal(update.isNewer(update.versionCodeFromVersion("1.0.8"), update.versionCodeFromVersion("1.0.9")), true);
+    assert.equal(update.isNewer(update.versionCodeFromVersion("1.0.9"), update.versionCodeFromVersion("1.0.8")), false);
+    assert.ok(update.versionCodeFromVersion("1.0.10") > update.versionCodeFromVersion("1.0.9"));
+    assert.ok(update.versionCodeFromVersion("1.10.0") > update.versionCodeFromVersion("1.9.0"));
 
     const withUrl = Object.assign({}, good, { url: "https://evil.example/Gameweb.apk" });
     assert.equal(update.parseManifest(JSON.stringify(withUrl)).ok, false);
@@ -61,6 +66,47 @@ describe("android version metadata", () => {
     const badHash = Object.assign({}, good, { sha256: "abc" });
     assert.equal(update.parseManifest(JSON.stringify(badHash)).ok, false);
     assert.equal(update.parseManifest("{").ok, false);
+  });
+
+  it("chooses the newest published Android release and ignores other assets", () => {
+    const apk = (version) => ({ name: "Gameweb-" + version + ".apk", browser_download_url: "https://evil.example/" + version + ".apk" });
+    const meta = { name: "android-latest.json", browser_download_url: "https://evil.example/android-latest.json" };
+    const chosen = update.selectAndroidRelease([
+      { tag_name: "v1.0.7", draft: false, prerelease: false, assets: [apk("1.0.7"), meta] },
+      { tag_name: "V1.0.8", draft: false, prerelease: false, assets: [{ name: "latest.yml" }] },
+      { tag_name: "v1.0.10", draft: true, prerelease: false, assets: [apk("1.0.10"), meta] },
+      { tag_name: "v1.0.11", draft: false, prerelease: true, assets: [apk("1.0.11"), meta] },
+      { tag_name: "v1.0.12", draft: false, prerelease: false, assets: [{ name: "Hidden-Hunter-Setup-1.0.12.exe" }] },
+      { tag_name: "v1.0.9", draft: false, prerelease: false, assets: [apk("1.0.9"), meta, { name: "latest.yml" }] },
+      { tag_name: "not-a-version", draft: false, prerelease: false, assets: [apk("1.0.9"), meta] }
+    ]);
+    assert.deepEqual(chosen, { prefix: "v", version: "1.0.9", versionCode: 1000009, tag: "v1.0.9" });
+    assert.equal(update.manifestUrlFor(chosen.prefix, chosen.version), "https://github.com/imhiamou/Card/releases/download/v1.0.9/android-latest.json");
+    assert.equal(update.releaseDownloadUrl(chosen.version), "https://github.com/imhiamou/Card/releases/download/v1.0.9/Gameweb-1.0.9.apk");
+    const capital = update.selectAndroidRelease([
+      { tag_name: "V1.0.9", draft: false, prerelease: false, assets: [apk("1.0.9"), meta] }
+    ]);
+    assert.equal(capital.prefix, "V");
+    assert.equal(update.manifestUrlFor("V", "1.0.9"), "https://github.com/imhiamou/Card/releases/download/V1.0.9/android-latest.json");
+    assert.equal(update.selectAndroidRelease([]), null);
+    assert.equal(update.selectAndroidRelease({}), null);
+
+    const published = update.parseManifest(JSON.stringify({
+      version: "1.0.9",
+      versionCode: 1000009,
+      apk: "Gameweb-1.0.9.apk",
+      sha256: "614814804c60c496c902900a279daeb34d0169564ebb2eac793b103842c7c7fc"
+    }));
+    assert.equal(published.ok, true);
+    assert.equal(published.manifest.url, update.releaseDownloadUrl("1.0.9"));
+    assert.equal(update.isNewer(1000007, published.manifest.versionCode), true);
+
+    const script = fs.readFileSync(path.join(repoRoot, "assets/android-update.js"), "utf8");
+    const plugin = fs.readFileSync(path.join(repoRoot, "mobile/android/app/src/main/java/com/imhiamou/gameweb/GamewebUpdatePlugin.java"), "utf8");
+    assert.equal(script.includes("releases/latest/download"), false);
+    assert.match(plugin, /https:\/\/api\.github\.com\/repos\/imhiamou\/Card\/releases\?per_page=20/);
+    assert.equal(plugin.includes("call.getString(\"url\""), false);
+    assert.match(plugin, /downloadAndInstall/);
   });
 
   it("checks a sha256 checksum and ignores unexpected metadata hosts", () => {

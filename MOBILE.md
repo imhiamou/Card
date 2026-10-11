@@ -101,7 +101,11 @@ Until those secrets exist, a tag run fails with the missing secret names and doe
 
 ## Updates on an installed phone
 
-On launch, the Android app reads `android-latest.json` from the latest published GitHub Release. If `versionCode` is newer than the installed app, it asks once whether to download that version. Cancel remembers that version and does not ask again. A later version asks again. A failed check leaves the app usable.
+On launch, and from the lobby Updates button, the Android app asks its native plugin for the published GitHub release list. The plugin picks the newest non-draft, non-prerelease tag that includes `Gameweb-<version>.apk` and `android-latest.json`, then downloads that metadata itself. The page does not `fetch` the asset: GitHub's download host does not send a CORS header, so a WebView request fails before any prompt. Versions are compared by `versionCode` (`major * 1000000 + minor * 1000 + patch`), so `1.0.9` is newer than `1.0.8` and `1.0.10` is newer than `1.0.9`.
+
+If the installed `versionCode` is older, the app shows both versions and asks whether to download. Cancel remembers that version until a later one exists. Updates in the lobby asks again and reports errors. A failed launch check leaves the app usable.
+
+An install of v1.0.7 still uses the WebView fetch, so it cannot discover v1.0.9 by itself. Install one newer APK that contains this plugin once. After that, later published releases can be offered in the app. Do not replace the v1.0.9 asset in place; that release is already signed and published, and the installed copy never downloaded it.
 
 Download uses the fixed GitHub Release URL over HTTPS. The app hashes the file with SHA-256 and compares it to the published checksum. It refuses a package whose id is not `com.imhiamou.gameweb`, whose version does not match, or whose signing certificate differs from the installed app. It then opens Android's package installer. Android may ask for permission to install from Gameweb and always asks the user to confirm. The update replaces this application id and keeps app data. It does not install silently.
 

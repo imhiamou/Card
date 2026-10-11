@@ -48,10 +48,54 @@ public class GamewebUpdatePlugin extends Plugin {
     }
 
     @PluginMethod
+    public void fetchReleaseText(PluginCall call) {
+        String kind = call.getString("kind", "");
+        String version = call.getString("version", "");
+        String prefix = call.getString("prefix", "v");
+        final String url;
+        final int maxBytes;
+        if ("releases".equals(kind)) {
+            url = "https://api.github.com/repos/imhiamou/Card/releases?per_page=20";
+            maxBytes = 2 * 1024 * 1024;
+        } else if ("manifest".equals(kind)) {
+            if (!VERSION.matcher(version).matches() || versionCodeOfName(version) < 1) {
+                call.reject("The update version is not a supported Gameweb release.");
+                return;
+            }
+            if (!"v".equals(prefix) && !"V".equals(prefix)) {
+                call.reject("The update version is not a supported Gameweb release.");
+                return;
+            }
+            url = "https://github.com/imhiamou/Card/releases/download/" + prefix + version + "/android-latest.json";
+            maxBytes = 64 * 1024;
+        } else {
+            call.reject("The update request is not recognized.");
+            return;
+        }
+        executor.execute(() -> {
+            try {
+                String body = readText(url, maxBytes);
+                JSObject result = new JSObject();
+                result.put("body", body);
+                call.resolve(result);
+            } catch (UpdateException err) {
+                call.reject(err.getMessage());
+            } catch (Exception err) {
+                call.reject("GitHub could not be reached. Check the connection and try again.");
+            }
+        });
+    }
+
+    @PluginMethod
     public void downloadAndInstall(PluginCall call) {
         String version = call.getString("version", "");
         String sha256 = call.getString("sha256", "");
+        String prefix = call.getString("prefix", "v");
         if (!VERSION.matcher(version).matches() || versionCodeOfName(version) < 1) {
+            call.reject("The update version is not a supported Gameweb release.");
+            return;
+        }
+        if (!"v".equals(prefix) && !"V".equals(prefix)) {
             call.reject("The update version is not a supported Gameweb release.");
             return;
         }
@@ -67,7 +111,7 @@ public class GamewebUpdatePlugin extends Plugin {
         executor.execute(() -> {
             File apk = null;
             try {
-                apk = download(version, sha256, call);
+                apk = download(version, prefix, sha256, call);
                 verifyPackage(apk, version);
                 install(apk, call);
             } catch (UpdateException err) {
@@ -82,8 +126,69 @@ public class GamewebUpdatePlugin extends Plugin {
         });
     }
 
-    private File download(String version, String expectedSha, PluginCall call) throws Exception {
-        URL current = new URL(apkUrl(version));
+    private String readText(String url, int maxBytes) throws Exception {
+        URL current = new URL(url);
+        HttpURLConnection connection = null;
+        try {
+            for (int redirect = 0; redirect <= MAX_REDIRECTS; redirect++) {
+                if (!"https".equals(current.getProtocol()) || !allowedHost(current.getHost())) {
+                    throw new UpdateException("The update download left GitHub. It was not saved.");
+                }
+                connection = (HttpURLConnection) current.openConnection();
+                connection.setInstanceFollowRedirects(false);
+                connection.setConnectTimeout(15000);
+                connection.setReadTimeout(20000);
+                connection.setRequestProperty("User-Agent", "Gameweb-Android");
+                connection.setRequestProperty("Accept", "application/vnd.github+json, application/json");
+                int status = connection.getResponseCode();
+                if (status == 429 || status == 403) {
+                    throw new UpdateException("GitHub rate limit. Try the update again later.");
+                }
+                if (status == 301 || status == 302 || status == 303 || status == 307 || status == 308) {
+                    String location = connection.getHeaderField("Location");
+                    connection.disconnect();
+                    connection = null;
+                    if (location == null || redirect == MAX_REDIRECTS) {
+                        throw new UpdateException("The update download was redirected too many times.");
+                    }
+                    current = new URL(current, location);
+                    continue;
+                }
+                if (status == 404) {
+                    throw new UpdateException("The published release does not include Android update metadata.");
+                }
+                if (status != 200) {
+                    throw new UpdateException("The update could not be read (" + status + ").");
+                }
+                InputStream input = connection.getInputStream();
+                try {
+                    byte[] buffer = new byte[4096];
+                    int read;
+                    int received = 0;
+                    java.io.ByteArrayOutputStream collected = new java.io.ByteArrayOutputStream();
+                    while ((read = input.read(buffer)) >= 0) {
+                        received += read;
+                        if (received > maxBytes) {
+                            throw new UpdateException("The update metadata is too large.");
+                        }
+                        collected.write(buffer, 0, read);
+                    }
+                    if (received == 0) {
+                        throw new UpdateException("The update metadata was empty.");
+                    }
+                    return new String(collected.toByteArray(), java.nio.charset.StandardCharsets.UTF_8);
+                } finally {
+                    try { input.close(); } catch (Exception ignored) { /* closed */ }
+                }
+            }
+            throw new UpdateException("The update could not be read.");
+        } finally {
+            if (connection != null) connection.disconnect();
+        }
+    }
+
+    private File download(String version, String prefix, String expectedSha, PluginCall call) throws Exception {
+        URL current = new URL(apkUrl(version, prefix));
         HttpURLConnection connection = null;
         try {
             for (int redirect = 0; redirect <= MAX_REDIRECTS; redirect++) {
@@ -232,14 +337,16 @@ public class GamewebUpdatePlugin extends Plugin {
         notifyListeners("progress", event);
     }
 
-    private static String apkUrl(String version) {
-        return "https://github.com/imhiamou/Card/releases/download/v" + version + "/Gameweb-" + version + ".apk";
+    private static String apkUrl(String version, String prefix) {
+        String lead = "V".equals(prefix) ? "V" : "v";
+        return "https://github.com/imhiamou/Card/releases/download/" + lead + version + "/Gameweb-" + version + ".apk";
     }
 
     private static boolean allowedHost(String host) {
         if (host == null) return false;
         String name = host.toLowerCase(Locale.US);
         return name.equals("github.com")
+            || name.equals("api.github.com")
             || name.equals("objects.githubusercontent.com")
             || name.equals("release-assets.githubusercontent.com")
             || name.equals("github-releases.githubusercontent.com");
