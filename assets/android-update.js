@@ -2,11 +2,13 @@
  * Android update check for the Gameweb Capacitor app.
  *
  * The website and the Windows app load this file and do nothing.
- * On Android, launch asks the native plugin for GitHub's release list.
- * The WebView cannot read release assets: that host sends no CORS header.
- * The plugin downloads android-latest.json and the APK itself.
- * The download URL is built from the version. Metadata cannot
- * point the download at an arbitrary host.
+ * On Android, launch reads GitHub's release list. The API allows
+ * the WebView to read it. Release-asset downloads do not: that host
+ * sends no CORS header, so the page must not fetch the APK or
+ * android-latest.json itself.
+ * The checksum is GitHub's digest of Gameweb-<version>.apk.
+ * The plugin downloads that APK. The download URL is built from the
+ * version. Metadata cannot point the download at an arbitrary host.
  */
 (function (root, factory) {
   const api = factory();
@@ -18,7 +20,9 @@
   const VERSION_RE = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
   const COMPONENT_LIMIT = 1000;
   const DISMISS_KEY = "gameweb-android-update-dismissed";
+  const RELEASES_URL = "https://api.github.com/repos/imhiamou/Card/releases?per_page=100";
   let checking = false;
+  let booted = false;
 
   function versionFromReleaseTag(tag) {
     if (typeof tag !== "string" || !tag.startsWith("v")) return null;
@@ -60,6 +64,12 @@
     return "https://github.com/imhiamou/Card/releases/download/" + prefix + version + "/android-latest.json";
   }
 
+  function sha256FromDigest(value) {
+    if (typeof value !== "string") return null;
+    const match = /^sha256:([a-f0-9]{64})$/i.exec(value.trim());
+    return match ? match[1].toLowerCase() : null;
+  }
+
   function selectAndroidRelease(releases) {
     if (!Array.isArray(releases)) return null;
     let best = null;
@@ -69,15 +79,18 @@
       const parts = tagParts(release.tag_name);
       if (!parts) return;
       const assets = Array.isArray(release.assets) ? release.assets : [];
-      const names = assets.map((asset) => asset && asset.name);
-      if (names.indexOf(apkFileName(parts.version)) < 0) return;
-      if (names.indexOf("android-latest.json") < 0) return;
+      const apk = assets.find((asset) => asset && asset.name === apkFileName(parts.version));
+      if (!apk) return;
+      const sha256 = sha256FromDigest(apk.digest);
+      const hasManifest = assets.some((asset) => asset && asset.name === "android-latest.json");
+      if (!sha256 && !hasManifest) return;
       if (!best || parts.versionCode > best.versionCode) {
         best = {
           prefix: parts.prefix,
           version: parts.version,
           versionCode: parts.versionCode,
-          tag: parts.prefix + parts.version
+          tag: parts.prefix + parts.version,
+          sha256: sha256
         };
       }
     });
@@ -193,32 +206,73 @@
     return fallback;
   }
 
-  async function discover() {
-    const listed = await plugin().fetchReleaseText({ kind: "releases", version: "", prefix: "v" });
-    const text = listed && listed.body ? listed.body : "";
-    let releases = null;
+  function manifestFromChoice(chosen, sha256) {
+    if (!sha256 || manifestUrlFor(chosen.prefix, chosen.version) == null) return null;
+    return {
+      version: chosen.version,
+      versionCode: chosen.versionCode,
+      apk: apkFileName(chosen.version),
+      sha256: sha256,
+      url: releaseDownloadUrl(chosen.version),
+      prefix: chosen.prefix
+    };
+  }
+
+  async function readReleaseList() {
+    let webError = "GitHub could not be reached. Check the connection and try again.";
     try {
-      releases = JSON.parse(text);
+      const response = await fetch(RELEASES_URL, {
+        cache: "no-store",
+        headers: { Accept: "application/vnd.github+json" }
+      });
+      if (response.status === 403 || response.status === 429) {
+        webError = "GitHub rate limit. Try the update again later.";
+      } else if (!response.ok) {
+        webError = "The update list could not be read (" + response.status + ").";
+      } else {
+        const releases = await response.json();
+        if (Array.isArray(releases)) return { releases: releases, error: null };
+        webError = "The update list is not valid JSON.";
+      }
     } catch (err) {
-      return { manifest: null, error: "The update list is not valid JSON." };
+      webError = "GitHub could not be reached. Check the connection and try again.";
     }
-    const chosen = selectAndroidRelease(releases);
-    if (!chosen) return { manifest: null, error: null };
+    try {
+      const listed = await plugin().fetchReleaseText({ kind: "releases", version: "", prefix: "v" });
+      const text = listed && listed.body ? listed.body : "";
+      const releases = JSON.parse(text);
+      if (!Array.isArray(releases)) return { releases: null, error: "The update list is not valid JSON." };
+      return { releases: releases, error: null };
+    } catch (err) {
+      return { releases: null, error: errorText(err, webError) };
+    }
+  }
+
+  async function checksumFor(chosen) {
+    if (chosen.sha256) return { sha256: chosen.sha256, error: null };
     const loaded = await plugin().fetchReleaseText({
       kind: "manifest",
       version: chosen.version,
       prefix: chosen.prefix
     });
     const parsed = parseManifest(loaded && loaded.body ? loaded.body : "");
-    if (!parsed.ok) return { manifest: null, error: parsed.error };
+    if (!parsed.ok) return { sha256: null, error: parsed.error };
     if (parsed.manifest.version !== chosen.version || parsed.manifest.versionCode !== chosen.versionCode) {
-      return { manifest: null, error: "The update metadata does not match the published release." };
+      return { sha256: null, error: "The update metadata does not match the published release." };
     }
-    if (manifestUrlFor(chosen.prefix, chosen.version) == null) {
-      return { manifest: null, error: "The update metadata contains an unexpected download location." };
-    }
-    parsed.manifest.prefix = chosen.prefix;
-    return { manifest: parsed.manifest, error: null };
+    return { sha256: parsed.manifest.sha256, error: null };
+  }
+
+  async function discover() {
+    const listed = await readReleaseList();
+    if (!listed.releases) return { manifest: null, error: listed.error };
+    const chosen = selectAndroidRelease(listed.releases);
+    if (!chosen) return { manifest: null, error: null };
+    const checksum = await checksumFor(chosen);
+    if (!checksum.sha256) return { manifest: null, error: checksum.error };
+    const manifest = manifestFromChoice(chosen, checksum.sha256);
+    if (!manifest) return { manifest: null, error: "The update metadata contains an unexpected download location." };
+    return { manifest: manifest, error: null };
   }
 
   async function offer(manifest, installed, manual) {
@@ -230,6 +284,8 @@
       dismissed = "";
     }
     if (!manual && dismissed === manifest.version) return;
+    const button = document.getElementById("gamewebCheckUpdate");
+    if (button) button.textContent = "Update " + manifest.version;
     if (!window.AppNotice || typeof window.AppNotice.confirm !== "function") {
       notify("Gameweb " + manifest.version + " is available.");
       return;
@@ -324,15 +380,48 @@
     else lobby.insertBefore(button, lobby.firstChild);
   }
 
+  function watchForeground() {
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") check(false);
+    });
+    try {
+      const app = Capacitor.registerPlugin("App");
+      if (app && typeof app.addListener === "function") {
+        app.addListener("appStateChange", (state) => {
+          if (state && state.isActive) check(false);
+        });
+      }
+    } catch (err) { /* the visibility listener still runs */ }
+  }
+
   function start() {
-    if (!isAndroidApp()) return;
+    if (booted || !isAndroidApp()) return;
+    booted = true;
     installManualCheck();
+    watchForeground();
     check(false);
   }
 
+  function boot() {
+    if (isAndroidApp()) {
+      start();
+      return;
+    }
+    let tries = 0;
+    const timer = setInterval(() => {
+      tries += 1;
+      if (isAndroidApp()) {
+        clearInterval(timer);
+        start();
+      } else if (tries >= 20) {
+        clearInterval(timer);
+      }
+    }, 250);
+  }
+
   if (typeof window !== "undefined" && typeof document !== "undefined") {
-    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);
-    else start();
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
+    else boot();
   }
 
   return {
@@ -343,6 +432,7 @@
     apkFileName: apkFileName,
     releaseDownloadUrl: releaseDownloadUrl,
     manifestUrlFor: manifestUrlFor,
+    sha256FromDigest: sha256FromDigest,
     selectAndroidRelease: selectAndroidRelease,
     allowedMetadataUrl: allowedMetadataUrl,
     parseManifest: parseManifest,

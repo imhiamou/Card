@@ -80,7 +80,7 @@ describe("android version metadata", () => {
       { tag_name: "v1.0.9", draft: false, prerelease: false, assets: [apk("1.0.9"), meta, { name: "latest.yml" }] },
       { tag_name: "not-a-version", draft: false, prerelease: false, assets: [apk("1.0.9"), meta] }
     ]);
-    assert.deepEqual(chosen, { prefix: "v", version: "1.0.9", versionCode: 1000009, tag: "v1.0.9" });
+    assert.deepEqual(chosen, { prefix: "v", version: "1.0.9", versionCode: 1000009, tag: "v1.0.9", sha256: null });
     assert.equal(update.manifestUrlFor(chosen.prefix, chosen.version), "https://github.com/imhiamou/Card/releases/download/v1.0.9/android-latest.json");
     assert.equal(update.releaseDownloadUrl(chosen.version), "https://github.com/imhiamou/Card/releases/download/v1.0.9/Gameweb-1.0.9.apk");
     const capital = update.selectAndroidRelease([
@@ -101,10 +101,39 @@ describe("android version metadata", () => {
     assert.equal(published.manifest.url, update.releaseDownloadUrl("1.0.9"));
     assert.equal(update.isNewer(1000007, published.manifest.versionCode), true);
 
+    const digest = "sha256:" + "ab".repeat(32);
+    const newest = update.selectAndroidRelease([
+      {
+        tag_name: "v1.0.10",
+        draft: false,
+        prerelease: false,
+        assets: [{ name: "Gameweb-1.0.10.apk", digest: "sha256:" + "11".repeat(32) }, { name: "android-latest.json" }]
+      },
+      {
+        tag_name: "v1.0.11",
+        draft: false,
+        prerelease: false,
+        assets: [
+          { name: "Gameweb-1.0.11.apk", digest: digest, browser_download_url: "https://evil.example/Gameweb-1.0.11.apk" },
+          { name: "latest.yml" }
+        ]
+      }
+    ]);
+    assert.equal(newest.version, "1.0.11");
+    assert.equal(newest.versionCode, 1000011);
+    assert.equal(newest.sha256, "ab".repeat(32));
+    assert.equal(update.releaseDownloadUrl(newest.version).includes("evil.example"), false);
+    assert.equal(update.isNewer(1000010, newest.versionCode), true);
+    assert.equal(update.sha256FromDigest("sha256:" + "AB".repeat(32)), "ab".repeat(32));
+    assert.equal(update.sha256FromDigest("md5:abcd"), null);
+
     const script = fs.readFileSync(path.join(repoRoot, "assets/android-update.js"), "utf8");
     const plugin = fs.readFileSync(path.join(repoRoot, "mobile/android/app/src/main/java/com/imhiamou/gameweb/GamewebUpdatePlugin.java"), "utf8");
     assert.equal(script.includes("releases/latest/download"), false);
-    assert.match(plugin, /https:\/\/api\.github\.com\/repos\/imhiamou\/Card\/releases\?per_page=20/);
+    assert.match(script, /https:\/\/api\.github\.com\/repos\/imhiamou\/Card\/releases\?per_page=100/);
+    assert.match(script, /appStateChange/);
+    assert.match(script, /visibilitychange/);
+    assert.match(plugin, /https:\/\/api\.github\.com\/repos\/imhiamou\/Card\/releases\?per_page=100/);
     assert.equal(plugin.includes("call.getString(\"url\""), false);
     assert.match(plugin, /downloadAndInstall/);
   });
