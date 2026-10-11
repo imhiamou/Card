@@ -306,21 +306,27 @@ describe("release tag gate", () => {
     };
   }
 
-  it("accepts only v plus the exact desktop version", () => {
+  it("accepts only v or V plus the exact desktop version", () => {
     assert.equal(releaseTagMatches("v1.0.2", "1.0.2"), true);
+    assert.equal(releaseTagMatches("V1.0.8", "1.0.8"), true);
+    assert.equal(releaseTagMatches("V1.0.2", "1.0.2"), true);
     assert.equal(releaseTagMatches("v1.0.1", "1.0.2"), false);
+    assert.equal(releaseTagMatches("V1.0.1", "1.0.2"), false);
     assert.equal(releaseTagMatches("1.0.2", "1.0.2"), false);
     assert.equal(releaseTagMatches("v1.0.2-beta", "1.0.2"), false);
+    assert.equal(releaseTagMatches("V1.0.2-beta", "1.0.2"), false);
     assert.equal(releaseTagMatches("v1.0.2", "1.0.2-beta"), false);
     assert.equal(releaseTagMatches("", "1.0.2"), false);
   });
 
   it("derives a strict application version from the release tag", () => {
     assert.equal(versionFromReleaseTag("v1.0.4"), "1.0.4");
+    assert.equal(versionFromReleaseTag("V1.0.4"), "1.0.4");
+    assert.equal(versionFromReleaseTag("V1.0.8"), "1.0.8");
     assert.equal(versionFromReleaseTag("v1.2.3"), "1.2.3");
     assert.equal(versionFromReleaseTag("v2.0.0"), "2.0.0");
     assert.equal(versionFromReleaseTag("v10.20.30"), "10.20.30");
-    for (const tag of ["", "1.0.4", "v1.0.4-beta", "v1.0", "v1.0.4.1", "v1.0.4 ", "V1.0.4", "vv1.0.4", "v01.0.4"]) {
+    for (const tag of ["", "1.0.4", "v1.0.4-beta", "V1.0.4-beta", "v1.0", "V1.0", "v1.0.4.1", "V1.0.4.1", "v1.0.4 ", "V1.0.4 ", "vv1.0.4", "VV1.0.4", "v01.0.4", "V01.0.4"]) {
       assert.equal(versionFromReleaseTag(tag), null, tag);
     }
   });
@@ -357,8 +363,22 @@ describe("release tag gate", () => {
     assert.equal(versions(dir).lockfile, "1.0.4");
   });
 
+  it("synchronizes package 1.0.3 to release tag V1.0.8", () => {
+    const dir = fixture("1.0.3");
+    const result = applyReleaseTag(dir, "V1.0.8");
+    const synced = versions(dir);
+    assert.equal(result.ok, true);
+    assert.equal(result.version, "1.0.8");
+    assert.equal(result.message, "Release tag V1.0.8 set the desktop version to 1.0.8.");
+    assert.equal(synced.packageJson, "1.0.8");
+    assert.equal(synced.lockfile, "1.0.8");
+    assert.equal(synced.packagesRoot, "1.0.8");
+    assert.equal(synced.dependency, "1.0.2");
+    assert.equal(releaseTagMatches("V1.0.8", synced.packageJson), true);
+  });
+
   it("rejects malformed tags without changing the package version", () => {
-    for (const tag of ["", "1.0.4", "v1.0.4-beta", "v1.0", "v1.0.4.1", "V1.0.4"]) {
+    for (const tag of ["", "1.0.4", "v1.0.4-beta", "V1.0.4-beta", "v1.0", "V1.0", "v1.0.4.1", "V1.0.4.1", "v1.0.4 ", "V1.0.4 ", "vv1.0.4", "VV1.0.4", "v01.0.4", "V01.0.4"]) {
       const dir = fixture("1.0.3");
       const result = applyReleaseTag(dir, tag);
       assert.equal(result.ok, false, tag);

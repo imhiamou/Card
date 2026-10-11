@@ -1,7 +1,7 @@
 /*
  * The GitHub Release tag is the desktop application version.
  *
- * v1.0.4 becomes 1.0.4 in this workspace only. npm updates
+ * v1.0.4 or V1.0.4 becomes 1.0.4 in this workspace only. npm updates
  * package.json and package-lock.json and does not create a commit or tag.
  * Publishing continues only after those files match the tag.
  */
@@ -17,12 +17,16 @@ const VERSION_RE = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 function releaseTagMatches(tag, version) {
   if (typeof tag !== "string" || typeof version !== "string") return false;
   if (!/^\d+\.\d+\.\d+$/.test(version)) return false;
-  return tag === "v" + version;
+  if (tag.length !== version.length + 1) return false;
+  const prefix = tag.charAt(0);
+  if (prefix !== "v" && prefix !== "V") return false;
+  return tag.slice(1) === version;
 }
 
 function versionFromReleaseTag(tag) {
-  if (typeof tag !== "string") return null;
-  if (!tag.startsWith("v")) return null;
+  if (typeof tag !== "string" || tag.length < 2) return null;
+  const prefix = tag.charAt(0);
+  if (prefix !== "v" && prefix !== "V") return null;
   const version = tag.slice(1);
   return VERSION_RE.test(version) ? version : null;
 }
