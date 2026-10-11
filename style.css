@@ -652,8 +652,7 @@ html.gameweb-app #lobbyScreen.box,
 html.gameweb-app #placementScreen,
 html.gameweb-app #gameScreen{
 max-height:100%;
-overflow-y:auto;
--webkit-overflow-scrolling:touch;
+overflow:hidden;
 }
 html.gameweb-app #hiddenHunterScreen,
 html.gameweb-app #cartsScreen.cartsScreen,

@@ -8,6 +8,7 @@
         '<div class="hhPartner" id="hhPartner"></div>' +
         '<div class="hhTimer" id="hhTimer">05:00</div>' +
         '<button type="button" class="hhFsBtn" id="hhFsBtn">FULLSCREEN</button>' +
+        '<button type="button" class="hhMenuBtn" id="hhMenuBtn" aria-expanded="false">Menu</button>' +
       '</div>' +
       '<div class="hhStage" id="hhStage">' +
         '<canvas id="hhCanvas"></canvas>' +

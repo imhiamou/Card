@@ -13,6 +13,7 @@
   const SCREEN_HTML =
     '<div class="domTopBar">' +
       '<h2>Dominoes</h2>' +
+      '<button type="button" id="domMenuBtn" class="domMenuBtn" aria-expanded="false">Menu</button>' +
       '<div class="domScoreStrip" id="domScoreStrip" aria-label="Scoreboard"></div>' +
       '<div class="domMeta" id="domMeta"></div>' +
       '<div class="domTopTools">' +
@@ -46,6 +47,15 @@
         '<h2 id="domTurnIndicator"></h2>' +
         '<div class="domBoardWrap" id="domBoardWrap">' +
           '<div class="domBoardInner" id="domBoardInner"></div>' +
+          '<div class="domBoardNav" id="domBoardNav">' +
+            '<button type="button" data-board="up" aria-label="Pan board up">↑</button>' +
+            '<button type="button" data-board="left" aria-label="Pan board left">←</button>' +
+            '<button type="button" id="domBoardFit" aria-label="Fit board">Fit</button>' +
+            '<button type="button" data-board="right" aria-label="Pan board right">→</button>' +
+            '<button type="button" data-board="down" aria-label="Pan board down">↓</button>' +
+            '<button type="button" data-board="in" aria-label="Zoom in">+</button>' +
+            '<button type="button" data-board="out" aria-label="Zoom out">−</button>' +
+          '</div>' +
           '<button type="button" id="domDrawBtn" class="domDrawFloat" disabled>Draw</button>' +
         '</div>' +
         '<div class="domEnds">' +
@@ -58,6 +68,11 @@
     '</div>' +
     '<div class="domHandSection">' +
       '<div class="domHandLabel" id="domHandLabel">Your hand</div>' +
+      '<div class="domHandPager" id="domHandPager" hidden>' +
+        '<button type="button" id="domHandPrev">Prev</button>' +
+        '<span id="domHandPage">1 / 1</span>' +
+        '<button type="button" id="domHandNext">Next</button>' +
+      '</div>' +
       '<div class="domHand" id="domHand"></div>' +
     '</div>' +
     '<p id="domMsg"></p>' +
@@ -75,6 +90,8 @@
   let validMoves = [];
   let board = null;
   let selectedTileId = null;
+  let handPage = 0;
+  let handPagePinned = false;
   let canDraw = false;
   let teamMode = false;
   let teams = null;
@@ -670,8 +687,13 @@
       return Math.sqrt(dx * dx + dy * dy);
     }
 
+    function fromBoardChrome(event) {
+      const target = event.target;
+      return !!(target && target.closest && target.closest(".domBoardNav, button"));
+    }
+
     domBoardWrap.addEventListener("mousedown", (e) => {
-      if (e.button !== 0) return;
+      if (e.button !== 0 || fromBoardChrome(e)) return;
       onDown(e.clientX, e.clientY);
     });
     window.addEventListener("mousemove", (e) => onMove(e.clientX, e.clientY));
@@ -684,7 +706,7 @@
         pinchStartScale = scale;
         return;
       }
-      if (!e.touches[0]) return;
+      if (!e.touches[0] || fromBoardChrome(e)) return;
       onDown(e.touches[0].clientX, e.touches[0].clientY);
     }, { passive: true });
     domBoardWrap.addEventListener("touchmove", (e) => {
@@ -718,7 +740,10 @@
     window.addEventListener("resize", () => {
       if (!active) return;
       syncMobileLayout();
-      requestAnimationFrame(fitBoard);
+      requestAnimationFrame(() => {
+        fitBoard();
+        renderHand();
+      });
     });
     if (window.visualViewport) {
       window.visualViewport.addEventListener("resize", () => {
@@ -977,10 +1002,63 @@
     return validMoves.filter((m) => m.tileId === tileId);
   }
 
+  function appShell() {
+    return document.documentElement.classList.contains("gameweb-app");
+  }
+
+  function dominoPageSize() {
+    const layout = window.GamewebMobileLayout;
+    if (!appShell() || !layout) return Math.max(hand.length, 1);
+    const landscape = window.innerWidth > window.innerHeight;
+    if (landscape) {
+      const height = (domHand && domHand.clientHeight) || Math.max(160, window.innerHeight - 120);
+      return Math.max(3, layout.tilePageSize(height, 96, 8, 0));
+    }
+    const width = (domHand && domHand.clientWidth) || window.innerWidth;
+    return Math.max(4, layout.tilePageSize(width, 52, 8, 0));
+  }
+
+  function nudgeBoard(dx, dy) {
+    lockView = true;
+    panX += dx;
+    panY += dy;
+    applyPan();
+  }
+
+  function zoomBoard(factor) {
+    lockView = true;
+    const minScale = isPhoneLayout() ? 0.28 : 0.35;
+    scale = Math.min(1.8, Math.max(minScale, scale * factor));
+    applyPan();
+  }
+
   function renderHand(animateDrawId) {
     if (!domHand) return;
+    const size = dominoPageSize();
+    if (animateDrawId) {
+      const drawn = hand.findIndex((tile) => tile.id === animateDrawId);
+      if (drawn >= 0) {
+        handPage = Math.floor(drawn / size);
+        handPagePinned = true;
+      }
+    }
+    const selectedIndex = hand.findIndex((tile) => tile.id === selectedTileId);
+    if (appShell() && !handPagePinned && selectedIndex >= 0) {
+      handPage = Math.floor(selectedIndex / size);
+    }
+    const layout = window.GamewebMobileLayout;
+    const plan = layout
+      ? layout.pagePlan(hand.length, handPage, size, -1)
+      : { page: 0, pages: 1, start: 0, end: hand.length };
+    if (!appShell()) {
+      plan.start = 0;
+      plan.end = hand.length;
+      plan.pages = 1;
+      plan.page = 0;
+    }
+    handPage = plan.page;
     domHand.innerHTML = "";
-    hand.forEach((tile) => {
+    hand.slice(plan.start, plan.end).forEach((tile) => {
       const moves = movesForTile(tile.id);
       const el = makeTileEl(tile.a, tile.b, {
         vertical: true,
@@ -996,6 +1074,16 @@
       el.addEventListener("pointercancel", onTilePointerCancel);
       domHand.appendChild(el);
     });
+    const pager = $("domHandPager");
+    const label = $("domHandPage");
+    if (pager && label) {
+      const multi = appShell() && plan.pages > 1;
+      pager.hidden = !multi;
+      const off = selectedIndex >= 0 && (selectedIndex < plan.start || selectedIndex >= plan.end);
+      label.textContent = (plan.page + 1) + " / " + plan.pages +
+        " · " + hand.length +
+        (off ? " · selected " + (Math.floor(selectedIndex / size) + 1) : "");
+    }
   }
 
   function renderChrome(data) {
@@ -1012,6 +1100,7 @@
     } else {
       domTurnIndicator.textContent = (current ? current.name : "Opponent") + "'s Turn";
     }
+    if (domTurnIndicator) domTurnIndicator.classList.toggle("domYourTurn", myTurn && !gameOver);
     if (domMeta) {
       domMeta.textContent = players.length + " players · Double-Six" +
         (teamMode ? " · Teams" : "");
@@ -1721,7 +1810,56 @@
     selectedTileId = null;
   }
 
+  function stepHand(delta) {
+    handPagePinned = true;
+    const size = dominoPageSize();
+    const pages = Math.max(1, Math.ceil(hand.length / Math.max(size, 1)));
+    handPage = Math.min(pages - 1, Math.max(0, handPage + delta));
+    renderHand();
+  }
+
   function wireControls() {
+    const handPrev = $("domHandPrev");
+    const handNext = $("domHandNext");
+    const handLabel = $("domHandPage");
+    if (handPrev && !handPrev.dataset.wired) {
+      handPrev.dataset.wired = "1";
+      handPrev.onclick = () => stepHand(-1);
+    }
+    if (handNext && !handNext.dataset.wired) {
+      handNext.dataset.wired = "1";
+      handNext.onclick = () => stepHand(1);
+    }
+    if (handLabel && !handLabel.dataset.wired) {
+      handLabel.dataset.wired = "1";
+      handLabel.onclick = () => {
+        const index = hand.findIndex((tile) => tile.id === selectedTileId);
+        if (index < 0) return;
+        handPagePinned = true;
+        handPage = Math.floor(index / dominoPageSize());
+        renderHand();
+      };
+    }
+    const boardNav = $("domBoardNav");
+    if (boardNav && !boardNav.dataset.wired) {
+      boardNav.dataset.wired = "1";
+      boardNav.addEventListener("click", (event) => {
+        const btn = event.target.closest("button");
+        if (!btn) return;
+        event.stopPropagation();
+        if (btn.id === "domBoardFit") {
+          lockView = false;
+          fitBoard();
+          return;
+        }
+        if (btn.dataset.board === "in") zoomBoard(1.15);
+        else if (btn.dataset.board === "out") zoomBoard(1 / 1.15);
+        else if (btn.dataset.board === "left") nudgeBoard(56, 0);
+        else if (btn.dataset.board === "right") nudgeBoard(-56, 0);
+        else if (btn.dataset.board === "up") nudgeBoard(0, 56);
+        else if (btn.dataset.board === "down") nudgeBoard(0, -56);
+      });
+    }
     const volumeDown = $("domVolumeDown");
     const volumeUp = $("domVolumeUp");
     if (volumeDown && !volumeDown.dataset.wired) {
