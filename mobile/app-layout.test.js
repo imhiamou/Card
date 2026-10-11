@@ -72,6 +72,14 @@ describe("mobile hand paging", () => {
     assert.match(back, /lobbyScreen\.classList\.remove\("hidden"\)/);
     assert.equal(back.includes("socket.disconnect"), false);
     assert.equal(back.includes("currentRoom = null"), false);
+    assert.equal(domino.includes("Pan board"), false);
+    assert.equal(domino.includes("Zoom in"), false);
+    assert.equal(domino.includes("Zoom out"), false);
+    assert.equal(domino.includes("Left:"), false);
+    assert.equal(domino.includes("Right:"), false);
+    assert.match(domino, /id="domBoardFit"/);
+    assert.match(domino, /id="domBoneyard"/);
+    assert.match(domino, /id="domDrawBtn"/);
     assert.equal(css.includes("overflow-y: auto"), false);
     assert.equal(css.includes("overflow-y:auto"), false);
   });
@@ -243,7 +251,7 @@ describe("android viewport", { skip: fs.existsSync(chromeBin) ? false : "chrome 
         await page.send("Runtime.enable");
         await page.send("Runtime.evaluate", {
           expression: `
-            document.getElementById("dominoScreen").innerHTML = '<div class="domTopBar"><h2>Dominoes</h2><button class="domMenuBtn">Menu</button><div class="domScoreStrip"><span class="domStripItem">A · 10</span></div></div><div class="domTableArena" data-count="2"><div class="domSeat seat-top">North</div><div class="domTableCenter"><h2 id="domTurnIndicator" class="domYourTurn">Your Turn</h2><div class="domBoardWrap" style="height:180px"></div></div></div><div class="domHandSection"><div class="domHandLabel">You · 12</div><div class="domHandPager"><button>Prev</button><span>1 / 3</span><button>Next</button></div><div class="domHand"></div></div><p id="domMsg">Play a tile</p>';
+            document.getElementById("dominoScreen").innerHTML = '<div class="domTopBar"><h2>Dominoes</h2><button class="domMenuBtn">Menu</button><div class="domScoreStrip"><span class="domStripItem">A · 10</span></div></div><div class="domTableArena" data-count="2"><div class="domSeat seat-top">North</div><div class="domTableCenter"><h2 id="domTurnIndicator" class="domYourTurn">Your Turn</h2><div class="domBoardWrap" id="domBoardWrap" style="height:180px"><div class="domBoardNav"><button type="button" id="domBoardFit">Fit</button></div></div><div class="domEnds"><span id="domBoneyard">Boneyard: 12</span><button type="button" id="domDrawBtn">Draw</button></div></div></div><div class="domHandSection"><div class="domHandLabel">You · 12</div><div class="domHand"></div></div><p id="domMsg">Play a tile</p>';
             document.getElementById("dominoScreen").classList.remove("hidden");
             document.getElementById("lobbyScreen").classList.add("hidden");
           `,
@@ -254,6 +262,30 @@ describe("android viewport", { skip: fs.existsSync(chromeBin) ? false : "chrome 
           returnByValue: true
         });
         if (domino.result.value.bad.length) failures.push(width + "x" + height + " domino " + domino.result.value.bad.join(", "));
+        const controls = await page.send("Runtime.evaluate", {
+          expression: `(() => {
+            const screen = document.getElementById("dominoScreen");
+            const labels = Array.from(screen.querySelectorAll("button")).map((btn) => btn.textContent.trim());
+            const yard = document.getElementById("domBoneyard").getBoundingClientRect();
+            const draw = document.getElementById("domDrawBtn").getBoundingClientRect();
+            const overlap = !(draw.right <= yard.left + 1 || yard.right <= draw.left + 1 || draw.bottom <= yard.top + 1 || yard.bottom <= draw.top + 1);
+            return {
+              arrows: labels.filter((text) => text === "↑" || text === "←" || text === "→" || text === "↓" || text === "+" || text === "−"),
+              fit: labels.filter((text) => text === "Fit").length,
+              left: !!document.getElementById("domLeftEnd"),
+              right: !!document.getElementById("domRightEnd"),
+              overlap,
+              yardWidth: yard.width,
+              drawWidth: draw.width
+            };
+          })()`,
+          returnByValue: true
+        });
+        const row = controls.result.value;
+        if (row.arrows.length) failures.push(width + "x" + height + " extra table buttons");
+        if (row.fit !== 1) failures.push(width + "x" + height + " fit count " + row.fit);
+        if (row.left || row.right) failures.push(width + "x" + height + " end labels");
+        if (row.overlap || row.yardWidth < 8 || row.drawWidth < 8) failures.push(width + "x" + height + " draw overlaps boneyard");
 
         await page.send("Runtime.evaluate", {
           expression: `

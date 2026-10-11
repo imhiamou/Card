@@ -49,20 +49,12 @@
         '<div class="domBoardWrap" id="domBoardWrap">' +
           '<div class="domBoardInner" id="domBoardInner"></div>' +
           '<div class="domBoardNav" id="domBoardNav">' +
-            '<button type="button" data-board="up" aria-label="Pan board up">↑</button>' +
-            '<button type="button" data-board="left" aria-label="Pan board left">←</button>' +
             '<button type="button" id="domBoardFit" aria-label="Fit board">Fit</button>' +
-            '<button type="button" data-board="right" aria-label="Pan board right">→</button>' +
-            '<button type="button" data-board="down" aria-label="Pan board down">↓</button>' +
-            '<button type="button" data-board="in" aria-label="Zoom in">+</button>' +
-            '<button type="button" data-board="out" aria-label="Zoom out">−</button>' +
           '</div>' +
-          '<button type="button" id="domDrawBtn" class="domDrawFloat" disabled>Draw</button>' +
         '</div>' +
         '<div class="domEnds">' +
-          '<span id="domLeftEnd">Left: —</span>' +
           '<span id="domBoneyard">Boneyard: 0</span>' +
-          '<span id="domRightEnd">Right: —</span>' +
+          '<button type="button" id="domDrawBtn" disabled>Draw</button>' +
         '</div>' +
       '</div>' +
       '<div class="domSeat seat-bottom" data-seat="bottom"></div>' +
@@ -122,8 +114,6 @@
   let domTurnIndicator;
   let domBoardWrap;
   let domBoardInner;
-  let domLeftEnd;
-  let domRightEnd;
   let domBoneyard;
   let domHand;
   let domMsg;
@@ -156,8 +146,6 @@
     domTurnIndicator = $("domTurnIndicator");
     domBoardWrap = $("domBoardWrap");
     domBoardInner = $("domBoardInner");
-    domLeftEnd = $("domLeftEnd");
-    domRightEnd = $("domRightEnd");
     domBoneyard = $("domBoneyard");
     domHand = $("domHand");
     domMsg = $("domMsg");
@@ -980,12 +968,6 @@
       el.style.height = p.h + "px";
       domBoardInner.appendChild(el);
     });
-    if (domLeftEnd) {
-      domLeftEnd.textContent = board.leftEnd == null ? "Left: —" : "Left: " + board.leftEnd;
-    }
-    if (domRightEnd) {
-      domRightEnd.textContent = board.rightEnd == null ? "Right: —" : "Right: " + board.rightEnd;
-    }
     if (domBoneyard) {
       domBoneyard.textContent = "Boneyard: " + (board.boneyardCount || 0);
     }
@@ -1020,20 +1002,6 @@
     domHand.style.setProperty("--hand-gap", fit.gap + "px");
   }
 
-  function nudgeBoard(dx, dy) {
-    lockView = true;
-    panX += dx;
-    panY += dy;
-    applyPan();
-  }
-
-  function zoomBoard(factor) {
-    lockView = true;
-    const minScale = isPhoneLayout() ? 0.28 : 0.35;
-    scale = Math.min(1.8, Math.max(minScale, scale * factor));
-    applyPan();
-  }
-
   function renderHand(animateDrawId) {
     if (!domHand) return;
     fitHandToBox();
@@ -1062,13 +1030,24 @@
     if (gameOver) {
       domTurnIndicator.textContent = "Round Over";
     } else if (myTurn) {
-      if (board && board.mustPlayId) {
-        domTurnIndicator.textContent = "Your turn — play " + board.mustPlayId.replace("-", "|");
+      const opening = board && Array.isArray(board.chain) && board.chain.length === 0;
+      if (opening && board.firstRound) {
+        domTurnIndicator.textContent = "Your turn — play 6|6";
+      } else if (opening) {
+        domTurnIndicator.textContent = "Your turn — choose any tile to open";
       } else {
         domTurnIndicator.textContent = "Your Turn";
       }
     } else {
-      domTurnIndicator.textContent = (current ? current.name : "Opponent") + "'s Turn";
+      const opening = board && Array.isArray(board.chain) && board.chain.length === 0;
+      const name = current ? current.name : "Opponent";
+      if (opening && board.firstRound) {
+        domTurnIndicator.textContent = name + " opens with the double-six";
+      } else if (opening) {
+        domTurnIndicator.textContent = name + " chooses the opening tile";
+      } else {
+        domTurnIndicator.textContent = name + "'s Turn";
+      }
     }
     if (domTurnIndicator) domTurnIndicator.classList.toggle("domYourTurn", myTurn && !gameOver);
     if (domMeta) {
@@ -1819,14 +1798,7 @@
         if (btn.id === "domBoardFit") {
           lockView = false;
           fitBoard();
-          return;
         }
-        if (btn.dataset.board === "in") zoomBoard(1.15);
-        else if (btn.dataset.board === "out") zoomBoard(1 / 1.15);
-        else if (btn.dataset.board === "left") nudgeBoard(56, 0);
-        else if (btn.dataset.board === "right") nudgeBoard(-56, 0);
-        else if (btn.dataset.board === "up") nudgeBoard(0, 56);
-        else if (btn.dataset.board === "down") nudgeBoard(0, -56);
       });
     }
     const volumeDown = $("domVolumeDown");
@@ -1899,7 +1871,10 @@
     const lobbyTeams = $("dominoLobbyTeams");
     if (lobbyTeams) lobbyTeams.classList.add("hidden");
     const starter = (data.players || []).find((p) => p.id === data.currentTurnId);
-    let msg = (starter ? starter.name : "A player") + " opens with the highest double.";
+    const openingName = starter ? starter.name : "A player";
+    let msg = data.board && data.board.firstRound
+      ? openingName + " opens with the double-six."
+      : openingName + " opens this round with any tile.";
     if (data.teamMode && data.teammate) {
       msg += " Team mode — your teammate is " + data.teammate.name + ".";
     }

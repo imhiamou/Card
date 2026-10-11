@@ -74,29 +74,7 @@ function normalizeMaxPlayers(value) {
    DEAL / STARTING PLAYER
    ============================================================ */
 
-/**
- * Deal HAND_SIZE tiles to each player; remainder is the boneyard.
- * Redeals if nobody was dealt a double (first move requires one).
- */
-function dealHands(playerIds) {
-  for (let attempt = 0; attempt < 40; attempt++) {
-    const deck = shuffle(buildDoubleSixSet());
-    const hands = {};
-    playerIds.forEach((id) => {
-      hands[id] = [];
-    });
-    for (let i = 0; i < HAND_SIZE; i++) {
-      playerIds.forEach((id) => {
-        hands[id].push(deck.pop());
-      });
-    }
-    const boneyard = deck;
-    const starter = findHighestDoubleHolder(playerIds, hands);
-    if (starter) {
-      return { hands, boneyard, starterId: starter.playerId, mustPlayId: starter.tile.id };
-    }
-  }
-  // Extremely unlikely fallback: force a deal even without doubles.
+function shuffleDeal(playerIds) {
   const deck = shuffle(buildDoubleSixSet());
   const hands = {};
   playerIds.forEach((id) => {
@@ -107,11 +85,117 @@ function dealHands(playerIds) {
       hands[id].push(deck.pop());
     });
   }
+  return { hands, boneyard: deck };
+}
+
+function findTileHolder(playerIds, hands, tileId) {
+  for (let i = 0; i < playerIds.length; i++) {
+    const id = playerIds[i];
+    const tile = (hands[id] || []).find((item) => item.id === tileId);
+    if (tile) return { playerId: id, tile: tile };
+  }
+  return null;
+}
+
+/** Swap the required tile into a hand so the opening rule can still be played. */
+function forceTileIntoHand(playerIds, dealt, tileId) {
+  const existing = findTileHolder(playerIds, dealt.hands, tileId);
+  if (existing) return existing;
+  const yardIndex = dealt.boneyard.findIndex((tile) => tile.id === tileId);
+  if (yardIndex < 0) return null;
+  const tile = dealt.boneyard.splice(yardIndex, 1)[0];
+  const target = playerIds[0];
+  const displaced = dealt.hands[target].pop();
+  dealt.hands[target].push(tile);
+  if (displaced) dealt.boneyard.push(displaced);
+  return { playerId: target, tile: tile };
+}
+
+/**
+ * Deal HAND_SIZE tiles to each player; remainder is the boneyard.
+ * When requireTileId is set (the first round's double-six), redeal until
+ * someone holds it, then force it into a hand if the shuffles miss.
+ */
+function dealHands(playerIds, options) {
+  const requireTileId = options && options.requireTileId;
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const dealt = shuffleDeal(playerIds);
+    if (!requireTileId) return dealt;
+    const starter = findTileHolder(playerIds, dealt.hands, requireTileId);
+    if (starter) {
+      dealt.starterId = starter.playerId;
+      dealt.mustPlayId = requireTileId;
+      return dealt;
+    }
+  }
+  const dealt = shuffleDeal(playerIds);
+  if (!requireTileId) return dealt;
+  const starter = forceTileIntoHand(playerIds, dealt, requireTileId);
+  dealt.starterId = starter ? starter.playerId : playerIds[0];
+  dealt.mustPlayId = requireTileId;
+  return dealt;
+}
+
+/**
+ * First round: the player holding 6-6 leads and must play it.
+ * Later rounds: the previous round's winner leads with any tile they hold.
+ * firstRound comes from match.roundsCompleted, never from the chain length.
+ */
+function planOpening(playerIds, hands, match) {
+  const firstRound = !match || !match.roundsCompleted;
+  if (firstRound) {
+    const holder = findTileHolder(playerIds, hands, "6-6");
+    return {
+      firstRound: true,
+      starterId: holder ? holder.playerId : null,
+      mustPlayId: "6-6"
+    };
+  }
+  const winner = match.lastWinnerId;
+  const starterId = playerIds.indexOf(winner) >= 0 ? winner : playerIds[0];
   return {
-    hands,
-    boneyard: deck,
-    starterId: playerIds[0],
+    firstRound: false,
+    starterId: starterId,
     mustPlayId: null
+  };
+}
+
+function openingPlayAllowed(state, playerId, tileId) {
+  if (!state || state.chain.length !== 0) {
+    return { ok: false, error: "The round has already opened." };
+  }
+  if (state.currentTurn !== playerId) {
+    return { ok: false, error: "It is not your turn." };
+  }
+  const hand = state.hands[playerId] || [];
+  if (!hand.some((tile) => tile.id === tileId)) {
+    return { ok: false, error: "That domino is not in your hand." };
+  }
+  if (state.firstRound && tileId !== "6-6") {
+    return { ok: false, error: "The first round must open with the double-six." };
+  }
+  return { ok: true };
+}
+
+function roundSnapshot(state) {
+  return {
+    firstRound: !!state.firstRound,
+    currentTurn: state.currentTurn,
+    mustPlayId: state.mustPlayId || null,
+    chain: (state.chain || []).map((tile) => ({ id: tile.id })),
+    hands: state.hands
+  };
+}
+
+function restoreRound(snapshot) {
+  return {
+    firstRound: !!snapshot.firstRound,
+    currentTurn: snapshot.currentTurn,
+    mustPlayId: snapshot.mustPlayId || null,
+    chain: (snapshot.chain || []).map((tile) => ({ id: tile.id })),
+    hands: snapshot.hands,
+    leftEnd: null,
+    rightEnd: null
   };
 }
 
@@ -396,6 +480,14 @@ function teamPlayerIds(state, team) {
   return [];
 }
 
+function rememberRoundWinner(room) {
+  ensureMatch(room);
+  const winnerId = room.domino && room.domino.winnerId;
+  if (!winnerId) return;
+  room.dominoMatch.lastWinnerId = winnerId;
+  room.dominoMatch.roundsCompleted = (room.dominoMatch.roundsCompleted || 0) + 1;
+}
+
 function initRound(room) {
   // A fresh deal invalidates any scheduled bot action from the old round.
   if (room.dominoBotTimer) {
@@ -403,7 +495,11 @@ function initRound(room) {
     room.dominoBotTimer = null;
   }
   const playerIds = room.players.map((p) => p.id);
-  const dealt = dealHands(playerIds);
+  ensureMatch(room);
+  const firstRound = !room.dominoMatch.roundsCompleted;
+  const dealt = dealHands(playerIds, firstRound ? { requireTileId: "6-6" } : null);
+  const plan = planOpening(playerIds, dealt.hands, room.dominoMatch);
+  const starterId = plan.starterId || playerIds[0];
   const teams = buildTeams(room);
   room.domino = {
     hands: dealt.hands,
@@ -411,8 +507,9 @@ function initRound(room) {
     chain: [],
     leftEnd: null,
     rightEnd: null,
-    currentTurn: dealt.starterId,
-    mustPlayId: dealt.mustPlayId,
+    currentTurn: starterId,
+    mustPlayId: plan.mustPlayId,
+    firstRound: plan.firstRound,
     consecutivePasses: 0,
     over: false,
     scores: null,
@@ -421,7 +518,7 @@ function initRound(room) {
     winnerTeam: null,
     winReason: null,
     roundPoints: null,
-    turnIndex: playerIds.indexOf(dealt.starterId),
+    turnIndex: Math.max(0, playerIds.indexOf(starterId)),
     teamMode: teams.teamMode,
     teamA: teams.teamA,
     teamB: teams.teamB
@@ -586,6 +683,7 @@ function publicBoard(room) {
     rightEnd: d.rightEnd,
     boneyardCount: d.boneyard.length,
     mustPlayId: d.mustPlayId,
+    firstRound: !!d.firstRound,
     over: d.over
   };
 }
@@ -799,6 +897,7 @@ function endEmptyHand(room, io, roomCode, winnerId) {
     message = winnerName + " wins the round! +" + roundPoints +
       " from opponents' remaining points.";
   }
+  rememberRoundWinner(room);
 
   // "dominoOver" — Dominoes only. Hand emptied; scoreboard included.
   io.to(roomCode).emit("dominoOver", {
@@ -865,6 +964,7 @@ function endBlocked(room, io, roomCode) {
     message = "Game blocked! " + winnerName + " wins the round! +" +
       roundPoints + " from opponents' remaining points.";
   }
+  rememberRoundWinner(room);
 
   // "dominoOver" — Dominoes only. Table blocked; match scoreboard included.
   io.to(roomCode).emit("dominoOver", {
@@ -992,8 +1092,9 @@ function registerSocket(socket, io, rooms) {
 
     if (d.chain.length === 0) {
       side = "center";
-      if (d.mustPlayId && tile.id !== d.mustPlayId) {
-        socket.emit("errorMessage", "You must play the highest double to open.");
+      const gate = openingPlayAllowed(d, socket.id, tile.id);
+      if (!gate.ok) {
+        socket.emit("errorMessage", gate.error);
         return;
       }
     } else if (side !== "left" && side !== "right") {
@@ -1063,7 +1164,7 @@ function registerSocket(socket, io, rooms) {
       return;
     }
     if (d.chain.length === 0) {
-      socket.emit("errorMessage", "Play the opening double first.");
+      socket.emit("errorMessage", "Play the opening tile first.");
       return;
     }
     if (playerHasAnyMove(d.hands[socket.id], d)) {
@@ -1187,6 +1288,13 @@ module.exports = {
   shuffle,
   dealHands,
   findHighestDoubleHolder,
+  findTileHolder,
+  planOpening,
+  openingPlayAllowed,
+  initRound,
+  rememberRoundWinner,
+  roundSnapshot,
+  restoreRound,
   listValidMoves,
   placeTile,
   handScore,

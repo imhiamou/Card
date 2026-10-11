@@ -4,7 +4,6 @@
 .appOnly,
 .domMenuBtn,
 .domHandPager,
-.domBoardNav,
 .unoMenuBtn,
 .unoHandPager,
 .hhMenuBtn {
@@ -692,18 +691,24 @@ html.gameweb-app #dominoScreen .domBoardNav button {
 }
 
 html.gameweb-app #dominoScreen .domBoardNav {
-  display: grid;
-  grid-template-columns: repeat(4, 36px);
-  gap: 4px;
+  display: flex;
   position: absolute;
   z-index: 5;
   top: 6px;
   right: 6px;
 }
 
-html.gameweb-app #dominoScreen #domDrawBtn.domDrawFloat {
+html.gameweb-app #dominoScreen .domEnds {
+  position: static;
+  margin: 4px 0 0;
+  pointer-events: auto;
+}
+
+html.gameweb-app #dominoScreen #domDrawBtn {
+  position: static;
+  transform: none;
   min-height: 40px;
-  bottom: 28px;
+  width: auto;
 }
 
 html.gameweb-app #dominoScreen #domMsg {

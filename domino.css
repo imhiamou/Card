@@ -224,6 +224,27 @@ box-shadow:inset 0 0 40px rgba(0,0,0,.35);
 cursor:grabbing;
 }
 
+.domBoardNav{
+position:absolute;
+z-index:5;
+top:8px;
+right:8px;
+display:flex;
+}
+.domBoardNav button{
+width:auto;
+min-width:44px;
+min-height:36px;
+margin:0;
+padding:4px 10px;
+border:0;
+border-radius:8px;
+background:#31537a;
+color:#fff;
+font-weight:700;
+cursor:pointer;
+}
+
 .domBoardInner{
 position:absolute;
 left:50%;
@@ -247,6 +268,7 @@ margin:0;
 
 .domEnds{
 display:flex;
+align-items:center;
 justify-content:space-between;
 gap:12px;
 margin:8px 0;
@@ -399,12 +421,10 @@ flex:1;
 margin:0;
 }
 
-#domDrawBtn.domDrawFloat{
-position:absolute;
-left:50%;
-bottom:10px;
-transform:translateX(-50%);
-z-index:4;
+#domDrawBtn{
+position:static;
+transform:none;
+z-index:1;
 width:auto;
 min-width:108px;
 margin:0;
@@ -413,6 +433,7 @@ background:#2e5d43;
 color:#fff;
 border:none;
 border-radius:8px;
+flex:0 0 auto;
 }
 
 #domMsg{
@@ -683,15 +704,15 @@ border-width:2px;
 
 .domEnds{
 flex:0 0 auto;
-position:absolute;
-left:6px;
-right:6px;
-bottom:6px;
-z-index:3;
-margin:0;
-gap:4px;
-font-size:10px;
-pointer-events:none;
+position:static;
+left:auto;
+right:auto;
+bottom:auto;
+z-index:auto;
+margin:4px 0 0;
+gap:8px;
+font-size:12px;
+pointer-events:auto;
 }
 .domEnds span{
 padding:3px 6px;
@@ -1019,8 +1040,7 @@ flex-basis:100%;
 font-size:11px;
 margin:0;
 }
-#domDrawBtn.domDrawFloat{
-bottom:30px;
+#domDrawBtn{
 padding:10px 16px;
 }
 .domGhost{
