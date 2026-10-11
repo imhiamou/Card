@@ -55,7 +55,7 @@ public class GamewebUpdatePlugin extends Plugin {
         final String url;
         final int maxBytes;
         if ("releases".equals(kind)) {
-            url = "https://api.github.com/repos/imhiamou/Card/releases?per_page=20";
+            url = "https://api.github.com/repos/imhiamou/Card/releases?per_page=100";
             maxBytes = 2 * 1024 * 1024;
         } else if ("manifest".equals(kind)) {
             if (!VERSION.matcher(version).matches() || versionCodeOfName(version) < 1) {
@@ -272,6 +272,10 @@ public class GamewebUpdatePlugin extends Plugin {
         PackageInfo incoming = manager.getPackageArchiveInfo(apk.getAbsolutePath(), signingFlags());
         if (incoming == null) {
             throw new UpdateException("The downloaded file is not an Android package.");
+        }
+        if (incoming.applicationInfo != null) {
+            incoming.applicationInfo.sourceDir = apk.getAbsolutePath();
+            incoming.applicationInfo.publicSourceDir = apk.getAbsolutePath();
         }
         if (!PACKAGE_NAME.equals(incoming.packageName)) {
             throw new UpdateException("The update is for a different application and was not installed.");
