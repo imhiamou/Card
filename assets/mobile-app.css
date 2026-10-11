@@ -93,6 +93,23 @@ html.gameweb-app #lobbyScreen h1 {
   flex: 0 0 auto;
   margin: 0 0 8px;
   font-size: 22px;
+  padding-right: 108px;
+}
+
+html.gameweb-app #gamewebCheckUpdate {
+  position: absolute;
+  z-index: 5;
+  top: calc(env(safe-area-inset-top, 0px) + 8px);
+  right: calc(env(safe-area-inset-right, 0px) + 10px);
+  width: auto;
+  min-height: 36px;
+  margin: 0;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: #31537a;
+  color: #fff;
+  font-weight: 700;
 }
 
 html.gameweb-app #lobbyScreen .lobbyColumns {
@@ -628,26 +645,36 @@ html.gameweb-app #dominoScreen .domHandSection {
 }
 
 html.gameweb-app #dominoScreen .domHand {
-  overflow: hidden;
+  display: grid;
+  grid-template-columns: repeat(var(--hand-cols, 7), var(--hand-tile-w, 48px));
+  grid-auto-rows: var(--hand-tile-h, 96px);
   justify-content: center;
-  align-items: flex-end;
-  min-height: 104px;
-  max-height: none;
-  gap: 8px;
+  align-content: end;
+  align-items: end;
+  overflow: hidden;
+  min-height: 112px;
+  height: 30vh;
+  max-height: 34%;
+  width: 100%;
+  box-sizing: border-box;
+  gap: var(--hand-gap, 4px);
   padding: 6px 4px 4px;
 }
 
 html.gameweb-app #dominoScreen .domTile.inHand {
-  width: 48px;
-  height: 96px;
+  width: var(--hand-tile-w, 48px);
+  height: var(--hand-tile-h, 96px);
+  min-width: 0;
 }
 
-html.gameweb-app #dominoScreen .domHandPager:not([hidden]) {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin: 0 0 2px;
+html.gameweb-app #dominoScreen .domTile.inHand.valid,
+html.gameweb-app #dominoScreen .domTile.inHand.selected {
+  transform: none;
+  outline-offset: -3px;
+}
+
+html.gameweb-app #dominoScreen .domHandPager {
+  display: none;
 }
 
 html.gameweb-app #dominoScreen .domHandPager button,
@@ -714,9 +741,10 @@ html.gameweb-app #dominoScreen #domMsg {
   }
 
   html.gameweb-app #dominoScreen .domHand {
-    flex-direction: column;
-    align-items: center;
-    justify-content: flex-start;
+    height: auto;
+    max-height: none;
+    min-height: 0;
+    align-content: center;
     flex: 1 1 auto;
     overflow: hidden;
   }

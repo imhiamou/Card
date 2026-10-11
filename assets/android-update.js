@@ -2,8 +2,9 @@
  * Android update check for the Gameweb Capacitor app.
  *
  * The website and the Windows app load this file and do nothing.
- * On Android, launch compares the installed versionCode with
- * android-latest.json on the latest published GitHub Release.
+ * On Android, launch asks the native plugin for GitHub's release list.
+ * The WebView cannot read release assets: that host sends no CORS header.
+ * The plugin downloads android-latest.json and the APK itself.
  * The download URL is built from the version. Metadata cannot
  * point the download at an arbitrary host.
  */
@@ -16,9 +17,8 @@
 
   const VERSION_RE = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
   const COMPONENT_LIMIT = 1000;
-  const MANIFEST_URL = "https://github.com/imhiamou/Card/releases/latest/download/android-latest.json";
   const DISMISS_KEY = "gameweb-android-update-dismissed";
-  let started = false;
+  let checking = false;
 
   function versionFromReleaseTag(tag) {
     if (typeof tag !== "string" || !tag.startsWith("v")) return null;
@@ -42,6 +42,46 @@
   function releaseDownloadUrl(version) {
     if (!versionCodeFromVersion(version)) return null;
     return "https://github.com/imhiamou/Card/releases/download/v" + version + "/" + apkFileName(version);
+  }
+
+  function tagParts(tag) {
+    if (typeof tag !== "string" || tag.length < 2) return null;
+    const prefix = tag.charAt(0);
+    if (prefix !== "v" && prefix !== "V") return null;
+    const version = tag.slice(1);
+    const versionCode = versionCodeFromVersion(version);
+    if (!versionCode) return null;
+    return { prefix: prefix, version: version, versionCode: versionCode };
+  }
+
+  function manifestUrlFor(prefix, version) {
+    if (prefix !== "v" && prefix !== "V") return null;
+    if (!versionCodeFromVersion(version)) return null;
+    return "https://github.com/imhiamou/Card/releases/download/" + prefix + version + "/android-latest.json";
+  }
+
+  function selectAndroidRelease(releases) {
+    if (!Array.isArray(releases)) return null;
+    let best = null;
+    releases.forEach((release) => {
+      if (!release || typeof release !== "object") return;
+      if (release.draft || release.prerelease) return;
+      const parts = tagParts(release.tag_name);
+      if (!parts) return;
+      const assets = Array.isArray(release.assets) ? release.assets : [];
+      const names = assets.map((asset) => asset && asset.name);
+      if (names.indexOf(apkFileName(parts.version)) < 0) return;
+      if (names.indexOf("android-latest.json") < 0) return;
+      if (!best || parts.versionCode > best.versionCode) {
+        best = {
+          prefix: parts.prefix,
+          version: parts.version,
+          versionCode: parts.versionCode,
+          tag: parts.prefix + parts.version
+        };
+      }
+    });
+    return best;
   }
 
   function allowedMetadataUrl(value) {
@@ -148,33 +188,40 @@
     console.warn("[gameweb-update] " + message);
   }
 
-  async function fetchManifest() {
-    const response = await fetch(MANIFEST_URL, {
-      cache: "no-store",
-      headers: { Accept: "application/json" }
-    });
-    if (response.status === 404) return null;
-    if (response.status === 403 || response.status === 429) {
-      console.warn("[gameweb-update] GitHub rate limit or access denied (" + response.status + ").");
-      return null;
-    }
-    if (!response.ok) {
-      console.warn("[gameweb-update] metadata request failed (" + response.status + ").");
-      return null;
-    }
-    if (response.url && !allowedMetadataUrl(response.url)) {
-      console.warn("[gameweb-update] metadata redirected to an unexpected host.");
-      return null;
-    }
-    const parsed = parseManifest(await response.text());
-    if (!parsed.ok) {
-      console.warn("[gameweb-update] " + parsed.error);
-      return null;
-    }
-    return parsed.manifest;
+  function errorText(err, fallback) {
+    if (err && typeof err.message === "string" && err.message) return err.message;
+    return fallback;
   }
 
-  async function offer(manifest, installed) {
+  async function discover() {
+    const listed = await plugin().fetchReleaseText({ kind: "releases", version: "", prefix: "v" });
+    const text = listed && listed.body ? listed.body : "";
+    let releases = null;
+    try {
+      releases = JSON.parse(text);
+    } catch (err) {
+      return { manifest: null, error: "The update list is not valid JSON." };
+    }
+    const chosen = selectAndroidRelease(releases);
+    if (!chosen) return { manifest: null, error: null };
+    const loaded = await plugin().fetchReleaseText({
+      kind: "manifest",
+      version: chosen.version,
+      prefix: chosen.prefix
+    });
+    const parsed = parseManifest(loaded && loaded.body ? loaded.body : "");
+    if (!parsed.ok) return { manifest: null, error: parsed.error };
+    if (parsed.manifest.version !== chosen.version || parsed.manifest.versionCode !== chosen.versionCode) {
+      return { manifest: null, error: "The update metadata does not match the published release." };
+    }
+    if (manifestUrlFor(chosen.prefix, chosen.version) == null) {
+      return { manifest: null, error: "The update metadata contains an unexpected download location." };
+    }
+    parsed.manifest.prefix = chosen.prefix;
+    return { manifest: parsed.manifest, error: null };
+  }
+
+  async function offer(manifest, installed, manual) {
     if (!isNewer(installed.versionCode, manifest.versionCode)) return;
     let dismissed = "";
     try {
@@ -182,10 +229,15 @@
     } catch (err) {
       dismissed = "";
     }
-    if (dismissed === manifest.version) return;
-    if (!window.AppNotice || typeof window.AppNotice.confirm !== "function") return;
+    if (!manual && dismissed === manifest.version) return;
+    if (!window.AppNotice || typeof window.AppNotice.confirm !== "function") {
+      notify("Gameweb " + manifest.version + " is available.");
+      return;
+    }
+    const installedName = installed.versionName || String(installed.versionCode || "unknown");
     const accepted = await window.AppNotice.confirm(
-      "Gameweb " + manifest.version + " is available. Download the update and open Android's installer?"
+      "Gameweb " + manifest.version + " is available. This device has " + installedName +
+      ". Download the update and open Android's installer?"
     );
     if (!accepted) {
       try {
@@ -198,22 +250,22 @@
       const received = Number(event && event.received) || 0;
       const total = Number(event && event.total) || 0;
       if (total > 0) {
-        view.textContent = "Downloading the Gameweb update… " + Math.min(100, Math.floor((received / total) * 100)) + "%";
+        view.textContent = "Downloading Gameweb " + manifest.version + "… " + Math.min(100, Math.floor((received / total) * 100)) + "%";
       } else {
-        view.textContent = "Downloading the Gameweb update… " + Math.floor(received / 1000000) + " MB";
+        view.textContent = "Downloading Gameweb " + manifest.version + "… " + Math.floor(received / 1000000) + " MB";
       }
     });
     try {
       await plugin().downloadAndInstall({
         version: manifest.version,
+        prefix: manifest.prefix === "V" ? "V" : "v",
         sha256: manifest.sha256
       });
       hideProgress();
       notify("Android is opening the package installer. Confirm the installation there. The first time, Android may ask you to allow Gameweb to install updates.");
     } catch (err) {
       hideProgress();
-      const message = err && err.message ? err.message : "The update could not be downloaded.";
-      notify(message);
+      notify(errorText(err, "The update could not be downloaded."));
     } finally {
       if (handle && typeof handle.remove === "function") {
         try { await handle.remove(); } catch (err) { /* listener cleanup is optional */ }
@@ -221,17 +273,61 @@
     }
   }
 
-  async function start() {
-    if (started || !isAndroidApp()) return;
-    started = true;
+  async function check(manual) {
+    if (!isAndroidApp()) return;
+    if (checking) {
+      if (manual) notify("An update check is already in progress.");
+      return;
+    }
+    checking = true;
     try {
       const installed = await plugin().getInstalled();
-      const manifest = await fetchManifest();
-      if (!manifest) return;
-      await offer(manifest, installed || {});
+      const found = await discover();
+      if (found.error) {
+        if (manual) notify(found.error);
+        else console.warn("[gameweb-update] " + found.error);
+        return;
+      }
+      if (!found.manifest) {
+        if (manual) notify("No published Android release was found.");
+        return;
+      }
+      const current = installed || {};
+      if (!isNewer(current.versionCode, found.manifest.versionCode)) {
+        if (manual) {
+          notify("Gameweb " + (current.versionName || found.manifest.version) + " is up to date.");
+        }
+        return;
+      }
+      await offer(found.manifest, current, !!manual);
     } catch (err) {
-      console.warn("[gameweb-update] check skipped");
+      const message = errorText(err, "The update check failed.");
+      if (manual) notify(message);
+      else console.warn("[gameweb-update] " + message);
+    } finally {
+      checking = false;
     }
+  }
+
+  function installManualCheck() {
+    if (!isAndroidApp() || !document.body) return;
+    if (document.getElementById("gamewebCheckUpdate")) return;
+    const lobby = document.getElementById("lobbyScreen");
+    if (!lobby) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.id = "gamewebCheckUpdate";
+    button.textContent = "Updates";
+    button.addEventListener("click", () => { check(true); });
+    const title = lobby.querySelector("h1");
+    if (title) title.insertAdjacentElement("afterend", button);
+    else lobby.insertBefore(button, lobby.firstChild);
+  }
+
+  function start() {
+    if (!isAndroidApp()) return;
+    installManualCheck();
+    check(false);
   }
 
   if (typeof window !== "undefined" && typeof document !== "undefined") {
@@ -242,15 +338,17 @@
   return {
     VERSION_RE: VERSION_RE,
     COMPONENT_LIMIT: COMPONENT_LIMIT,
-    MANIFEST_URL: MANIFEST_URL,
     versionFromReleaseTag: versionFromReleaseTag,
     versionCodeFromVersion: versionCodeFromVersion,
     apkFileName: apkFileName,
     releaseDownloadUrl: releaseDownloadUrl,
+    manifestUrlFor: manifestUrlFor,
+    selectAndroidRelease: selectAndroidRelease,
     allowedMetadataUrl: allowedMetadataUrl,
     parseManifest: parseManifest,
     isNewer: isNewer,
     sha256Hex: sha256Hex,
-    start: start
+    start: start,
+    check: check
   };
 });

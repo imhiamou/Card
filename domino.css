@@ -276,6 +276,16 @@ font-size:13px;
 color:#c5d2e8;
 }
 
+.domLobbyBtn{
+background:#2a6a4a;
+color:#fff;
+border:0;
+border-radius:8px;
+padding:8px 12px;
+font-weight:700;
+cursor:pointer;
+}
+
 .domHand{
 display:flex;
 flex-wrap:nowrap;
