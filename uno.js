@@ -10,8 +10,25 @@
   const SCREEN_HTML =
     '<div class="unoTitleRow">' +
       '<h2>UNO</h2>' +
-      '<div class="unoMeta" id="unoMeta"></div>' +
       '<button type="button" id="unoMenuBtn" class="unoMenuBtn" aria-expanded="false">Menu</button>' +
+      '<div class="unoMeta" id="unoMeta"></div>' +
+      '<div class="unoTopTools">' +
+        '<div class="unoBotSpeed" id="unoBotSpeed" role="group" aria-label="Bot speed">' +
+          '<span class="unoBotSpeedLabel">Bot speed</span>' +
+          '<button type="button" data-speed="slow">Slow</button>' +
+          '<button type="button" data-speed="normal">Normal</button>' +
+          '<button type="button" data-speed="fast">Fast</button>' +
+        '</div>' +
+        '<div class="unoVolume" role="group" aria-label="Song volume">' +
+          '<button type="button" id="unoVolumeDown">Volume −</button>' +
+          '<span id="unoVolumeReadout">40%</span>' +
+          '<button type="button" id="unoVolumeUp">Volume +</button>' +
+        '</div>' +
+        '<button type="button" id="unoMuteBtn" aria-pressed="false">Mute</button>' +
+        '<button type="button" id="unoLobbyBtn" class="unoLobbyBtn">Return to Lobby</button>' +
+        '<button type="button" id="unoLeaveBtn" class="unoLeaveBtn">Leave Room</button>' +
+        '<button type="button" id="unoScoreToggle" class="unoScoreToggle hidden">Score</button>' +
+      '</div>' +
     '</div>' +
     '<div class="unoTableArena" id="unoTableArena" data-count="2">' +
       '<div class="unoSeat seat-top" data-seat="top"></div>' +
@@ -45,12 +62,7 @@
       '<div class="unoSeat seat-bottom" data-seat="bottom"></div>' +
     '</div>' +
     '<div class="unoHandSection">' +
-      '<h3>Your hand</h3>' +
-      '<div class="unoHandPager" id="unoHandPager" hidden>' +
-        '<button type="button" id="unoHandPrev">Prev</button>' +
-        '<span id="unoHandPage">1 / 1</span>' +
-        '<button type="button" id="unoHandNext">Next</button>' +
-      '</div>' +
+      '<div class="unoHandLabel" id="unoHandLabel">Your hand</div>' +
       '<div class="unoHand" id="unoHand"></div>' +
     '</div>' +
     '<div class="unoColorPicker hidden" id="unoColorPicker">' +
@@ -76,8 +88,14 @@
   let myTurn = false;
   let players = [];
   let hand = [];
-  let handPage = 0;
+  let leftTable = false;
+  let blockedRoom = null;
   let unoResizeWired = false;
+  let bgm = null;
+  let bgmStarted = false;
+  let bgmTracks = [];
+  let bgmIndex = 0;
+  let bgmToken = 0;
   let playableIds = [];
   let topCard = null;
   let currentColor = null;
@@ -159,35 +177,38 @@
         'font-family="Arial,sans-serif">UNO</text></svg>';
     }
     const isWild = card.kind === "wild" || card.kind === "wild4";
-    const fill = isWild ? "#222" : (COLOR_HEX[card.color] || "#444");
-    const label = faceLabel(card);
-    const fontSize = label.length > 2 ? 18 : (label.length > 1 ? 22 : 28);
+    const isWild4 = card.kind === "wild4";
+    const fill = isWild ? "#161616" : (COLOR_HEX[card.color] || "#444");
+    const ink = card.color === "yellow" ? "#3a2a00" : (isWild ? "#111" : fill);
+    const label = isWild4 ? "+4" : (card.kind === "wild" ? "W" : faceLabel(card));
+    const fontSize = label.length > 2 ? 22 : (label.length > 1 ? 26 : 32);
     let svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + " " + H +
       '" width="' + W + '" height="' + H + '">';
-    svg += '<defs><linearGradient id="' + id + '" x1="0" y1="0" x2="0" y2="1">' +
-      '<stop offset="0%" stop-color="#ffffff" stop-opacity=".25"/>' +
-      '<stop offset="100%" stop-color="#000000" stop-opacity=".2"/>' +
-      "</linearGradient></defs>";
-    svg += '<rect x="1" y="1" width="62" height="94" rx="10" fill="' + fill +
-      '" stroke="#f7f7f7" stroke-width="2"/>';
-    svg += '<ellipse cx="32" cy="48" rx="22" ry="30" fill="#fff" opacity=".92"/>';
-    if (isWild && card.kind === "wild") {
-      svg += '<path d="M32 28 L44 48 L32 68 L20 48 Z" fill="#e23b3b"/>';
-      svg += '<circle cx="24" cy="40" r="5" fill="#2f6bdc"/>';
-      svg += '<circle cx="40" cy="40" r="5" fill="#2f9e44"/>';
-      svg += '<circle cx="24" cy="56" r="5" fill="#e6c200"/>';
-      svg += '<circle cx="40" cy="56" r="5" fill="#e23b3b"/>';
+    svg += '<rect x="1.5" y="1.5" width="61" height="93" rx="10" fill="' + fill +
+      '" stroke="#f4f4f4" stroke-width="3"/>';
+    svg += '<ellipse cx="32" cy="50" rx="20" ry="28" fill="#fff"/>';
+    if (card.kind === "wild") {
+      svg += '<path d="M32 30 L46 50 L32 70 L18 50 Z" fill="#e23b3b"/>';
+      svg += '<path d="M32 30 L46 50 L32 50 Z" fill="#2f6bdc"/>';
+      svg += '<path d="M32 50 L46 50 L32 70 Z" fill="#2f9e44"/>';
+      svg += '<path d="M18 50 L32 50 L32 70 Z" fill="#e6c200"/>';
+      svg += '<rect x="12" y="44" width="40" height="14" rx="3" fill="#fff"/>';
+      svg += '<text x="32" y="55" text-anchor="middle" font-size="11" font-weight="900" fill="#111" font-family="Arial,sans-serif">WILD</text>';
+    } else if (isWild4) {
+      svg += '<text x="32" y="58" text-anchor="middle" font-size="28" font-weight="900" fill="#111" font-family="Arial Black,Arial,sans-serif">+4</text>';
+      svg += '<circle cx="20" cy="34" r="4" fill="#e23b3b"/>';
+      svg += '<circle cx="44" cy="34" r="4" fill="#2f6bdc"/>';
+      svg += '<circle cx="20" cy="66" r="4" fill="#2f9e44"/>';
+      svg += '<circle cx="44" cy="66" r="4" fill="#e6c200"/>';
     } else {
-      svg += '<text x="32" y="56" text-anchor="middle" font-size="' + fontSize +
-        '" font-weight="900" fill="' + (isWild ? "#111" : fill) +
+      svg += '<text x="32" y="60" text-anchor="middle" font-size="' + fontSize +
+        '" font-weight="900" fill="' + ink +
         '" font-family="Arial Black,Arial,sans-serif">' + label + "</text>";
     }
-    svg += '<rect x="1" y="1" width="62" height="94" rx="10" fill="url(#' + id + ')"/>';
-    // Corner pip
-    svg += '<text x="10" y="18" font-size="11" font-weight="bold" fill="#fff" ' +
-      'font-family="Arial,sans-serif">' + label + "</text>";
-    svg += '<text x="54" y="88" text-anchor="end" font-size="11" font-weight="bold" fill="#fff" ' +
-      'font-family="Arial,sans-serif">' + label + "</text>";
+    svg += '<rect x="4" y="4" width="22" height="16" rx="3" fill="#111"/>';
+    svg += '<rect x="38" y="76" width="22" height="16" rx="3" fill="#111"/>';
+    svg += '<text x="15" y="16" text-anchor="middle" font-size="11" font-weight="700" fill="#fff" font-family="Arial,sans-serif">' + label + "</text>";
+    svg += '<text x="49" y="88" text-anchor="middle" font-size="11" font-weight="700" fill="#fff" font-family="Arial,sans-serif">' + label + "</text>";
     svg += "</svg>";
     return svg;
   }
@@ -203,9 +224,11 @@
 
   function showUnoScreen() {
     active = true;
+    leftTable = false;
     [lobbyScreen, placementScreen, gameScreen, dominoScreen]
       .forEach((el) => { if (el) el.classList.add("hidden"); });
     unoScreen.classList.remove("hidden");
+    requestAnimationFrame(() => renderHand());
   }
 
   function hideUnoScreen() {
@@ -213,6 +236,12 @@
     if (challengeRefreshTimer) {
       clearTimeout(challengeRefreshTimer);
       challengeRefreshTimer = null;
+    }
+    pauseUnoBgm();
+    if (unoScreen) {
+      unoScreen.classList.remove("app-menu-open");
+      const menuBtn = $("unoMenuBtn");
+      if (menuBtn) menuBtn.setAttribute("aria-expanded", "false");
     }
     clearScoreboard();
     hideEndButtons();
@@ -262,6 +291,8 @@
     });
     unoScoreboard.innerHTML = html;
     unoScoreboard.classList.remove("hidden");
+    const scoreBtn = $("unoScoreToggle");
+    if (scoreBtn) scoreBtn.classList.remove("hidden");
     if (unoEndButtons) unoEndButtons.classList.remove("hidden");
   }
 
@@ -349,14 +380,15 @@
       seat.classList.remove("empty");
 
       const me = socket && p.id === socket.id;
-      const turn = p.id === turnId && !gameOver;
+      const turn = p.id === turnId && !gameOver && !p.away;
       const chip = document.createElement("div");
-      chip.className = "unoPlayerChip" + (turn ? " turn" : "") + (me ? " me" : "");
+      chip.className = "unoPlayerChip" + (turn ? " turn" : "") + (me ? " me" : "") + (p.away ? " away" : "");
       chip.dataset.pid = p.id;
       chip.innerHTML =
         (turn ? '<div class="unoTurnBadge">' + (me ? "YOUR TURN" : "TURN") + "</div>" : "") +
         '<div class="unoName">' + (me ? "YOU" : (p.name || "Player")) +
         (p.isBot ? ' <span class="botTag">BOT</span>' : "") +
+        (p.away ? " · Lobby" : "") +
         (p.unoCalled ? " · UNO" : "") +
         '</div><div class="unoCount">' + p.handCount + " cards</div>";
 
@@ -445,57 +477,42 @@
     return document.documentElement.classList.contains("gameweb-app");
   }
 
-  function unoPageSize() {
-    const layout = window.GamewebMobileLayout;
-    if (!appShell() || !layout || !unoHand) return Math.max(hand.length, 1);
-    const landscape = window.innerWidth > window.innerHeight;
-    if (landscape) {
-      const height = unoHand.clientHeight || Math.max(120, window.innerHeight - 160);
-      return Math.max(2, layout.tilePageSize(height, 70, 6, 0));
-    }
-    const width = unoHand.clientWidth || window.innerWidth;
-    return Math.max(4, layout.tilePageSize(width, 52, 6, 0));
+  function fitHandTiles() {
+    const fit = window.UnoHandFit;
+    if (!unoHand || !fit) return;
+    const box = fit.fit(hand.length, unoHand.clientWidth, unoHand.clientHeight || 150);
+    unoHand.style.setProperty("--hand-cols", String(box.cols));
+    unoHand.style.setProperty("--hand-rows", String(box.rows));
+    unoHand.style.setProperty("--hand-tile-w", box.width + "px");
+    unoHand.style.setProperty("--hand-tile-h", box.height + "px");
+    unoHand.style.setProperty("--hand-gap", box.gap + "px");
   }
 
   function renderHand(animateId) {
     if (!unoHand) return;
-    const size = unoPageSize();
-    if (animateId) {
-      const drawn = hand.findIndex((card) => card.id === animateId);
-      if (drawn >= 0) handPage = Math.floor(drawn / size);
-    }
-    const layout = window.GamewebMobileLayout;
-    const plan = layout
-      ? layout.pagePlan(hand.length, appShell() ? handPage : 0, size, -1)
-      : { page: 0, pages: 1, start: 0, end: hand.length };
-    if (!appShell()) {
-      plan.start = 0;
-      plan.end = hand.length;
-      plan.pages = 1;
-      plan.page = 0;
-    }
-    handPage = plan.page;
+    fitHandTiles();
     unoHand.innerHTML = "";
     const playableSet = new Set(playableIds || []);
-    hand.slice(plan.start, plan.end).forEach((card) => {
+    hand.forEach((card) => {
       const playable = myTurn && !gameOver && !mustPickColor && playableSet.has(card.id);
       const forcedDrawn = drawnPlayableId && card.id === drawnPlayableId;
       const el = document.createElement("div");
       const extra = [
         "inHand",
         playable || forcedDrawn ? "playable" : "",
-        myTurn && !playable && !forcedDrawn ? "disabledCard" : "",
+        pendingWildId === card.id ? "selected" : "",
+        myTurn && !playable && !forcedDrawn && !gameOver ? "disabledCard" : "",
         animateId && card.id === animateId ? "drawAnim" : ""
       ].filter(Boolean).join(" ");
       setCardEl(el, card, { extra });
       el.onclick = () => onHandClick(card);
       unoHand.appendChild(el);
     });
-    const pager = document.getElementById("unoHandPager");
-    const label = document.getElementById("unoHandPage");
-    if (pager && label) {
-      pager.hidden = !(appShell() && plan.pages > 1);
-      label.textContent = (plan.page + 1) + " / " + plan.pages + " · " + hand.length;
+    const label = $("unoHandLabel");
+    if (label) {
+      const me = players.find((p) => socket && p.id === socket.id);
+      label.textContent = (me && me.name ? me.name : "You") + " · " + hand.length +
+        (hand.length === 1 ? " card" : " cards");
     }
   }
 
@@ -513,6 +530,9 @@
       unoTurnIndicator.textContent = "Your Turn";
     } else {
       unoTurnIndicator.textContent = (current ? current.name : "Opponent") + "'s Turn";
+    }
+    if (unoTurnIndicator) {
+      unoTurnIndicator.classList.toggle("unoYourTurn", myTurn && !gameOver);
     }
 
     if (unoDrawBtn) {
@@ -588,6 +608,7 @@
       mustPickColor = true;
       if (unoColorPicker) unoColorPicker.classList.remove("hidden");
       unoMsg.textContent = "Choose a color for your wild card.";
+      renderHand();
       renderChrome({ currentTurnId: socket.id });
       return;
     }
@@ -608,29 +629,255 @@
     if (unoColorPicker) unoColorPicker.classList.add("hidden");
   }
 
-  function stepUnoHand(delta) {
-    const size = unoPageSize();
-    const pages = Math.max(1, Math.ceil(hand.length / Math.max(size, 1)));
-    handPage = Math.min(pages - 1, Math.max(0, handPage + delta));
-    renderHand();
+  const BGM_VOLUME_DEFAULT = 0.4;
+
+  function isBgmMuted() {
+    try { return localStorage.getItem("unoBgmMuted") === "1"; } catch (err) { return false; }
+  }
+
+  function currentBgmVolume() {
+    try {
+      const saved = localStorage.getItem("unoBgmVolume");
+      if (saved == null || saved === "") return BGM_VOLUME_DEFAULT;
+      const n = Number(saved);
+      if (!Number.isFinite(n)) return BGM_VOLUME_DEFAULT;
+      return Math.min(1, Math.max(0, n));
+    } catch (err) {
+      return BGM_VOLUME_DEFAULT;
+    }
+  }
+
+  function ensureBgm() {
+    if (bgm && bgm.isConnected) return bgm;
+    const existing = document.getElementById("unoBgm");
+    if (existing) {
+      bgm = existing;
+      return bgm;
+    }
+    bgm = document.createElement("audio");
+    bgm.id = "unoBgm";
+    bgm.preload = "auto";
+    bgm.loop = false;
+    bgm.setAttribute("playsinline", "");
+    bgm.setAttribute("aria-hidden", "true");
+    bgm.style.cssText = "position:absolute;width:1px;height:1px;left:-9999px;top:0;opacity:0;pointer-events:none";
+    bgm.addEventListener("ended", () => {
+      bgmStarted = false;
+      if (!active || isBgmMuted() || !bgmTracks.length) return;
+      bgmIndex = (bgmIndex + 1) % bgmTracks.length;
+      playUnoBgm();
+    });
+    document.body.appendChild(bgm);
+    return bgm;
+  }
+
+  function updateMuteButton() {
+    const btn = $("unoMuteBtn");
+    const muted = isBgmMuted();
+    if (!btn) return;
+    btn.textContent = muted ? "Unmute" : "Mute";
+    btn.setAttribute("aria-pressed", muted ? "true" : "false");
+  }
+
+  function applyBgmVolume(value, persist) {
+    const level = Math.min(1, Math.max(0, Number(value)));
+    const next = Number.isFinite(level) ? level : BGM_VOLUME_DEFAULT;
+    if (persist) {
+      try { localStorage.setItem("unoBgmVolume", String(next)); } catch (err) { /* ignore */ }
+    }
+    const el = ensureBgm();
+    el.volume = next;
+    const readout = $("unoVolumeReadout");
+    if (readout) readout.textContent = Math.round(next * 100) + "%";
+    const down = $("unoVolumeDown");
+    const up = $("unoVolumeUp");
+    if (down) down.disabled = next <= 0.001;
+    if (up) up.disabled = next >= 0.999;
+  }
+
+  function stepBgmVolume(direction) {
+    const current = Math.round(currentBgmVolume() * 100);
+    let next;
+    if (current < 10 || (current === 10 && direction < 0)) next = current + direction;
+    else if (direction > 0) next = Math.floor(current / 10) * 10 + 10;
+    else next = Math.ceil(current / 10) * 10 - 10;
+    applyBgmVolume(Math.min(100, Math.max(0, next)) / 100, true);
+  }
+
+  function loadBgmTracks() {
+    if (bgmTracks.length) return Promise.resolve(bgmTracks);
+    const url = new URL("assets/dominoes/playlist.json", document.baseURI).href;
+    return fetch(url, { cache: "no-store" })
+      .then((res) => res.ok ? res.json() : [])
+      .then((list) => {
+        bgmTracks = (Array.isArray(list) ? list : []).filter((name) => {
+          return typeof name === "string" && name.length > 0 &&
+            name.indexOf("/") === -1 && name.indexOf("\\") === -1 && name.indexOf("..") === -1;
+        });
+        return bgmTracks;
+      })
+      .catch(() => {
+        bgmTracks = [];
+        return bgmTracks;
+      });
+  }
+
+  function playUnoBgm() {
+    if (!active || isBgmMuted() || leftTable || blockedRoom) return;
+    const token = ++bgmToken;
+    loadBgmTracks().then((tracks) => {
+      if (token !== bgmToken || !active || isBgmMuted() || !tracks.length) return;
+      const name = tracks[bgmIndex % tracks.length];
+      const el = ensureBgm();
+      const src = new URL("assets/dominoes/" + encodeURIComponent(name), document.baseURI).href;
+      if (el.dataset.trackName !== name) {
+        el.dataset.trackName = name;
+        el.src = src;
+      }
+      el.volume = currentBgmVolume();
+      const played = el.play();
+      bgmStarted = true;
+      if (played && typeof played.catch === "function") {
+        played.catch(() => { bgmStarted = false; });
+      }
+      updateMuteButton();
+    });
+  }
+
+  function pauseUnoBgm() {
+    bgmToken += 1;
+    bgmStarted = false;
+    if (bgm) {
+      try { bgm.pause(); } catch (err) { /* already stopped */ }
+    }
+    updateMuteButton();
+  }
+
+  function setBgmMuted(muted) {
+    try { localStorage.setItem("unoBgmMuted", muted ? "1" : "0"); } catch (err) { /* ignore */ }
+    updateMuteButton();
+    if (muted) pauseUnoBgm();
+    else if (active && !leftTable) playUnoBgm();
+  }
+
+  function currentBotSpeed() {
+    try {
+      const saved = localStorage.getItem("unoBotSpeed");
+      if (saved === "slow" || saved === "fast" || saved === "normal") return saved;
+    } catch (err) { /* ignore */ }
+    return "normal";
+  }
+
+  function applyBotSpeed(speed, emit) {
+    const next = speed === "slow" || speed === "fast" ? speed : "normal";
+    try { localStorage.setItem("unoBotSpeed", next); } catch (err) { /* ignore */ }
+    const box = $("unoBotSpeed");
+    if (box) {
+      box.querySelectorAll("button").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.speed === next);
+      });
+    }
+    if (emit && socket && currentRoom) {
+      socket.emit("unoSetBotSpeed", { roomCode: currentRoom, speed: next });
+    }
+  }
+
+  function showLobby(message) {
+    hideUnoScreen();
+    if (lobbyScreen) lobbyScreen.classList.remove("hidden");
+    const codeEl = $("code");
+    const statusEl = $("status");
+    if (codeEl) codeEl.textContent = currentRoom ? ("Lobby Code: " + currentRoom) : "";
+    if (statusEl && message) statusEl.textContent = message;
+  }
+
+  function returnToLobby() {
+    if (!currentRoom) return;
+    const go = () => {
+      leftTable = true;
+      pendingWildId = null;
+      if (socket) socket.emit("unoLeaveTable", { roomCode: currentRoom });
+      showLobby("In the lobby for " + currentRoom + ". This room is still open.");
+    };
+    if (active && !gameOver && window.AppNotice && typeof window.AppNotice.confirm === "function") {
+      window.AppNotice.confirm(
+        "Return to the lobby? You stay in this room. This device leaves the UNO table until the next round."
+      ).then((ok) => { if (ok) go(); });
+      return;
+    }
+    go();
+  }
+
+  function leaveRoom() {
+    if (!currentRoom && !active) return;
+    const go = () => {
+      const room = currentRoom;
+      blockedRoom = room;
+      leftTable = false;
+      pendingWildId = null;
+      if (socket && room) socket.emit("unoLeaveRoom", { roomCode: room });
+      currentRoom = null;
+      try { window.dispatchEvent(new Event("gameweb-left-room")); } catch (err) { /* ignore */ }
+      showLobby("You left the room.");
+    };
+    if (active && window.AppNotice && typeof window.AppNotice.confirm === "function") {
+      window.AppNotice.confirm(
+        "Leave this room? You will be removed from the match."
+      ).then((ok) => { if (ok) go(); });
+      return;
+    }
+    go();
   }
 
   function wireControls() {
     if (!unoResizeWired) {
       unoResizeWired = true;
       window.addEventListener("resize", () => {
-        if (appShell() && unoHand) renderHand();
+        if (unoHand && (active || (unoScreen && !unoScreen.classList.contains("hidden")))) renderHand();
       });
     }
-    const prev = document.getElementById("unoHandPrev");
-    const next = document.getElementById("unoHandNext");
-    if (prev && !prev.dataset.wired) {
-      prev.dataset.wired = "1";
-      prev.onclick = () => stepUnoHand(-1);
+    const lobbyBtn = $("unoLobbyBtn");
+    if (lobbyBtn && !lobbyBtn.dataset.wired) {
+      lobbyBtn.dataset.wired = "1";
+      lobbyBtn.onclick = () => returnToLobby();
     }
-    if (next && !next.dataset.wired) {
-      next.dataset.wired = "1";
-      next.onclick = () => stepUnoHand(1);
+    const leaveBtn = $("unoLeaveBtn");
+    if (leaveBtn && !leaveBtn.dataset.wired) {
+      leaveBtn.dataset.wired = "1";
+      leaveBtn.onclick = () => leaveRoom();
+    }
+    const volumeDown = $("unoVolumeDown");
+    const volumeUp = $("unoVolumeUp");
+    if (volumeDown && !volumeDown.dataset.wired) {
+      volumeDown.dataset.wired = "1";
+      volumeDown.onclick = () => stepBgmVolume(-1);
+    }
+    if (volumeUp && !volumeUp.dataset.wired) {
+      volumeUp.dataset.wired = "1";
+      volumeUp.onclick = () => stepBgmVolume(1);
+    }
+    if (volumeDown || volumeUp) applyBgmVolume(currentBgmVolume(), false);
+    const muteBtn = $("unoMuteBtn");
+    if (muteBtn && !muteBtn.dataset.wired) {
+      muteBtn.dataset.wired = "1";
+      muteBtn.onclick = () => setBgmMuted(!isBgmMuted());
+    }
+    updateMuteButton();
+    const speedBox = $("unoBotSpeed");
+    if (speedBox && !speedBox.dataset.wired) {
+      speedBox.dataset.wired = "1";
+      speedBox.querySelectorAll("button").forEach((btn) => {
+        btn.onclick = () => applyBotSpeed(btn.dataset.speed, true);
+      });
+    }
+    applyBotSpeed(currentBotSpeed(), false);
+    const scoreBtn = $("unoScoreToggle");
+    if (scoreBtn && !scoreBtn.dataset.wired) {
+      scoreBtn.dataset.wired = "1";
+      scoreBtn.onclick = () => {
+        if (!unoScoreboard) return;
+        unoScoreboard.classList.toggle("hidden");
+      };
     }
     if (!unoDrawBtn || unoDrawBtn.dataset.wired) return;
     unoDrawBtn.dataset.wired = "1";
@@ -670,22 +917,31 @@
     applyState(data);
     showUnoScreen();
     unoMsg.textContent = "Game started! Match color, number, or action — wilds play anytime.";
+    applyBotSpeed(currentBotSpeed(), true);
+    updateMuteButton();
+    playUnoBgm();
   }
 
   function init(sharedSocket) {
     socket = sharedSocket;
 
     // "unoStarted" — UNO only.
-    socket.on("unoStarted", onStarted);
+    socket.on("unoStarted", (data) => {
+      if (blockedRoom && data && data.room === blockedRoom) return;
+      blockedRoom = null;
+      onStarted(data);
+    });
 
     // "unoState" — UNO only.
     socket.on("unoState", (data) => {
+      if (blockedRoom && data && data.room === blockedRoom) return;
+      if (leftTable) return;
       if (!active && data && data.game === "uno") {
         if (!bindDom()) return;
         wireControls();
         showUnoScreen();
       }
-      if (!active) return;
+      if (!active || leftTable) return;
       const prev = new Set(hand.map((c) => c.id));
       applyState(data);
       if (data.hand) {
@@ -700,7 +956,7 @@
 
     // "unoPlayed" — UNO only.
     socket.on("unoPlayed", (data) => {
-      if (!active) return;
+      if (leftTable || blockedRoom || !active) return;
       if (data.card && (data.card.kind === "skip" || data.card.kind === "draw2")) {
         sfx("skipTurn");
       } else {
@@ -724,7 +980,7 @@
 
     // "unoDrawn" — UNO only.
     socket.on("unoDrawn", (data) => {
-      if (!active) return;
+      if (!active || leftTable) return;
       sfx("draw");
       if (unoDrawLabel) unoDrawLabel.textContent = "Draw (" + data.drawCount + ")";
       players = players.map((p) => p.id === data.by
@@ -739,7 +995,7 @@
 
     // "unoPenaltyDrawn" — UNO only.
     socket.on("unoPenaltyDrawn", (data) => {
-      if (!active) return;
+      if (!active || leftTable) return;
       sfx("skipTurn");
       unoMsg.textContent = (data.name || "Player") + " draws +" + data.amount + "!";
       players = players.map((p) => p.id === data.by
@@ -752,7 +1008,7 @@
 
     // "unoReversed" — UNO only.
     socket.on("unoReversed", (data) => {
-      if (!active) return;
+      if (!active || leftTable) return;
       sfx("reverse");
       direction = data.direction;
       renderColor();
@@ -763,7 +1019,7 @@
 
     // "unoColorChosen" — UNO only.
     socket.on("unoColorChosen", (data) => {
-      if (!active) return;
+      if (!active || leftTable) return;
       currentColor = data.color;
       renderColor();
       unoMsg.textContent = (data.name || "Player") + " chose " + String(data.color).toUpperCase() + ".";
@@ -771,7 +1027,7 @@
 
     // "unoCalled" — UNO only.
     socket.on("unoCalled", (data) => {
-      if (!active) return;
+      if (!active || leftTable) return;
       sfx("playCard");
       unoMsg.textContent = (data.name || "Player") + " shouts UNO!";
       players = players.map((p) => p.id === data.by
@@ -782,7 +1038,7 @@
 
     // "unoChallenged" — UNO only.
     socket.on("unoChallenged", (data) => {
-      if (!active) return;
+      if (!active || leftTable) return;
       if (data.success) {
         sfx("skipTurn");
         unoMsg.textContent = (data.byName || "Player") + " challenged " +
@@ -793,7 +1049,7 @@
 
     // "unoOver" — UNO only.
     socket.on("unoOver", (data) => {
-      if (!active) return;
+      if (!active || leftTable) return;
       sfx("gameOver");
       gameOver = true;
       myTurn = false;
@@ -812,7 +1068,7 @@
 
     // "unoReset" — UNO only.
     socket.on("unoReset", () => {
-      if (!active) return;
+      if (!active || leftTable) return;
       gameOver = false;
       // Keep scoreboard visible until the player leaves the lobby.
       hideEndButtons();
@@ -828,6 +1084,7 @@
 
     // "unoLobbyUpdate" — UNO only.
     socket.on("unoLobbyUpdate", (data) => {
+      if (blockedRoom && data && data.room === blockedRoom) return;
       const statusEl = $("status");
       const codeEl = $("code");
       if (data && data.room && codeEl) codeEl.textContent = "Lobby Code: " + data.room;
@@ -838,10 +1095,28 @@
       if (data && data.room) currentRoom = data.room;
     });
 
-    socket.on("playerLeft", () => {
-      if (!active) return;
-      hideUnoScreen();
+    socket.on("unoSeatVacated", (data) => {
+      if (!active || leftTable) return;
+      if (data && data.name && unoMsg) {
+        unoMsg.textContent = data.table
+          ? (data.name + " returned to the lobby.")
+          : (data.name + " left the room.");
+      }
+    });
+
+    socket.on("unoLeftRoom", () => {
+      blockedRoom = blockedRoom || currentRoom;
       currentRoom = null;
+      leftTable = false;
+    });
+
+    socket.on("playerLeft", () => {
+      if (!active && !leftTable) return;
+      blockedRoom = currentRoom || blockedRoom;
+      currentRoom = null;
+      leftTable = false;
+      hideUnoScreen();
+      if (lobbyScreen) lobbyScreen.classList.remove("hidden");
       gameOver = false;
     });
 
