@@ -822,7 +822,7 @@ html.gameweb-app #unoScreen .unoTableArena {
 }
 
 html.gameweb-app #unoScreen .unoHandSection {
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   min-height: 0;
   max-width: 100%;
   overflow: hidden;
@@ -841,9 +841,9 @@ html.gameweb-app #unoScreen .unoHand {
   justify-content: center;
   align-content: end;
   overflow: hidden;
-  min-height: 96px;
-  height: 28vh;
-  max-height: 34%;
+  min-height: 120px;
+  height: 30vh;
+  max-height: 240px;
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
