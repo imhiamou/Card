@@ -486,6 +486,10 @@ status.textContent="Player joined! Starting game...";
 setTimeout(showPlacementScreen,1500);
 });
 
+window.addEventListener("gameweb-left-room",()=>{
+currentRoom=null;
+});
+
 socket.on("playerLeft",()=>{
 if(window.Carts&&Carts.isActive())return;
 if(window.CartsEditor&&CartsEditor.isActive())return;

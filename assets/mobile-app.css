@@ -778,15 +778,41 @@ html.gameweb-app #unoScreen:not(.hidden) {
 }
 
 html.gameweb-app #unoScreen .unoTitleRow {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 6px;
   align-items: center;
-  gap: 8px;
   margin: 0 0 4px;
 }
 
 html.gameweb-app #unoScreen .unoTitleRow h2 {
   margin: 0;
   font-size: 16px;
+}
+
+html.gameweb-app #unoScreen .unoMeta {
+  display: none;
+}
+
+html.gameweb-app #unoScreen .unoTopTools {
+  display: none;
+}
+
+html.gameweb-app #unoScreen.app-menu-open .unoTopTools {
+  display: flex;
+  position: absolute;
+  z-index: 40;
+  top: calc(env(safe-area-inset-top, 0px) + 48px);
+  left: 8px;
+  right: 8px;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px;
+  background: #1c2433;
+  border: 1px solid #3d4860;
+  border-radius: 12px;
+  max-height: calc(100% - 64px);
+  overflow: auto;
 }
 
 html.gameweb-app #unoScreen .unoTableArena {
@@ -802,42 +828,44 @@ html.gameweb-app #unoScreen .unoHandSection {
   overflow: hidden;
 }
 
-html.gameweb-app #unoScreen .unoHandSection h3 {
-  display: none;
+html.gameweb-app #unoScreen .unoHandLabel {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.2;
 }
 
 html.gameweb-app #unoScreen .unoHand {
-  flex-wrap: nowrap;
-  overflow: hidden;
+  display: grid;
+  grid-template-columns: repeat(var(--hand-cols, 4), minmax(0, var(--hand-tile-w, 48px)));
+  grid-auto-rows: var(--hand-tile-h, 72px);
   justify-content: center;
-  min-height: 0;
+  align-content: end;
+  overflow: hidden;
+  min-height: 96px;
+  height: 28vh;
+  max-height: 34%;
+  width: 100%;
   max-width: 100%;
-  padding: 4px;
-  gap: 6px;
+  box-sizing: border-box;
+  gap: var(--hand-gap, 4px);
+  padding: 6px 4px 4px;
 }
 
 html.gameweb-app #unoScreen .unoCard.inHand {
-  width: 52px;
-  height: 78px;
-  flex: 0 0 auto;
+  width: var(--hand-tile-w, 48px);
+  height: var(--hand-tile-h, 72px);
+  min-width: 0;
+  max-width: 100%;
 }
 
+html.gameweb-app #unoScreen .unoCard.playable,
+html.gameweb-app #unoScreen .unoCard.selected {
+  transform: none;
+}
+
+html.gameweb-app #unoScreen .unoHandPager,
 html.gameweb-app #unoScreen .unoHandPager:not([hidden]) {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-html.gameweb-app #unoScreen .unoHandPager button {
-  width: auto;
-  min-width: 64px;
-  min-height: 36px;
-  margin: 0;
-  border: 0;
-  border-radius: 8px;
-  background: #31537a;
-  color: #fff;
+  display: none;
 }
 
 html.gameweb-app #unoScreen .unoActions {
@@ -896,6 +924,9 @@ html.gameweb-app #unoScreen .unoColorPicker:not(.hidden) {
     grid-column: 2;
     grid-row: 2;
     align-self: stretch;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
     overflow: hidden;
   }
 
@@ -904,14 +935,11 @@ html.gameweb-app #unoScreen .unoColorPicker:not(.hidden) {
   }
 
   html.gameweb-app #unoScreen .unoHand {
-    flex-direction: column;
-    align-items: center;
-    max-height: 100%;
-  }
-
-  html.gameweb-app #unoScreen .unoCard.inHand {
-    width: 46px;
-    height: 66px;
+    flex: 1 1 auto;
+    height: auto;
+    max-height: none;
+    min-height: 0;
+    align-content: center;
   }
 }
 

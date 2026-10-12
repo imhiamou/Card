@@ -25,6 +25,82 @@ color:#9db2d0;
 font-size:13px;
 }
 
+.unoTopTools{
+display:flex;
+align-items:center;
+flex-wrap:wrap;
+gap:6px;
+flex:1 1 220px;
+justify-content:flex-end;
+max-width:100%;
+min-width:0;
+}
+
+.unoBotSpeed,
+.unoVolume{
+display:flex;
+align-items:center;
+gap:4px;
+margin:0;
+}
+
+.unoBotSpeedLabel{
+font-size:11px;
+letter-spacing:.04em;
+text-transform:uppercase;
+color:#9db2d0;
+}
+
+#unoVolumeReadout{
+min-width:36px;
+text-align:center;
+font-size:12px;
+font-variant-numeric:tabular-nums;
+color:#fff;
+}
+
+.unoBotSpeed button,
+.unoVolume button,
+#unoMuteBtn,
+#unoLobbyBtn,
+#unoLeaveBtn,
+.unoScoreToggle{
+width:auto;
+margin:0;
+padding:5px 8px;
+border-radius:7px;
+border:1px solid #3d4860;
+background:#1e2430;
+color:#fff;
+font-size:12px;
+cursor:pointer;
+}
+
+.unoBotSpeed button.active{
+background:#31537a;
+border-color:#6aabff;
+}
+
+#unoMuteBtn,
+.unoVolume button,
+#unoLobbyBtn,
+#unoLeaveBtn{
+background:#31537a;
+min-width:64px;
+}
+
+#unoLeaveBtn{
+background:#6b2d2d;
+}
+
+.unoScoreToggle.hidden{
+display:none;
+}
+
+#unoTurnIndicator.unoYourTurn{
+color:#ffd866;
+}
+
 /* Physical table seating around the UNO piles */
 .unoTableArena{
 display:grid;
@@ -299,19 +375,30 @@ cursor:pointer;
 }
 
 .unoCard.inHand:hover{
-transform:translateY(-6px);
+outline:2px solid #fff;
+outline-offset:1px;
 }
 
 .unoCard.playable{
-outline:2px solid #ffd866;
+outline:3px solid #ffd866;
+outline-offset:1px;
+box-shadow:0 0 0 1px #111;
+}
+
+.unoCard.selected{
+outline:3px solid #fff;
 outline-offset:2px;
-transform:translateY(-8px);
+box-shadow:0 0 0 4px #ffd866;
 }
 
 .unoCard.disabledCard{
-opacity:.45;
-cursor:not-allowed;
-filter:grayscale(.35) drop-shadow(0 2px 2px rgba(0,0,0,.3));
+opacity:.78;
+cursor:default;
+filter:none;
+}
+
+.unoPlayerChip.away{
+opacity:.72;
 }
 
 .unoCard.playAnim{
@@ -364,21 +451,36 @@ display:inline-block;
 .unoColorDot.green{background:#2f9e44;}
 .unoColorDot.yellow{background:#e6c200;}
 
-.unoHandSection h3{
-margin:8px 0;
+.unoHandSection h3,
+.unoHandLabel{
+margin:8px 0 4px;
 font-size:15px;
 color:#c5d2e8;
+text-align:center;
 }
 
 .unoHand{
-display:flex;
-flex-wrap:wrap;
-gap:8px;
+display:grid;
+grid-template-columns:repeat(var(--hand-cols, 7), minmax(0, var(--hand-tile-w, 64px)));
+grid-auto-rows:var(--hand-tile-h, 96px);
 justify-content:center;
+align-content:center;
+gap:var(--hand-gap, 4px);
+overflow:visible;
 min-height:104px;
 padding:10px;
 background:#1e2430;
 border-radius:10px;
+}
+
+.unoCard.inHand{
+width:var(--hand-tile-w, 64px);
+height:var(--hand-tile-h, 96px);
+max-width:100%;
+}
+
+.unoHandPager{
+display:none;
 }
 
 .unoActions{
@@ -503,6 +605,12 @@ gap:6px;
 .unoCard{
 width:52px;
 height:78px;
+}
+.unoBotSpeedLabel{
+display:none;
+}
+.unoHand{
+min-height:88px;
 }
 .unoTable{
 gap:16px;

@@ -26,10 +26,13 @@ let cardSeq = 0;
 // Set by registerSocket so bot timers can verify a room still exists.
 let roomsRef = null;
 
-/** Bot "thinking" delay (ms). Fast-forwarded in automated tests. */
-function botDelayMs() {
+/** Bot "thinking" delay (ms). Fast-forwarded in automated tests.
+ *  Speed only changes the pause. Move choice is unchanged. */
+function botDelayMs(room) {
   if (process.env.BOT_TEST_FAST) return 5;
-  // Deliberate pause so bots feel like they are thinking (~2.4–4.2s).
+  const speed = room && room.unoBotSpeed;
+  if (speed === "slow") return 5200 + Math.floor(Math.random() * 1800);
+  if (speed === "fast") return 900 + Math.floor(Math.random() * 500);
   return 2400 + Math.floor(Math.random() * 1800);
 }
 
@@ -175,8 +178,35 @@ function setTurnByIndex(room, idx) {
   room.uno.currentTurn = room.players[idx].id;
 }
 
+function isAway(room, playerId) {
+  return !!(room.unoAway && room.unoAway[playerId]);
+}
+
+function playersAtTable(room) {
+  return room.players.filter((player) => !isAway(room, player.id));
+}
+
+/** Landed on someone who already left the table: step until a seated player. */
+function settleAwayTurn(room) {
+  const u = room.uno;
+  const n = room.players.length;
+  if (!u || !n || !u.currentTurn || !isAway(room, u.currentTurn)) return;
+  for (let step = 0; step < n; step++) {
+    setTurnByIndex(room, advanceIndex(room, u.turnIndex, 1));
+    if (!isAway(room, u.currentTurn)) return;
+  }
+}
+
 function advanceTurn(room, steps) {
   setTurnByIndex(room, advanceIndex(room, room.uno.turnIndex, steps || 1));
+  settleAwayTurn(room);
+}
+
+function clearBotTimer(room) {
+  if (room.unoBotTimer) {
+    clearTimeout(room.unoBotTimer);
+    room.unoBotTimer = null;
+  }
 }
 
 /** After a play that went to 1 card, mark UNO liability until called.
@@ -218,6 +248,7 @@ function publicPlayers(room) {
     name: p.name,
     isBot: !!p.isBot,
     handCount: (u.hands[p.id] || []).length,
+    away: isAway(room, p.id),
     unoCalled: !!u.unoCalled[p.id],
     unoLiable: !!u.unoLiable[p.id],
     // When challenge becomes legal (null = not challengeable yet / N/A).
@@ -308,7 +339,7 @@ function scheduleBotTurn(room, io, roomCode) {
   room.unoBotTimer = setTimeout(() => {
     room.unoBotTimer = null;
     runBotTurn(room, io, roomCode, botId);
-  }, botDelayMs());
+  }, botDelayMs(room));
 }
 
 /** Execute one bot decision (play a card, or draw / take the penalty). */
@@ -423,8 +454,9 @@ function resolveForcedPenalty(room, io, roomCode) {
   return true;
 }
 
-function endGame(room, io, roomCode, winnerId) {
+function endGame(room, io, roomCode, winnerId, message) {
   const u = room.uno;
+  clearBotTimer(room);
   u.over = true;
   u.winnerId = winnerId;
   u.pendingPenalty = 0;
@@ -432,11 +464,12 @@ function endGame(room, io, roomCode, winnerId) {
   u.awaitingDrawnPlay = null;
   u.pendingColorChooser = null;
   const winner = room.players.find((p) => p.id === winnerId);
+  const winnerName = winner ? winner.name : "Player";
   // "unoOver" — UNO only.
   io.to(roomCode).emit("unoOver", {
     winnerId,
-    winnerName: winner ? winner.name : "Player",
-    message: (winner ? winner.name : "Player") + " wins!",
+    winnerName,
+    message: message || (winnerName + " wins!"),
     turnsPlayed: u.turnsPlayed,
     cardsPlayed: u.cardsPlayed,
     rankings: rankings(room)
@@ -488,12 +521,153 @@ function afterPlayEffects(room, io, roomCode, card, playerId) {
   }
 }
 
+function releaseStagedWild(room) {
+  const u = room.uno;
+  if (!u) return;
+  if (u.pendingColorChooser && isAway(room, u.pendingColorChooser)) {
+    u.pendingColorChooser = null;
+    u.pendingWildCardId = null;
+  }
+  if (u.awaitingDrawnPlay && isAway(room, u.currentTurn)) {
+    u.awaitingDrawnPlay = null;
+  }
+}
+
+/**
+ * One player left the table but stays in the room.
+ * If fewer than two players remain at the table, the round ends with the
+ * existing win notice so nobody waits on the empty seat.
+ */
+function leaveTable(room, io, roomCode, playerId) {
+  const player = room.players.find((p) => p.id === playerId);
+  if (!player) return { ok: false, error: "You are not in this lobby." };
+  if (!room.unoAway) room.unoAway = {};
+  room.unoAway[playerId] = true;
+  const u = room.uno;
+  if (!u) {
+    io.to(roomCode).emit("unoSeatVacated", {
+      id: playerId,
+      name: player.name,
+      table: true,
+      ended: false
+    });
+    return { ok: true, ended: false };
+  }
+  releaseStagedWild(room);
+  clearBotTimer(room);
+  const seated = playersAtTable(room);
+  if (!u.over && seated.length < 2) {
+    if (seated.length === 1) {
+      endGame(room, io, roomCode, seated[0].id, player.name + " left the table. " + seated[0].name + " wins!");
+    } else {
+      u.over = true;
+      u.winnerId = null;
+    }
+    io.to(roomCode).emit("unoSeatVacated", {
+      id: playerId,
+      name: player.name,
+      table: true,
+      ended: true
+    });
+    if (!u.over) emitFullState(room, io, roomCode);
+    else emitFullState(room, io, roomCode);
+    return { ok: true, ended: true };
+  }
+  if (!u.over && (u.currentTurn === playerId || isAway(room, u.currentTurn))) {
+    advanceTurn(room, 1);
+    let guard = 0;
+    while (guard++ < room.players.length + 1 && resolveForcedPenalty(room, io, roomCode)) {
+      /* continue */
+    }
+  }
+  io.to(roomCode).emit("unoSeatVacated", {
+    id: playerId,
+    name: player.name,
+    table: true,
+    ended: !!u.over
+  });
+  if (!u.over) emitFullState(room, io, roomCode);
+  return { ok: true, ended: !!u.over };
+}
+
+/**
+ * Remove the player from the room entirely. The socket stays connected
+ * so they can create or join another lobby.
+ */
+function leaveRoom(room, io, roomCode, playerId, socket) {
+  const player = room.players.find((p) => p.id === playerId);
+  if (!player) return { ok: false, error: "You are not in this lobby." };
+  const name = player.name;
+  if (!room.unoAway) room.unoAway = {};
+  room.unoAway[playerId] = true;
+  const u = room.uno;
+  if (u && !u.over) releaseStagedWild(room);
+  clearBotTimer(room);
+  let nextId = null;
+  if (u && u.currentTurn === playerId && room.players.length > 1) {
+    const idx = room.players.findIndex((p) => p.id === playerId);
+    const dir = u.direction || 1;
+    const n = room.players.length;
+    nextId = room.players[(idx + dir + n * 10) % n].id;
+  }
+  room.players = room.players.filter((p) => p.id !== playerId);
+  if (u && u.hands) delete u.hands[playerId];
+  delete room.unoAway[playerId];
+  if (room.unoRematch) delete room.unoRematch[playerId];
+  if (socket && typeof socket.leave === "function") socket.leave(roomCode);
+  const humans = room.players.filter((p) => !p.isBot);
+  if (!humans.length) {
+    clearBotTimer(room);
+    if (roomsRef) delete roomsRef[roomCode];
+    return { ok: true, ended: true, deleted: true, name: name };
+  }
+  if (u && !u.over) {
+    const stillHere = room.players.findIndex((p) => p.id === u.currentTurn);
+    if (stillHere >= 0) {
+      u.turnIndex = stillHere;
+    } else {
+      const next = room.players.find((p) => p.id === nextId) || room.players[0];
+      const ni = Math.max(0, room.players.findIndex((p) => p.id === next.id));
+      u.turnIndex = ni;
+      u.currentTurn = room.players[ni].id;
+      settleAwayTurn(room);
+    }
+    const seated = playersAtTable(room);
+    if (seated.length < 2) {
+      if (seated.length === 1) {
+        endGame(room, io, roomCode, seated[0].id, name + " left the room. " + seated[0].name + " wins!");
+      } else {
+        u.over = true;
+      }
+    } else {
+      let guard = 0;
+      while (guard++ < room.players.length + 1 && resolveForcedPenalty(room, io, roomCode)) {
+        /* continue */
+      }
+      emitFullState(room, io, roomCode);
+    }
+  } else if (!u) {
+    io.to(roomCode).emit("unoLobbyUpdate", {
+      room: roomCode,
+      maxPlayers: room.maxPlayers || room.players.length,
+      players: room.players.map((p) => ({ id: p.id, name: p.name }))
+    });
+  }
+  humans.forEach((other) => {
+    io.to(other.id).emit("unoSeatVacated", {
+      id: playerId,
+      name: name,
+      table: false,
+      ended: !(room.uno && !room.uno.over)
+    });
+  });
+  return { ok: true, ended: !(room.uno && !room.uno.over), deleted: false, name: name };
+}
+
 function initRound(room) {
   // A fresh deal invalidates any scheduled bot action from the old round.
-  if (room.unoBotTimer) {
-    clearTimeout(room.unoBotTimer);
-    room.unoBotTimer = null;
-  }
+  clearBotTimer(room);
+  room.unoAway = {};
   const playerIds = room.players.map((p) => p.id);
   let draw = shuffle(buildDeck());
   const hands = {};
@@ -601,9 +775,13 @@ function onLobbyFull(room, io, roomCode) {
   emitFullState(room, io, roomCode);
 }
 
+function rememberRooms(rooms) {
+  roomsRef = rooms;
+}
+
 function registerSocket(socket, io, rooms) {
   // Remember the live room registry so bot timers can detect torn-down rooms.
-  roomsRef = rooms;
+  rememberRooms(rooms);
 
   /*
    * "unoPlayCard" — UNO only.
@@ -618,6 +796,10 @@ function registerSocket(socket, io, rooms) {
     }
     if (!room.players.some((p) => p.id === socket.id)) {
       socket.emit("errorMessage", "You are not in this lobby.");
+      return;
+    }
+    if (isAway(room, socket.id)) {
+      socket.emit("errorMessage", "You left the UNO table.");
       return;
     }
     const u = room.uno;
@@ -707,6 +889,10 @@ function registerSocket(socket, io, rooms) {
     const roomCode = data && typeof data.roomCode === "string" ? data.roomCode.trim().toUpperCase() : "";
     const room = rooms[roomCode];
     if (!room || room.gameMode !== "uno") return;
+    if (isAway(room, socket.id)) {
+      socket.emit("errorMessage", "You left the UNO table.");
+      return;
+    }
     const u = room.uno;
     if (!u || u.over || u.pendingColorChooser !== socket.id) {
       socket.emit("errorMessage", "No wild color to choose.");
@@ -768,6 +954,10 @@ function registerSocket(socket, io, rooms) {
     }
     if (!room.players.some((p) => p.id === socket.id)) {
       socket.emit("errorMessage", "You are not in this lobby.");
+      return;
+    }
+    if (isAway(room, socket.id)) {
+      socket.emit("errorMessage", "You left the UNO table.");
       return;
     }
     const u = room.uno;
@@ -854,6 +1044,7 @@ function registerSocket(socket, io, rooms) {
     const u = room.uno;
     if (!u || u.over) return;
     if (!room.players.some((p) => p.id === socket.id)) return;
+    if (isAway(room, socket.id)) return;
     const count = (u.hands[socket.id] || []).length;
     if (count !== 1) {
       socket.emit("errorMessage", "You can only call UNO with exactly one card.");
@@ -882,6 +1073,7 @@ function registerSocket(socket, io, rooms) {
     const u = room.uno;
     if (!u || u.over) return;
     if (!room.players.some((p) => p.id === socket.id)) return;
+    if (isAway(room, socket.id)) return;
 
     const targetId = data && typeof data.targetId === "string" ? data.targetId : "";
     if (targetId === socket.id) {
@@ -937,7 +1129,8 @@ function registerSocket(socket, io, rooms) {
     }
     if (!room.unoRematch) room.unoRematch = {};
     room.unoRematch[socket.id] = true;
-    if (!room.players.every((p) => room.unoRematch[p.id])) {
+    const voters = room.players.filter((p) => !isAway(room, p.id));
+    if (!voters.length || !voters.every((p) => room.unoRematch[p.id])) {
       // "unoPlayAgainWait" — UNO only.
       socket.emit("unoPlayAgainWait");
       return;
@@ -946,6 +1139,46 @@ function registerSocket(socket, io, rooms) {
     onLobbyFull(room, io, roomCode);
     // "unoReset" — UNO only.
     io.to(roomCode).emit("unoReset");
+  });
+
+  socket.on("unoLeaveTable", (data) => {
+    const roomCode = data && typeof data.roomCode === "string" ? data.roomCode.trim().toUpperCase() : "";
+    const room = rooms[roomCode];
+    if (!room || room.gameMode !== "uno") {
+      socket.emit("errorMessage", "You are not in a UNO lobby.");
+      return;
+    }
+    const result = leaveTable(room, io, roomCode, socket.id);
+    if (!result.ok) socket.emit("errorMessage", result.error);
+  });
+
+  socket.on("unoLeaveRoom", (data) => {
+    const roomCode = data && typeof data.roomCode === "string" ? data.roomCode.trim().toUpperCase() : "";
+    const room = rooms[roomCode];
+    if (!room || room.gameMode !== "uno") {
+      socket.emit("errorMessage", "You are not in a UNO lobby.");
+      return;
+    }
+    const result = leaveRoom(room, io, roomCode, socket.id, socket);
+    if (!result.ok) {
+      socket.emit("errorMessage", result.error);
+      return;
+    }
+    socket.emit("unoLeftRoom", { room: roomCode });
+  });
+
+  socket.on("unoSetBotSpeed", (data) => {
+    const roomCode = data && typeof data.roomCode === "string" ? data.roomCode.trim().toUpperCase() : "";
+    const room = rooms[roomCode];
+    if (!room || room.gameMode !== "uno") return;
+    if (!room.players.some((p) => p.id === socket.id)) return;
+    const speed = data && data.speed;
+    if (speed !== "slow" && speed !== "normal" && speed !== "fast") return;
+    room.unoBotSpeed = speed;
+    if (room.unoBotTimer) {
+      clearBotTimer(room);
+      scheduleBotTurn(room, io, roomCode);
+    }
   });
 }
 
@@ -959,5 +1192,11 @@ module.exports = {
   normalizeMaxPlayers,
   COLORS,
   HAND_SIZE,
-  ALLOWED_MAX_PLAYERS
+  ALLOWED_MAX_PLAYERS,
+  leaveTable,
+  leaveRoom,
+  isAway,
+  rememberRooms,
+  playersAtTable,
+  initRound
 };
