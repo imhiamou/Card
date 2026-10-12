@@ -126,8 +126,9 @@
 
   function confirmNotice(message, focusId) {
     return new Promise((resolve) => {
-      resolver = resolve;
+      // open() settles a dialog that is already up. Set this promise after that.
       open(message, "confirm", focusId || null);
+      resolver = resolve;
     });
   }
 
