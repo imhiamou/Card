@@ -92,7 +92,7 @@ html.gameweb-app #lobbyScreen h1 {
   flex: 0 0 auto;
   margin: 0 0 8px;
   font-size: 22px;
-  padding-right: 108px;
+  padding-right: 132px;
 }
 
 html.gameweb-app #gamewebCheckUpdate {
@@ -100,6 +100,9 @@ html.gameweb-app #gamewebCheckUpdate {
   z-index: 5;
   top: calc(env(safe-area-inset-top, 0px) + 8px);
   right: calc(env(safe-area-inset-right, 0px) + 10px);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   width: auto;
   min-height: 36px;
   margin: 0;
@@ -109,6 +112,15 @@ html.gameweb-app #gamewebCheckUpdate {
   background: #31537a;
   color: #fff;
   font-weight: 700;
+}
+
+html.gameweb-app #gamewebCheckUpdate::before {
+  content: "";
+  width: 16px;
+  height: 16px;
+  background: currentColor;
+  -webkit-mask: url("uno/icons/refresh-cw.svg") center / contain no-repeat;
+  mask: url("uno/icons/refresh-cw.svg") center / contain no-repeat;
 }
 
 html.gameweb-app #lobbyScreen .lobbyColumns {
@@ -166,7 +178,7 @@ html.gameweb-app #lobbyScreen[data-app-tab="room"] .lobbyColumns {
   flex: 0 1 auto;
 }
 
-html.gameweb-app #lobbyScreen .appNativeSelect {
+html.gameweb-app .appNativeSelect {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -755,7 +767,7 @@ html.gameweb-app #dominoScreen #domMsg {
   }
 }
 
-/* UNO */
+/* UNO — full-screen shell. The arena design lives in uno.css. */
 html.gameweb-app #unoScreen:not(.hidden) {
   position: fixed;
   inset: 0;
@@ -820,7 +832,7 @@ html.gameweb-app #unoScreen.app-menu-open .unoTopTools {
   display: flex;
   position: absolute;
   z-index: 40;
-  top: calc(env(safe-area-inset-top, 0px) + 48px);
+  top: calc(env(safe-area-inset-top, 0px) + 52px);
   left: 8px;
   right: 8px;
   flex-wrap: wrap;
@@ -829,7 +841,7 @@ html.gameweb-app #unoScreen.app-menu-open .unoTopTools {
   background: #1c2433;
   border: 1px solid #3d4860;
   border-radius: 12px;
-  max-height: calc(100% - 64px);
+  max-height: calc(100% - 72px);
   overflow: auto;
 }
 
@@ -917,31 +929,6 @@ html.gameweb-app #unoScreen .unoHandPager:not([hidden]) {
   display: none;
 }
 
-html.gameweb-app #unoScreen .unoActions {
-  flex: 0 0 auto;
-  margin-top: 4px;
-}
-
-html.gameweb-app #unoScreen .unoActions button {
-  min-width: 0;
-  margin: 0;
-}
-
-html.gameweb-app #unoScreen #unoMsg {
-  flex: 0 0 auto;
-  margin: 2px 0 0;
-  min-height: 0;
-  max-height: 2.4em;
-  overflow: hidden;
-  text-align: center;
-  font-size: 12px;
-}
-
-html.gameweb-app #unoScreen:has(.unoEndButtons:not(.hidden)) .unoHand {
-  height: 112px;
-  max-height: 112px;
-}
-
 html.gameweb-app #unoScreen .unoScoreboard {
   display: none;
 }
@@ -952,8 +939,8 @@ html.gameweb-app #unoScreen.app-menu-open .unoScoreboard:not(.hidden) {
   z-index: 40;
   left: 8px;
   right: 8px;
-  top: calc(env(safe-area-inset-top, 0px) + 48px);
-  max-height: 50%;
+  top: calc(env(safe-area-inset-top, 0px) + 52px);
+  max-height: 46%;
   overflow: hidden;
 }
 

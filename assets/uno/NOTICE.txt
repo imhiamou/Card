@@ -1,0 +1,37 @@
+UNO presentation assets
+=========================
+
+Card artwork
+------------
+Source: 4 Colour Cards by VerzatileDev
+Page: https://verzatiledev.itch.io/4colour
+License: CC0 1.0 Universal (public domain). Crediting the author is not required.
+Files: assets/uno/cards/*.png
+Use: number cards 0–9, skip, reverse, and draw two in red, blue, green, and yellow;
+     wild, wild draw four, and the card back.
+The repository stores 200px slices of the pack's numbered and special spritesheets.
+The original sheets and example project are not included.
+
+Inspected and not shipped
+--------------------------
+Kenney Playing Cards Pack (CC0), https://kenney.nl/assets/playing-cards-pack
+and https://opengameart.org/content/playing-cards-pack
+The pack is a standard four-suit deck. It was not mixed with the UNO cards.
+
+Naro Game "UNO Game Assets" (https://narogame.itch.io/uno-game-assets) was not
+downloaded. The primary pack already includes every card type this game uses,
+so a second deck was not added.
+
+Icons
+-----
+Source: Lucide (https://github.com/lucide-icons/lucide)
+License: ISC. See assets/uno/icons/LICENSE.txt.
+Files: assets/uno/icons/*.svg
+Use: music, sound, menu, player, and update controls.
+
+Typography
+----------
+Source: Inter by Rasmus Andersson (https://github.com/rsms/inter)
+License: SIL Open Font License 1.1. See assets/uno/font/OFL.txt.
+File: assets/uno/font/InterVariable.woff2
+Use: UNO interface text and the lobby setup window.

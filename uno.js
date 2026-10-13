@@ -14,11 +14,6 @@
   const SCREEN_HTML =
     '<div class="unoTitleRow">' +
       '<h2>UNO</h2>' +
-      '<div class="unoQuickAudio">' +
-        '<button type="button" id="unoMusicBtn" class="unoIconBtn" aria-pressed="false" aria-label="Mute music">' + MUSIC_ICON + '</button>' +
-        '<button type="button" id="unoSfxBtn" class="unoIconBtn" aria-pressed="false" aria-label="Mute sounds">' + SOUND_ICON + '</button>' +
-      '</div>' +
-      '<button type="button" id="unoMenuBtn" class="unoMenuBtn" aria-expanded="false">Menu</button>' +
       '<div class="unoMeta" id="unoMeta"></div>' +
       '<div class="unoTopTools">' +
         '<div class="unoBotSpeed" id="unoBotSpeed" role="group" aria-label="Bot speed">' +
@@ -37,6 +32,11 @@
         '<button type="button" id="unoLeaveBtn" class="unoLeaveBtn">Leave Room</button>' +
         '<button type="button" id="unoScoreToggle" class="unoScoreToggle hidden">Score</button>' +
       '</div>' +
+      '<div class="unoQuickAudio">' +
+        '<button type="button" id="unoMusicBtn" class="unoIconBtn" aria-pressed="false" aria-label="Mute music">' + iconImg("music") + '</button>' +
+        '<button type="button" id="unoSfxBtn" class="unoIconBtn" aria-pressed="false" aria-label="Mute sounds">' + iconImg("volume-2") + '</button>' +
+      '</div>' +
+      '<button type="button" id="unoMenuBtn" class="unoMenuBtn" aria-expanded="false" aria-label="Menu">' + iconImg("menu") + '<span class="unoSr">Menu</span></button>' +
     '</div>' +
     '<div class="unoStatusBar">' +
       '<span class="unoColorDot" id="unoColorDot"></span>' +
@@ -45,6 +45,7 @@
       '<span id="unoPenaltyText"></span>' +
     '</div>' +
     '<div class="unoTableArena" id="unoTableArena" data-count="2">' +
+      '<div class="unoFelt" aria-hidden="true"></div>' +
       '<div class="unoSeat seat-ul" data-seat="ul"></div>' +
       '<div class="unoSeat seat-top" data-seat="top"></div>' +
       '<div class="unoSeat seat-ur" data-seat="ur"></div>' +
@@ -65,8 +66,8 @@
       '</div>' +
     '</div>' +
     '<div class="unoYouBar">' +
-      '<div id="unoYou"></div>' +
       '<h2 id="unoTurnIndicator"></h2>' +
+      '<div id="unoYou"></div>' +
     '</div>' +
     '<div class="unoHandSection">' +
       '<div class="unoHandLabel" id="unoHandLabel">Your hand</div>' +
@@ -113,7 +114,6 @@
   let mustPickColor = false;
   let drawnPlayableId = null;
   let pendingWildId = null;
-  let svgUid = 0;
   let lastTurnId = null;
   let challengeRefreshTimer = null;
 
@@ -158,73 +158,45 @@
     return true;
   }
 
-  /* ---- SVG cards ---- */
+  /* ---- Card artwork (4 Colour Cards). Identities stay the server's. ---- */
 
-  function faceLabel(card) {
-    if (!card) return "";
-    if (card.kind === "number") return String(card.value);
-    if (card.kind === "skip") return "⊘";
-    if (card.kind === "reverse") return "⇄";
-    if (card.kind === "draw2") return "+2";
-    if (card.kind === "wild") return "W";
-    if (card.kind === "wild4") return "+4";
-    return "";
+  function cardAlt(card) {
+    if (!card) return "Card";
+    if (card.kind === "number") return (card.color || "") + " " + card.value;
+    if (card.kind === "draw2") return (card.color || "") + " draw two";
+    if (card.kind === "wild4") return "Wild draw four";
+    if (card.kind === "wild") return "Wild";
+    return ((card.color ? card.color + " " : "") + (card.kind || "card")).trim();
   }
 
-  function cardSvg(card, faceDown) {
-    const id = "ug" + (++svgUid);
-    const W = 64;
-    const H = 96;
-    if (faceDown) {
-      return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + " " + H +
-        '" width="' + W + '" height="' + H + '">' +
-        '<rect x="1" y="1" width="62" height="94" rx="10" fill="#1b1f2a" stroke="#f2f2f2" stroke-width="2"/>' +
-        '<rect x="10" y="18" width="44" height="60" rx="8" fill="#e23b3b"/>' +
-        '<text x="32" y="54" text-anchor="middle" font-size="16" font-weight="bold" fill="#fff" ' +
-        'font-family="Arial,sans-serif">UNO</text></svg>';
+  function cardFile(card, faceDown) {
+    if (faceDown || !card) return "assets/uno/cards/back.png";
+    if (card.kind === "wild") return "assets/uno/cards/wild.png";
+    if (card.kind === "wild4") return "assets/uno/cards/wild4.png";
+    const color = COLOR_HEX[card.color] ? card.color : "red";
+    if (card.kind === "number" && /^[0-9]$/.test(String(card.value))) {
+      return "assets/uno/cards/" + color + "-" + card.value + ".png";
     }
-    const isWild = card.kind === "wild" || card.kind === "wild4";
-    const isWild4 = card.kind === "wild4";
-    const fill = isWild ? "#161616" : (COLOR_HEX[card.color] || "#444");
-    const ink = card.color === "yellow" ? "#3a2a00" : (isWild ? "#111" : fill);
-    const label = isWild4 ? "+4" : (card.kind === "wild" ? "W" : faceLabel(card));
-    const fontSize = label.length > 2 ? 22 : (label.length > 1 ? 26 : 32);
-    let svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + " " + H +
-      '" width="' + W + '" height="' + H + '">';
-    svg += '<rect x="1.5" y="1.5" width="61" height="93" rx="10" fill="' + fill +
-      '" stroke="#f4f4f4" stroke-width="3"/>';
-    svg += '<ellipse cx="32" cy="50" rx="20" ry="28" fill="#fff"/>';
-    if (card.kind === "wild") {
-      svg += '<path d="M32 30 L46 50 L32 70 L18 50 Z" fill="#e23b3b"/>';
-      svg += '<path d="M32 30 L46 50 L32 50 Z" fill="#2f6bdc"/>';
-      svg += '<path d="M32 50 L46 50 L32 70 Z" fill="#2f9e44"/>';
-      svg += '<path d="M18 50 L32 50 L32 70 Z" fill="#e6c200"/>';
-      svg += '<rect x="12" y="44" width="40" height="14" rx="3" fill="#fff"/>';
-      svg += '<text x="32" y="55" text-anchor="middle" font-size="11" font-weight="900" fill="#111" font-family="Arial,sans-serif">WILD</text>';
-    } else if (isWild4) {
-      svg += '<text x="32" y="58" text-anchor="middle" font-size="28" font-weight="900" fill="#111" font-family="Arial Black,Arial,sans-serif">+4</text>';
-      svg += '<circle cx="20" cy="34" r="4" fill="#e23b3b"/>';
-      svg += '<circle cx="44" cy="34" r="4" fill="#2f6bdc"/>';
-      svg += '<circle cx="20" cy="66" r="4" fill="#2f9e44"/>';
-      svg += '<circle cx="44" cy="66" r="4" fill="#e6c200"/>';
-    } else {
-      svg += '<text x="32" y="60" text-anchor="middle" font-size="' + fontSize +
-        '" font-weight="900" fill="' + ink +
-        '" font-family="Arial Black,Arial,sans-serif">' + label + "</text>";
+    if (card.kind === "skip" || card.kind === "reverse" || card.kind === "draw2") {
+      return "assets/uno/cards/" + color + "-" + card.kind + ".png";
     }
-    svg += '<rect x="4" y="4" width="22" height="16" rx="3" fill="#111"/>';
-    svg += '<rect x="38" y="76" width="22" height="16" rx="3" fill="#111"/>';
-    svg += '<text x="15" y="16" text-anchor="middle" font-size="11" font-weight="700" fill="#fff" font-family="Arial,sans-serif">' + label + "</text>";
-    svg += '<text x="49" y="88" text-anchor="middle" font-size="11" font-weight="700" fill="#fff" font-family="Arial,sans-serif">' + label + "</text>";
-    svg += "</svg>";
-    return svg;
+    return "assets/uno/cards/back.png";
   }
 
   function setCardEl(el, card, opts) {
     const options = opts || {};
-    el.innerHTML = cardSvg(card, !!options.faceDown);
+    const faceDown = !!options.faceDown;
+    const chosen = !faceDown && card && (card.kind === "wild" || card.kind === "wild4") && COLOR_HEX[card.color]
+      ? card.color
+      : "";
+    const alt = faceDown ? "Card back" : cardAlt(card);
+    el.innerHTML = '<img class="unoFace" alt="' + alt.replace(/"/g, "") + '" src="' + cardFile(card, faceDown) + '" draggable="false">' +
+      (chosen ? '<span class="unoChosen"></span>' : "");
     el.className = "unoCard" + (options.extra ? " " + options.extra : "");
+    if (chosen) el.dataset.chosen = chosen;
+    else delete el.dataset.chosen;
     if (card && card.id) el.dataset.cardId = card.id;
+    else delete el.dataset.cardId;
   }
 
   /* ---- Screen ---- */
@@ -289,6 +261,8 @@
     btn.classList.toggle("is-off", muted);
     btn.setAttribute("aria-pressed", muted ? "true" : "false");
     btn.setAttribute("aria-label", muted ? "Unmute sounds" : "Mute sounds");
+    const img = btn.querySelector("img");
+    if (img) img.src = muted ? "assets/uno/icons/volume-x.svg" : "assets/uno/icons/volume-2.svg";
   }
 
   function sfx(name) {
@@ -557,10 +531,11 @@
 
   function renderHand(animateId) {
     if (!unoHand) return;
-    fitHandTiles();
+    const box = fitHandTiles();
     unoHand.innerHTML = "";
     const playableSet = new Set(playableIds || []);
-    hand.forEach((card) => {
+    const cols = box ? box.cols : hand.length;
+    hand.forEach((card, index) => {
       const playable = myTurn && !gameOver && !mustPickColor && playableSet.has(card.id);
       const forcedDrawn = drawnPlayableId && card.id === drawnPlayableId;
       const el = document.createElement("div");
@@ -572,6 +547,7 @@
         animateId && card.id === animateId ? "drawAnim" : ""
       ].filter(Boolean).join(" ");
       setCardEl(el, card, { extra });
+      if (index % cols === 0) el.style.marginLeft = "0px";
       el.onclick = () => onHandClick(card);
       unoHand.appendChild(el);
     });
@@ -965,6 +941,12 @@
       scoreBtn.onclick = () => {
         if (!unoScoreboard) return;
         unoScoreboard.classList.toggle("hidden");
+      };
+    }
+    if (unoDrawPile && !unoDrawPile.dataset.wired) {
+      unoDrawPile.dataset.wired = "1";
+      unoDrawPile.onclick = () => {
+        if (unoDrawBtn && !unoDrawBtn.disabled) unoDrawBtn.click();
       };
     }
     if (!unoDrawBtn || unoDrawBtn.dataset.wired) return;
