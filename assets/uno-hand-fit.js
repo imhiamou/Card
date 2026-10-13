@@ -1,4 +1,4 @@
-/* Fit every UNO card into the hand box. One or two rows. No paging. */
+/* Fit every UNO card into the hand box. A normal hand is one overlapping row. */
 (function (root, factory) {
   const api = factory();
   if (typeof module === "object" && module.exports) module.exports = api;
@@ -6,61 +6,65 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  function fit(count, boxW, boxH) {
-    const n = Math.max(1, count | 0);
-    const width = Math.max(120, boxW || 320);
-    const height = Math.max(72, boxH || 160);
-    const gap = 6;
+  function layout(count, rows, limitW, limitH, minW, maxOverlapRatio) {
+    const cols = Math.ceil(count / rows);
+    const gap = cols <= 4 ? 8 : 4;
+    const rowGap = 6;
     const ratio = 1.48;
-    const pad = 12;
-    const minW = 40;
-    let best = null;
-    const maxRows = Math.min(2, n);
-    for (let rows = 1; rows <= maxRows; rows++) {
-      const cols = Math.ceil(n / rows);
-      const innerW = width - pad - gap * Math.max(0, cols - 1);
-      const innerH = height - pad - gap * Math.max(0, rows - 1);
-      if (innerW < cols || innerH < rows) continue;
-      let tileW = Math.floor(innerW / cols);
-      const tileHLimit = Math.floor(innerH / rows);
-      tileW = Math.min(72, tileW, Math.floor(tileHLimit / ratio));
-      if (tileW < minW) continue;
-      const tileH = Math.round(tileW * ratio);
-      const usedW = tileW * cols + gap * Math.max(0, cols - 1);
-      const usedH = tileH * rows + gap * Math.max(0, rows - 1);
-      if (usedW > width - pad || usedH > height - pad) continue;
-      if (!best || tileW > best.width || (tileW === best.width && rows < best.rows)) {
-        best = { cols: cols, rows: rows, width: tileW, height: tileH, gap: gap, overlap: 0 };
-      }
+    const maxH = Math.floor((limitH - rowGap * Math.max(0, rows - 1)) / rows);
+    if (maxH < 52) return null;
+    let tileW = Math.min(78, Math.floor(maxH / ratio));
+    const slack = Math.max(0, cols - 1);
+    const clearWidth = Math.floor((limitW - gap * slack) / cols);
+    if (cols > 1 && clearWidth < tileW) {
+      const denom = cols - maxOverlapRatio * slack;
+      const overlapped = Math.floor((limitW - gap * slack) / denom);
+      tileW = Math.min(tileW, Math.max(minW, overlapped));
     }
-    if (best) return best;
-
-    const rows = height >= 150 && n > 7 ? 2 : 1;
-    const cols = Math.ceil(n / rows);
-    const limitW = Math.max(72, width - pad);
-    const limitH = Math.max(52, height - pad);
-    const maxOverlapRatio = 0.42;
-    let tileH = Math.min(72, Math.floor((limitH - gap * Math.max(0, rows - 1)) / rows));
-    let tileW = Math.min(52, Math.max(36, Math.floor(tileH / ratio)));
-    tileH = Math.round(tileW * ratio);
-    if (tileH * rows + gap * Math.max(0, rows - 1) > limitH) {
-      tileH = Math.max(52, Math.floor((limitH - gap * Math.max(0, rows - 1)) / rows));
-      tileW = Math.max(36, Math.floor(tileH / ratio));
+    if (tileW < minW) return null;
+    let tileH = Math.round(tileW * ratio);
+    if (tileH > maxH) {
+      tileH = maxH;
+      tileW = Math.max(minW, Math.floor(tileH / ratio));
       tileH = Math.round(tileW * ratio);
     }
     let overlap = 0;
-    if (cols > 1) {
-      const denom = cols - maxOverlapRatio * (cols - 1);
-      const fitW = Math.floor((limitW - gap * (cols - 1)) / denom);
-      if (fitW < tileW) tileW = Math.max(36, fitW);
+    let guard = 0;
+    while (guard < 24) {
+      const natural = tileW * cols + gap * slack;
+      overlap = natural > limitW && slack > 0 ? Math.ceil((natural - limitW) / slack) : 0;
+      const cap = Math.floor(tileW * maxOverlapRatio);
+      if (overlap <= cap && tileW * cols + (gap - overlap) * slack <= limitW + 1) break;
+      if (tileW <= minW) return null;
+      tileW -= 1;
       tileH = Math.round(tileW * ratio);
-      const natural = tileW * cols + gap * (cols - 1);
-      if (natural > limitW) {
-        overlap = Math.ceil((natural - limitW) / (cols - 1));
-        overlap = Math.min(overlap, Math.floor(tileW * maxOverlapRatio));
-      }
+      guard += 1;
     }
+    if (tileH * rows + rowGap * Math.max(0, rows - 1) > limitH) return null;
     return { cols: cols, rows: rows, width: tileW, height: tileH, gap: gap, overlap: overlap };
+  }
+
+  function fit(count, boxW, boxH) {
+    const n = Math.max(1, count | 0);
+    const width = Math.max(120, boxW || 320);
+    const height = Math.max(72, boxH || 120);
+    const limitW = Math.max(80, width - 8);
+    const limitH = Math.max(52, height - 8);
+    const fan = layout(n, 1, limitW, limitH, n > 10 ? 42 : 48, 0.38);
+    if (fan && (n <= 9 || fan.width >= 46)) return fan;
+    if (n > 8 && limitH >= 108) {
+      const grid = layout(n, 2, limitW, limitH, 36, 0.28);
+      if (grid) return grid;
+    }
+    if (fan) return fan;
+    return layout(n, 1, limitW, limitH, 36, 0.42) || {
+      cols: n,
+      rows: 1,
+      width: 36,
+      height: 52,
+      gap: 4,
+      overlap: 12
+    };
   }
 
   return { fit: fit };
