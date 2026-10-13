@@ -879,7 +879,7 @@ io.on("connection", (socket) => {
       : data && data.game === "uno" ? "uno"
       : data && data.game === "hidden-hunter" ? "hidden-hunter"
       : "hidden-hunt";
-    // Dominoes 2–4 / UNO 2–5; every other game stays at 2.
+    // Dominoes 2–4 / UNO 2–6; every other game stays at 2.
     const maxPlayers = gameMode === "dominoes"
       ? domino.normalizeMaxPlayers(data && data.maxPlayers)
       : gameMode === "uno"

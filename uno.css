@@ -9,11 +9,81 @@ padding:16px 18px 20px;
 
 .unoTitleRow{
 display:flex;
-justify-content:space-between;
-align-items:baseline;
-gap:10px;
+justify-content:flex-start;
+align-items:center;
+gap:8px;
 flex-wrap:wrap;
-margin-bottom:8px;
+margin-bottom:6px;
+}
+
+.unoQuickAudio{
+display:flex;
+align-items:center;
+gap:6px;
+margin-left:auto;
+}
+
+.unoIconBtn{
+width:36px;
+height:36px;
+min-width:36px;
+margin:0;
+padding:0;
+border-radius:10px;
+border:1px solid #31445f;
+background:#1a2433;
+color:#d7e4f5;
+display:inline-flex;
+align-items:center;
+justify-content:center;
+cursor:pointer;
+}
+
+.unoIconBtn.is-off{
+opacity:.45;
+}
+
+.unoStatusBar{
+display:flex;
+align-items:center;
+justify-content:center;
+flex-wrap:wrap;
+gap:8px;
+min-height:28px;
+margin:0 0 6px;
+color:#d5e2f2;
+font-size:13px;
+font-weight:700;
+}
+
+.unoDir{
+display:inline-flex;
+align-items:center;
+gap:4px;
+}
+
+.unoDirIcon{
+font-size:16px;
+line-height:1;
+}
+
+.unoYouBar{
+display:flex;
+align-items:center;
+justify-content:space-between;
+gap:8px;
+min-height:44px;
+margin:6px 0 4px;
+}
+
+#unoYou{
+min-width:0;
+flex:1 1 auto;
+}
+
+#unoYou .unoPlayerChip{
+width:max-content;
+max-width:100%;
 }
 
 .unoTitleRow h2{
@@ -97,103 +167,145 @@ background:#6b2d2d;
 display:none;
 }
 
-#unoTurnIndicator.unoYourTurn{
-color:#ffd866;
+#unoTurnIndicator{
+margin:0;
+padding:6px 12px;
+border-radius:999px;
+background:#243044;
+color:#d5e2f2;
+font-size:13px;
+font-weight:800;
+line-height:1.2;
+text-align:center;
+white-space:nowrap;
 }
 
-/* Physical table seating around the UNO piles */
+#unoTurnIndicator.unoYourTurn{
+background:#f5c518;
+color:#2a2108;
+}
+
+.unoYouBar #unoTurnIndicator{
+max-width:58%;
+overflow:hidden;
+text-overflow:ellipsis;
+flex:0 1 auto;
+}
+
+/* Green felt. Opponents sit on the rim. Piles stay in the middle. */
 .unoTableArena{
-display:grid;
-grid-template-columns:minmax(110px,160px) minmax(0,1fr) minmax(110px,160px);
-grid-template-rows:auto minmax(200px,1fr) auto;
-gap:10px 14px;
-align-items:center;
-justify-items:center;
-margin:4px 0 12px;
+position:relative;
+min-height:clamp(300px, 48vh, 540px);
+margin:4px 0 8px;
+background:
+  radial-gradient(ellipse at 50% 46%, #3eae62 0%, #1d7a3e 58%, #0e4e28 100%);
+border:3px solid #166338;
+border-radius:46% / 42%;
+box-shadow:inset 0 0 0 7px rgba(0,0,0,.16), 0 10px 24px rgba(0,0,0,.28);
+overflow:hidden;
 }
 
 .unoTableArena .unoTableCenter{
-grid-column:2;
-grid-row:2;
-width:100%;
-min-width:0;
+position:absolute;
+left:50%;
+top:56%;
+transform:translate(-50%, -50%);
+z-index:2;
+width:max-content;
+max-width:54%;
 }
 
 .unoSeat{
-width:100%;
-max-width:170px;
-position:relative;
+position:absolute;
+z-index:3;
+width:max-content;
+max-width:34%;
+min-width:0;
+overflow:hidden;
 }
 
 .unoSeat.empty{
-visibility:hidden;
-pointer-events:none;
-}
-
-.unoTableArena .seat-top{ grid-column:2; grid-row:1; }
-.unoTableArena .seat-left{ grid-column:1; grid-row:2; }
-.unoTableArena .seat-right{ grid-column:3; grid-row:2; }
-.unoTableArena .seat-bottom{ grid-column:2; grid-row:3; }
-.unoTableArena .seat-tl,
-.unoTableArena .seat-tr,
-.unoTableArena .seat-bl,
-.unoTableArena .seat-br{ display:none; }
-
-/* 5 players: corners + bottom */
-.unoTableArena[data-count="5"]{
-grid-template-columns:minmax(100px,150px) minmax(0,1fr) minmax(100px,150px);
-grid-template-rows:auto auto minmax(180px,1fr) auto;
-}
-.unoTableArena[data-count="5"] .seat-tl{
-display:block;
-grid-column:1;
-grid-row:1;
-}
-.unoTableArena[data-count="5"] .seat-tr{
-display:block;
-grid-column:3;
-grid-row:1;
-}
-.unoTableArena[data-count="5"] .seat-bl{
-display:block;
-grid-column:1;
-grid-row:4;
-}
-.unoTableArena[data-count="5"] .seat-br{
-display:block;
-grid-column:3;
-grid-row:4;
-}
-.unoTableArena[data-count="5"] .seat-bottom{
-grid-column:2;
-grid-row:4;
-}
-.unoTableArena[data-count="5"] .unoTableCenter{
-grid-column:2;
-grid-row:2 / span 2;
-}
-.unoTableArena[data-count="5"] .seat-top,
-.unoTableArena[data-count="5"] .seat-left,
-.unoTableArena[data-count="5"] .seat-right{
 display:none;
 }
 
+.unoSeat .unoPlayerChip{
+max-width:100%;
+}
+
+.unoTableArena .seat-top{ top:3%; left:50%; transform:translateX(-50%); max-width:46%; }
+.unoTableArena .seat-ul{ top:20%; left:2%; max-width:40%; }
+.unoTableArena .seat-ur{ top:20%; right:2%; max-width:40%; }
+.unoTableArena .seat-left,
+.unoTableArena .seat-right{ max-width:calc(50% - 90px); }
+.unoTableArena .seat-left{ top:50%; left:1.5%; }
+.unoTableArena .seat-right{ top:50%; right:1.5%; }
+.unoTableArena .seat-left .unoMiniHand,
+.unoTableArena .seat-right .unoMiniHand{ display:none; }
+
 .unoPlayerChip{
-background:#3a4256;
-border-radius:10px;
-padding:8px 10px;
-width:100%;
-border:2px solid transparent;
+display:flex;
+flex-wrap:wrap;
+align-items:center;
+gap:6px;
+background:rgba(16, 24, 36, .82);
+border-radius:999px;
+padding:4px 8px 4px 4px;
+width:max-content;
+max-width:100%;
+border:1px solid rgba(255,255,255,.08);
 position:relative;
-text-align:center;
-transition:border-color .2s ease, box-shadow .2s ease, background .2s ease;
+text-align:left;
 }
 
 .unoPlayerChip.turn{
-border-color:#ffd866;
-background:#5a4a20;
-box-shadow:0 0 0 2px rgba(255,216,102,.35), 0 0 18px rgba(255,216,102,.4);
-animation:unoSeatPulse 1.4s ease-in-out infinite;
+border-color:#f5c518;
+box-shadow:0 0 0 1px rgba(245,197,24,.45);
+}
+
+.unoAvatar{
+width:28px;
+height:28px;
+border-radius:50%;
+display:flex;
+align-items:center;
+justify-content:center;
+color:#fff;
+font-size:13px;
+font-weight:800;
+flex:0 0 auto;
+}
+
+.unoSeatText{
+min-width:0;
+flex:1 1 36px;
+overflow:hidden;
+}
+
+.unoPlayerChip .unoName,
+.unoPlayerChip .unoCount{
+white-space:nowrap;
+overflow:hidden;
+text-overflow:ellipsis;
+}
+
+.unoMiniHand{
+display:flex;
+align-items:flex-end;
+margin-left:2px;
+}
+
+.unoMiniBack{
+width:12px;
+height:16px;
+margin-left:-6px;
+border-radius:2px;
+background:#c81e1e;
+border:1px solid #f3f3f3;
+box-shadow:0 1px 1px rgba(0,0,0,.35);
+}
+
+.unoMiniBack:first-child{
+margin-left:0;
 }
 
 .unoPlayerChip.me{
@@ -201,7 +313,8 @@ box-shadow:inset 0 0 0 1px #9db2d0;
 }
 
 .unoPlayerChip.me.turn{
-box-shadow:0 0 0 2px rgba(255,216,102,.45), 0 0 18px rgba(255,216,102,.5), inset 0 0 0 1px #9db2d0;
+border-color:#f5c518;
+box-shadow:0 0 0 1px rgba(245,197,24,.7);
 }
 
 .unoPlayerChip .unoName{
@@ -216,16 +329,17 @@ margin-top:2px;
 }
 
 .unoTurnBadge{
-display:inline-block;
+position:absolute;
+top:2px;
+right:4px;
 font-size:10px;
 font-weight:800;
-letter-spacing:.06em;
+letter-spacing:.04em;
 color:#2a2108;
 background:#ffd866;
 border-radius:999px;
-padding:2px 7px;
-margin-bottom:4px;
-animation:unoBadgeBlink 1s ease-in-out infinite;
+padding:1px 6px;
+line-height:1.3;
 }
 
 .seatToast{
@@ -282,8 +396,9 @@ letter-spacing:.04em;
 }
 
 .unoChallengeBtn{
-margin-top:6px;
-width:100%;
+flex:1 0 100%;
+margin-top:4px;
+width:auto;
 padding:4px 6px;
 font-size:11px;
 background:#a33b3b;
@@ -293,24 +408,18 @@ border-radius:6px;
 cursor:pointer;
 }
 
-#unoTurnIndicator{
-text-align:center;
-font-size:16px;
-margin:0 0 8px;
-}
-
 .unoTable{
 position:relative;
 display:flex;
 justify-content:center;
 align-items:center;
-gap:36px;
-background:radial-gradient(ellipse at center,#2a6b4a 0%,#1a3d2c 70%,#12281c 100%);
-border:3px solid #0f241a;
-border-radius:16px;
-padding:28px 20px;
-min-height:min(42vh,360px);
-box-shadow:inset 0 0 40px rgba(0,0,0,.35);
+gap:28px;
+background:transparent;
+border:none;
+border-radius:0;
+padding:0;
+min-height:0;
+box-shadow:none;
 }
 
 .unoDirFx{
@@ -350,7 +459,9 @@ gap:6px;
 
 .unoPileLabel{
 font-size:12px;
-color:#d7e6d7;
+font-weight:700;
+color:#e7f6ea;
+letter-spacing:.02em;
 }
 
 .unoCard{
@@ -453,10 +564,14 @@ display:inline-block;
 
 .unoHandSection h3,
 .unoHandLabel{
-margin:8px 0 4px;
-font-size:15px;
-color:#c5d2e8;
-text-align:center;
+position:absolute;
+width:1px;
+height:1px;
+margin:-1px;
+padding:0;
+overflow:hidden;
+clip:rect(0,0,0,0);
+border:0;
 }
 
 .unoHand{
@@ -465,12 +580,14 @@ grid-template-columns:repeat(var(--hand-cols, 7), minmax(0, var(--hand-tile-w, 6
 grid-auto-rows:var(--hand-tile-h, 96px);
 justify-content:center;
 align-content:center;
-gap:var(--hand-gap, 4px);
-overflow:visible;
-min-height:104px;
-padding:10px;
-background:#1e2430;
-border-radius:10px;
+column-gap:calc(var(--hand-gap, 6px) - var(--hand-overlap, 0px));
+row-gap:var(--hand-gap, 6px);
+overflow:hidden;
+box-sizing:border-box;
+min-height:132px;
+padding:6px;
+background:transparent;
+border-radius:0;
 }
 
 .unoCard.inHand{
@@ -497,10 +614,13 @@ min-width:110px;
 }
 
 #unoDrawBtn{
-background:#2e5d43;
+background:#1b8f4a;
 color:#fff;
 border:none;
-border-radius:8px;
+border-radius:12px;
+font-weight:800;
+font-size:16px;
+min-height:44px;
 }
 
 #unoCallBtn{
@@ -596,31 +716,41 @@ animation:unoPulse .6s ease 3;
 @media(max-width:600px){
 #unoScreen{
 width:96vw;
-padding:14px;
+padding:10px;
 }
-.unoTableArena{
-grid-template-columns:minmax(70px,96px) minmax(0,1fr) minmax(70px,96px);
-gap:6px;
-}
-.unoCard{
+.unoTableArena .unoCard{
 width:52px;
 height:78px;
+}
+.unoTable{
+gap:16px;
 }
 .unoBotSpeedLabel{
 display:none;
 }
-.unoHand{
-min-height:88px;
-}
-.unoTable{
-gap:16px;
-min-height:140px;
-padding:14px 10px;
-}
-.unoPlayerChip{
-padding:6px 7px;
+.unoAvatar{
+width:24px;
+height:24px;
+font-size:12px;
 }
 .unoPlayerChip .unoName{
-font-size:12px;
+font-size:11px;
+}
+.unoPlayerChip .unoCount{
+font-size:10px;
+}
+.unoMiniBack{
+width:10px;
+height:14px;
+}
+.unoTableArena .seat-left,
+.unoTableArena .seat-right{
+max-width:calc(50% - 66px);
+}
+.unoTableArena .seat-ul .botTag,
+.unoTableArena .seat-ur .botTag,
+.unoTableArena .seat-left .botTag,
+.unoTableArena .seat-right .botTag{
+display:none;
 }
 }
