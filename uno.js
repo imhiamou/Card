@@ -7,9 +7,16 @@
     yellow: "#e6c200"
   };
 
+  const MUSIC_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M9 17.5V6.2L19 4v11.2"/><circle cx="7.2" cy="17.5" r="2.3" fill="currentColor"/><circle cx="17.2" cy="15.2" r="2.3" fill="currentColor"/></svg>';
+  const SOUND_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M4 9.5h3.2L12 5.2v13.6l-4.8-4.3H4z"/><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M15.5 9.2a3.6 3.6 0 010 5.6M17.8 7a6.2 6.2 0 010 10"/></svg>';
+
   const SCREEN_HTML =
     '<div class="unoTitleRow">' +
       '<h2>UNO</h2>' +
+      '<div class="unoQuickAudio">' +
+        '<button type="button" id="unoMusicBtn" class="unoIconBtn" aria-pressed="false" aria-label="Mute music">' + MUSIC_ICON + '</button>' +
+        '<button type="button" id="unoSfxBtn" class="unoIconBtn" aria-pressed="false" aria-label="Mute sounds">' + SOUND_ICON + '</button>' +
+      '</div>' +
       '<button type="button" id="unoMenuBtn" class="unoMenuBtn" aria-expanded="false">Menu</button>' +
       '<div class="unoMeta" id="unoMeta"></div>' +
       '<div class="unoTopTools">' +
@@ -30,16 +37,19 @@
         '<button type="button" id="unoScoreToggle" class="unoScoreToggle hidden">Score</button>' +
       '</div>' +
     '</div>' +
+    '<div class="unoStatusBar">' +
+      '<span class="unoColorDot" id="unoColorDot"></span>' +
+      '<span id="unoColorText">—</span>' +
+      '<span class="unoDir" id="unoDir"><span class="unoDirIcon" id="unoDirIcon" aria-hidden="true">↻</span><span id="unoDirText"></span></span>' +
+      '<span id="unoPenaltyText"></span>' +
+    '</div>' +
     '<div class="unoTableArena" id="unoTableArena" data-count="2">' +
+      '<div class="unoSeat seat-ul" data-seat="ul"></div>' +
       '<div class="unoSeat seat-top" data-seat="top"></div>' +
-      '<div class="unoSeat seat-tl" data-seat="tl"></div>' +
-      '<div class="unoSeat seat-tr" data-seat="tr"></div>' +
+      '<div class="unoSeat seat-ur" data-seat="ur"></div>' +
       '<div class="unoSeat seat-left" data-seat="left"></div>' +
       '<div class="unoSeat seat-right" data-seat="right"></div>' +
-      '<div class="unoSeat seat-bl" data-seat="bl"></div>' +
-      '<div class="unoSeat seat-br" data-seat="br"></div>' +
       '<div class="unoTableCenter">' +
-        '<h2 id="unoTurnIndicator"></h2>' +
         '<div class="unoTable">' +
           '<div class="unoDirFx" id="unoDirFx" aria-hidden="true"></div>' +
           '<div class="unoPileCol">' +
@@ -51,15 +61,11 @@
             '<div class="unoPileLabel">Discard</div>' +
           '</div>' +
         '</div>' +
-        '<div class="unoColorBar">' +
-          '<span>Current color</span>' +
-          '<span class="unoColorDot" id="unoColorDot"></span>' +
-          '<span id="unoColorText">—</span>' +
-          '<span id="unoDirText"></span>' +
-          '<span id="unoPenaltyText"></span>' +
-        '</div>' +
       '</div>' +
-      '<div class="unoSeat seat-bottom" data-seat="bottom"></div>' +
+    '</div>' +
+    '<div class="unoYouBar">' +
+      '<div id="unoYou"></div>' +
+      '<h2 id="unoTurnIndicator"></h2>' +
     '</div>' +
     '<div class="unoHandSection">' +
       '<div class="unoHandLabel" id="unoHandLabel">Your hand</div>' +
@@ -271,7 +277,21 @@
     if (clearBoard) clearScoreboard();
   }
 
+  function isSfxMuted() {
+    try { return localStorage.getItem("unoSfxMuted") === "1"; } catch (err) { return false; }
+  }
+
+  function updateSfxButton() {
+    const btn = $("unoSfxBtn");
+    if (!btn) return;
+    const muted = isSfxMuted();
+    btn.classList.toggle("is-off", muted);
+    btn.setAttribute("aria-pressed", muted ? "true" : "false");
+    btn.setAttribute("aria-label", muted ? "Unmute sounds" : "Mute sounds");
+  }
+
   function sfx(name) {
+    if (isSfxMuted()) return;
     if (window.GameSfx && typeof window.GameSfx[name] === "function") {
       window.GameSfx[name]();
     }
@@ -296,11 +316,31 @@
     if (unoEndButtons) unoEndButtons.classList.remove("hidden");
   }
 
-  function seatNamesForCount(n) {
-    if (n <= 2) return ["bottom", "top"];
-    if (n === 3) return ["bottom", "left", "right"];
-    if (n === 4) return ["bottom", "left", "top", "right"];
-    return ["bottom", "bl", "tl", "tr", "br"].slice(0, Math.max(n, 5));
+  function opponentSeatNames(n) {
+    if (n <= 1) return ["top"];
+    if (n === 2) return ["left", "right"];
+    if (n === 3) return ["left", "top", "right"];
+    if (n === 4) return ["ul", "ur", "left", "right"];
+    return ["ul", "top", "ur", "left", "right"];
+  }
+
+  function playerInitial(name) {
+    const text = (name || "?").trim();
+    return text ? text.charAt(0).toUpperCase() : "?";
+  }
+
+  function avatarHue(name) {
+    const text = name || "";
+    let hue = 0;
+    for (let i = 0; i < text.length; i++) hue = (hue + text.charCodeAt(i) * 17) % 360;
+    return hue;
+  }
+
+  function miniBacks(count) {
+    const shown = Math.max(0, Math.min(4, count || 0));
+    let html = "";
+    for (let i = 0; i < shown; i++) html += '<span class="unoMiniBack"></span>';
+    return html;
   }
 
   function playersFromMe() {
@@ -332,7 +372,8 @@
 
   function flashSeatToast(playerId, text) {
     if (!unoTableArena || !playerId) return;
-    const chip = unoTableArena.querySelector('.unoPlayerChip[data-pid="' + playerId + '"]');
+    const root = unoScreen || unoTableArena;
+    const chip = root.querySelector('.unoPlayerChip[data-pid="' + playerId + '"]');
     if (!chip) return;
     const old = chip.querySelector(".seatToast");
     if (old) old.remove();
@@ -361,7 +402,9 @@
     if (currentTurnId) lastTurnId = currentTurnId;
     const turnId = currentTurnId || lastTurnId;
     const ordered = playersFromMe();
-    const seats = seatNamesForCount(ordered.length);
+    const me = ordered.find((p) => socket && p.id === socket.id) || null;
+    const others = me ? ordered.filter((p) => p.id !== me.id) : ordered.slice();
+    const seats = opponentSeatNames(others.length);
     clearSeats();
     unoTableArena.setAttribute("data-count", String(ordered.length));
 
@@ -372,30 +415,39 @@
     let soonestChallengeMs = null;
     const now = Date.now();
 
-    ordered.forEach((p, i) => {
+    const paintChip = (p, turn, local) => {
+      const chip = document.createElement("div");
+      chip.className = "unoPlayerChip" + (turn ? " turn" : "") + (local ? " me" : "") + (p.away ? " away" : "");
+      chip.dataset.pid = p.id;
+      const label = local ? "You" : (p.name || "Player");
+      chip.title = label + (p.isBot ? ", bot" : "") + ", " + p.handCount + (p.handCount === 1 ? " card" : " cards");
+      chip.innerHTML =
+        '<div class="unoAvatar" style="background:hsl(' + avatarHue(p.name || label) + ',52%,42%)">' +
+          playerInitial(local ? "You" : p.name) + "</div>" +
+        '<div class="unoSeatText">' +
+          '<div class="unoName">' + label +
+          (p.isBot ? ' <span class="botTag">BOT</span>' : "") +
+          (p.away ? " · Lobby" : "") +
+          (p.unoCalled ? " · UNO" : "") +
+          "</div>" +
+          '<div class="unoCount">' + p.handCount + (p.handCount === 1 ? " card" : " cards") + "</div>" +
+        "</div>" +
+        (local ? "" : '<div class="unoMiniHand">' + miniBacks(p.handCount) + "</div>") +
+        (turn && !local ? '<div class="unoTurnBadge">Turn</div>' : "");
+      return chip;
+    };
+
+    others.forEach((p, i) => {
       const seatName = seats[i];
       if (!seatName) return;
       const seat = unoTableArena.querySelector('.unoSeat[data-seat="' + seatName + '"]');
       if (!seat) return;
       seat.classList.remove("empty");
-
-      const me = socket && p.id === socket.id;
       const turn = p.id === turnId && !gameOver && !p.away;
-      const chip = document.createElement("div");
-      chip.className = "unoPlayerChip" + (turn ? " turn" : "") + (me ? " me" : "") + (p.away ? " away" : "");
-      chip.dataset.pid = p.id;
-      chip.innerHTML =
-        (turn ? '<div class="unoTurnBadge">' + (me ? "YOUR TURN" : "TURN") + "</div>" : "") +
-        '<div class="unoName">' + (me ? "YOU" : (p.name || "Player")) +
-        (p.isBot ? ' <span class="botTag">BOT</span>' : "") +
-        (p.away ? " · Lobby" : "") +
-        (p.unoCalled ? " · UNO" : "") +
-        '</div><div class="unoCount">' + p.handCount + " cards</div>";
+      const chip = paintChip(p, turn, false);
 
-      // Challenge only after the 2s grace window to yell UNO.
       const challengeAt = typeof p.unoChallengeAt === "number" ? p.unoChallengeAt : null;
       const canChallenge =
-        !me &&
         !gameOver &&
         p.handCount === 1 &&
         p.unoLiable &&
@@ -406,13 +458,12 @@
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "unoChallengeBtn";
-        btn.textContent = "Challenge UNO";
+        btn.textContent = "Challenge";
         btn.onclick = () => {
           socket.emit("unoChallenge", { roomCode: currentRoom, targetId: p.id });
         };
         chip.appendChild(btn);
       } else if (
-        !me &&
         !gameOver &&
         p.handCount === 1 &&
         p.unoLiable &&
@@ -427,6 +478,15 @@
       }
       seat.appendChild(chip);
     });
+
+    const youHost = $("unoYou");
+    if (youHost) {
+      youHost.innerHTML = "";
+      if (me) {
+        const turn = me.id === turnId && !gameOver && !me.away;
+        youHost.appendChild(paintChip(me, turn, true));
+      }
+    }
 
     if (soonestChallengeMs != null) {
       challengeRefreshTimer = setTimeout(() => {
@@ -461,8 +521,13 @@
     if (unoColorText) {
       unoColorText.textContent = currentColor ? currentColor.toUpperCase() : "—";
     }
+    const clockwise = direction === 1;
+    const dirWrap = $("unoDir");
+    if (dirWrap) dirWrap.classList.toggle("ccw", !clockwise);
+    const dirIcon = $("unoDirIcon");
+    if (dirIcon) dirIcon.textContent = clockwise ? "↻" : "↺";
     if (unoDirText) {
-      unoDirText.textContent = direction === 1 ? "· Clockwise →" : "· ← Counter-clockwise";
+      unoDirText.textContent = clockwise ? "Clockwise" : "Counter-clockwise";
     }
     if (unoPenaltyText) {
       unoPenaltyText.textContent = pendingPenalty > 0 ? ("· Stack +" + pendingPenalty) : "";
@@ -486,6 +551,7 @@
     unoHand.style.setProperty("--hand-tile-w", box.width + "px");
     unoHand.style.setProperty("--hand-tile-h", box.height + "px");
     unoHand.style.setProperty("--hand-gap", box.gap + "px");
+    unoHand.style.setProperty("--hand-overlap", (box.overlap || 0) + "px");
   }
 
   function renderHand(animateId) {
@@ -672,11 +738,18 @@
   }
 
   function updateMuteButton() {
-    const btn = $("unoMuteBtn");
     const muted = isBgmMuted();
-    if (!btn) return;
-    btn.textContent = muted ? "Unmute" : "Mute";
-    btn.setAttribute("aria-pressed", muted ? "true" : "false");
+    const btn = $("unoMuteBtn");
+    if (btn) {
+      btn.textContent = muted ? "Unmute" : "Mute";
+      btn.setAttribute("aria-pressed", muted ? "true" : "false");
+    }
+    const music = $("unoMusicBtn");
+    if (music) {
+      music.classList.toggle("is-off", muted);
+      music.setAttribute("aria-pressed", muted ? "true" : "false");
+      music.setAttribute("aria-label", muted ? "Unmute music" : "Mute music");
+    }
   }
 
   function applyBgmVolume(value, persist) {
@@ -863,6 +936,20 @@
       muteBtn.onclick = () => setBgmMuted(!isBgmMuted());
     }
     updateMuteButton();
+    const musicBtn = $("unoMusicBtn");
+    if (musicBtn && !musicBtn.dataset.wired) {
+      musicBtn.dataset.wired = "1";
+      musicBtn.onclick = () => setBgmMuted(!isBgmMuted());
+    }
+    const sfxBtn = $("unoSfxBtn");
+    if (sfxBtn && !sfxBtn.dataset.wired) {
+      sfxBtn.dataset.wired = "1";
+      sfxBtn.onclick = () => {
+        try { localStorage.setItem("unoSfxMuted", isSfxMuted() ? "0" : "1"); } catch (err) { /* ignore */ }
+        updateSfxButton();
+      };
+    }
+    updateSfxButton();
     const speedBox = $("unoBotSpeed");
     if (speedBox && !speedBox.dataset.wired) {
       speedBox.dataset.wired = "1";

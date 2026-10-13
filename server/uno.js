@@ -1,5 +1,5 @@
 /*
- * UNO — isolated multiplayer game mode (2–5 players).
+ * UNO — isolated multiplayer game mode (2–6 players).
  *
  * Loaded by server.js only as a lobby router target. Does not alter
  * Hidden Hunt, Dominoes, or Hidden Hunter handlers.
@@ -17,7 +17,7 @@ const unoBot = require("./bots/unoBot");
 const COLORS = ["red", "blue", "green", "yellow"];
 const NUMBERS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 const HAND_SIZE = 7;
-const ALLOWED_MAX_PLAYERS = [2, 3, 4, 5];
+const ALLOWED_MAX_PLAYERS = [2, 3, 4, 5, 6];
 /** Grace window after reaching 1 card before others can challenge a missed UNO call. */
 const UNO_CALL_GRACE_MS = process.env.BOT_TEST_FAST === "1" ? 5 : 2000;
 

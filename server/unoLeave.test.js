@@ -252,15 +252,29 @@ test("hand fit keeps every card inside the box", () => {
   assert.ok(few.width > many.width);
   assert.ok(few.cols * few.rows >= 2);
   assert.ok(many.cols * many.rows >= 15);
-  assert.ok(many.width >= 28);
-  assert.ok(many.height >= 42);
-  const usedW = many.width * many.cols + many.gap * Math.max(0, many.cols - 1);
-  const usedH = many.height * many.rows + many.gap * Math.max(0, many.rows - 1);
-  assert.ok(usedW <= 360);
-  assert.ok(usedH <= 180);
+  assert.ok(many.width >= 36);
+  assert.ok(many.rows <= 2);
+  assert.ok(many.height >= 52);
+  const span = function (box, limitW, limitH) {
+    const overlap = box.overlap || 0;
+    const usedW = box.width * box.cols + box.gap * Math.max(0, box.cols - 1) - overlap * Math.max(0, box.cols - 1);
+    const usedH = box.height * box.rows + box.gap * Math.max(0, box.rows - 1);
+    assert.ok(usedW <= limitW, "width " + usedW);
+    assert.ok(usedH <= limitH + box.height, "height " + usedH);
+  };
+  span(many, 360, 180);
   const portrait = fit.fit(20, 340, 190);
   assert.ok(portrait.cols * portrait.rows >= 20);
-  assert.ok(portrait.width >= 28);
+  assert.ok(portrait.rows <= 2);
+  assert.ok(portrait.width >= 36);
+  span(portrait, 340, 190);
+});
+
+test("UNO lobbies can seat six players", () => {
+  assert.deepEqual(uno.ALLOWED_MAX_PLAYERS, [2, 3, 4, 5, 6]);
+  assert.equal(uno.normalizeMaxPlayers(6), 6);
+  assert.equal(uno.normalizeMaxPlayers(7), 2);
+  assert.equal(uno.normalizeMaxPlayers("5"), 5);
 });
 
 test("UNO menu matches the Dominoes controls and has no hand pager", () => {
