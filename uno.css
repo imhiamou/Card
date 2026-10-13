@@ -69,21 +69,56 @@ line-height:1;
 
 .unoYouBar{
 display:flex;
+flex-direction:column;
 align-items:center;
-justify-content:space-between;
-gap:8px;
-min-height:44px;
-margin:6px 0 4px;
+justify-content:flex-end;
+gap:2px;
+min-height:0;
+margin:-34px 0 2px;
+position:relative;
+z-index:4;
+pointer-events:none;
+}
+
+.unoYouBar #unoYou,
+.unoYouBar #unoTurnIndicator,
+.unoYouBar .unoPlayerChip{
+pointer-events:auto;
 }
 
 #unoYou{
 min-width:0;
-flex:1 1 auto;
+flex:0 0 auto;
+display:flex;
+justify-content:center;
 }
 
 #unoYou .unoPlayerChip{
 width:max-content;
-max-width:100%;
+max-width:min(100%, 240px);
+flex-wrap:nowrap;
+background:rgba(10, 16, 26, .94);
+box-shadow:0 6px 16px rgba(0,0,0,.35);
+padding:4px 12px 4px 4px;
+border-color:rgba(245,197,24,.85);
+}
+
+#unoYou .unoAvatar{
+width:32px;
+height:32px;
+font-size:14px;
+}
+
+#unoYou .unoSeatText{
+flex:0 0 auto;
+min-width:52px;
+overflow:visible;
+}
+
+#unoYou .unoName,
+#unoYou .unoCount{
+overflow:visible;
+text-overflow:clip;
 }
 
 .unoTitleRow h2{
@@ -186,10 +221,18 @@ color:#2a2108;
 }
 
 .unoYouBar #unoTurnIndicator{
-max-width:58%;
+order:-1;
+max-width:240px;
 overflow:hidden;
 text-overflow:ellipsis;
-flex:0 1 auto;
+margin:0;
+padding:3px 10px;
+font-size:12px;
+box-shadow:0 4px 12px rgba(0,0,0,.28);
+}
+
+.unoYouBar #unoTurnIndicator.unoYourTurn{
+box-shadow:0 0 14px rgba(245,197,24,.7);
 }
 
 /* Green felt. Opponents sit on the rim. Piles stay in the middle. */
@@ -208,11 +251,11 @@ overflow:hidden;
 .unoTableArena .unoTableCenter{
 position:absolute;
 left:50%;
-top:56%;
+top:48%;
 transform:translate(-50%, -50%);
 z-index:2;
 width:max-content;
-max-width:54%;
+max-width:58%;
 }
 
 .unoSeat{
@@ -233,14 +276,12 @@ max-width:100%;
 }
 
 .unoTableArena .seat-top{ top:3%; left:50%; transform:translateX(-50%); max-width:46%; }
-.unoTableArena .seat-ul{ top:20%; left:2%; max-width:40%; }
-.unoTableArena .seat-ur{ top:20%; right:2%; max-width:40%; }
+.unoTableArena .seat-ul{ top:14%; left:7%; max-width:38%; }
+.unoTableArena .seat-ur{ top:14%; right:7%; max-width:38%; }
 .unoTableArena .seat-left,
-.unoTableArena .seat-right{ max-width:calc(50% - 90px); }
-.unoTableArena .seat-left{ top:50%; left:1.5%; }
-.unoTableArena .seat-right{ top:50%; right:1.5%; }
-.unoTableArena .seat-left .unoMiniHand,
-.unoTableArena .seat-right .unoMiniHand{ display:none; }
+.unoTableArena .seat-right{ max-width:calc(50% - 88px); }
+.unoTableArena .seat-left{ top:66%; left:9%; }
+.unoTableArena .seat-right{ top:66%; right:9%; }
 
 .unoPlayerChip{
 display:flex;
@@ -279,6 +320,11 @@ flex:0 0 auto;
 min-width:0;
 flex:1 1 36px;
 overflow:hidden;
+}
+
+.unoTableArena .seat-left .unoMiniHand,
+.unoTableArena .seat-right .unoMiniHand{
+display:none;
 }
 
 .unoPlayerChip .unoName,
@@ -576,11 +622,11 @@ border:0;
 
 .unoHand{
 display:grid;
-grid-template-columns:repeat(var(--hand-cols, 7), minmax(0, var(--hand-tile-w, 64px)));
+grid-template-columns:repeat(calc(var(--hand-cols, 7) - 1), calc(var(--hand-tile-w, 64px) - var(--hand-overlap, 0px))) var(--hand-tile-w, 64px);
 grid-auto-rows:var(--hand-tile-h, 96px);
 justify-content:center;
 align-content:center;
-column-gap:calc(var(--hand-gap, 6px) - var(--hand-overlap, 0px));
+column-gap:var(--hand-gap, 6px);
 row-gap:var(--hand-gap, 6px);
 overflow:hidden;
 box-sizing:border-box;
@@ -593,7 +639,19 @@ border-radius:0;
 .unoCard.inHand{
 width:var(--hand-tile-w, 64px);
 height:var(--hand-tile-h, 96px);
-max-width:100%;
+min-width:0;
+max-width:none;
+justify-self:start;
+position:relative;
+z-index:1;
+}
+
+.unoCard.inHand.playable{
+z-index:2;
+}
+
+.unoCard.inHand.selected{
+z-index:4;
 }
 
 .unoHandPager{
@@ -617,10 +675,11 @@ min-width:110px;
 background:#1b8f4a;
 color:#fff;
 border:none;
-border-radius:12px;
+border-radius:10px;
 font-weight:800;
-font-size:16px;
-min-height:44px;
+font-size:15px;
+min-height:40px;
+padding:8px 12px;
 }
 
 #unoCallBtn{
@@ -745,7 +804,7 @@ height:14px;
 }
 .unoTableArena .seat-left,
 .unoTableArena .seat-right{
-max-width:calc(50% - 66px);
+max-width:calc(50% - 88px);
 }
 .unoTableArena .seat-ul .botTag,
 .unoTableArena .seat-ur .botTag,
