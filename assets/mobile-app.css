@@ -788,7 +788,24 @@ html.gameweb-app #unoScreen .unoTitleRow {
 
 html.gameweb-app #unoScreen .unoTitleRow h2 {
   margin: 0;
-  font-size: 16px;
+  font-size: 18px;
+  line-height: 1;
+}
+
+html.gameweb-app #unoScreen .unoIconBtn,
+html.gameweb-app #unoScreen .unoMenuBtn {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  min-height: 34px;
+  margin: 0;
+  padding: 0;
+}
+
+html.gameweb-app #unoScreen .unoMenuBtn {
+  width: auto;
+  padding: 0 12px;
+  border-radius: 10px;
 }
 
 html.gameweb-app #unoScreen .unoMeta {
@@ -816,11 +833,18 @@ html.gameweb-app #unoScreen.app-menu-open .unoTopTools {
   overflow: auto;
 }
 
-html.gameweb-app #unoScreen .unoStatusBar,
+html.gameweb-app #unoScreen .unoStatusBar {
+  flex: 0 0 auto;
+  margin: 0 0 2px;
+  min-height: 0;
+  font-size: 12px;
+  gap: 6px;
+}
+
 html.gameweb-app #unoScreen .unoYouBar {
   flex: 0 0 auto;
-  margin: 0;
   min-height: 0;
+  margin: -52px 0 0;
 }
 
 html.gameweb-app #unoScreen .unoTableArena {
@@ -836,13 +860,13 @@ html.gameweb-app #unoScreen .unoTableArena .unoTable {
 }
 
 html.gameweb-app #unoScreen .unoTableArena .unoCard {
-  width: 52px;
-  height: 78px;
+  width: 66px;
+  height: 98px;
 }
 
 html.gameweb-app #unoScreen .seat-left,
 html.gameweb-app #unoScreen .seat-right {
-  max-width: calc(50% - 66px);
+  max-width: calc(50% - 90px);
 }
 
 html.gameweb-app #unoScreen .unoHandSection {
@@ -852,30 +876,35 @@ html.gameweb-app #unoScreen .unoHandSection {
   overflow: hidden;
 }
 
+html.gameweb-app #unoScreen .unoTableArena .botTag {
+  display: none;
+}
+
 html.gameweb-app #unoScreen .unoHand {
   display: grid;
-  grid-template-columns: repeat(var(--hand-cols, 4), minmax(0, var(--hand-tile-w, 48px)));
-  grid-auto-rows: var(--hand-tile-h, 72px);
+  grid-template-columns: repeat(calc(var(--hand-cols, 8) - 1), calc(var(--hand-tile-w, 36px) - var(--hand-overlap, 0px))) var(--hand-tile-w, 36px);
+  grid-auto-rows: var(--hand-tile-h, 54px);
   justify-content: center;
   align-content: center;
   overflow: hidden;
   box-sizing: border-box;
   min-height: 0;
-  height: clamp(150px, 26vh, 196px);
-  max-height: 196px;
+  height: 126px;
+  max-height: 132px;
   width: 100%;
   max-width: 100%;
-  column-gap: calc(var(--hand-gap, 4px) - var(--hand-overlap, 0px));
+  column-gap: var(--hand-gap, 4px);
   row-gap: var(--hand-gap, 4px);
-  padding: 6px 4px;
+  padding: 4px 2px 2px;
   background: transparent;
 }
 
 html.gameweb-app #unoScreen .unoCard.inHand {
-  width: var(--hand-tile-w, 48px);
-  height: var(--hand-tile-h, 72px);
+  width: var(--hand-tile-w, 36px);
+  height: var(--hand-tile-h, 54px);
   min-width: 0;
-  max-width: 100%;
+  max-width: none;
+  justify-self: start;
 }
 
 html.gameweb-app #unoScreen .unoCard.playable,
@@ -992,31 +1021,50 @@ html.gameweb-app #unoScreen .unoColorPicker:not(.hidden) {
   }
 
   html.gameweb-app #unoScreen .unoHand {
-    height: auto;
-    max-height: 76px;
+    height: 92px;
+    max-height: 96px;
     min-height: 0;
-    grid-template-columns: repeat(var(--hand-cols, 8), minmax(0, var(--hand-tile-w, 40px)));
+    grid-template-columns: repeat(calc(var(--hand-cols, 8) - 1), calc(var(--hand-tile-w, 40px) - var(--hand-overlap, 0px))) var(--hand-tile-w, 40px);
     grid-auto-rows: var(--hand-tile-h, 58px);
     align-content: center;
   }
 
   html.gameweb-app #unoScreen .unoTableArena .unoCard {
-    width: 48px;
-    height: 72px;
+    width: 44px;
+    height: 66px;
+  }
+
+  html.gameweb-app #unoScreen .unoYouBar {
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin: 0;
+  }
+
+  html.gameweb-app #unoScreen .unoYouBar #unoTurnIndicator {
+    order: 0;
   }
 
   html.gameweb-app #unoScreen .unoTableCenter {
-    top: 66%;
+    top: auto;
+    bottom: 2px;
+    transform: translate(-50%, 0);
   }
 
   html.gameweb-app #unoScreen .seat-top {
-    top: 1%;
+    top: 2px;
+  }
+
+  html.gameweb-app #unoScreen .seat-ul,
+  html.gameweb-app #unoScreen .seat-ur {
+    top: 8%;
   }
 
   html.gameweb-app #unoScreen .seat-left,
   html.gameweb-app #unoScreen .seat-right {
-    top: 42%;
-    max-width: calc(50% - 72px);
+    top: 46%;
+    max-width: calc(50% - 78px);
   }
 }
 

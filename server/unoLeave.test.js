@@ -248,7 +248,11 @@ test("waiting lobby updates when someone leaves before the deal", () => {
 
 test("hand fit keeps every card inside the box", () => {
   const few = fit.fit(2, 360, 180);
+  const hand = fit.fit(7, 360, 140);
   const many = fit.fit(15, 360, 180);
+  assert.equal(hand.rows, 1);
+  assert.ok(hand.width >= 46);
+  assert.ok(few.width > hand.width);
   assert.ok(few.width > many.width);
   assert.ok(few.cols * few.rows >= 2);
   assert.ok(many.cols * many.rows >= 15);
@@ -286,7 +290,7 @@ test("UNO menu matches the Dominoes controls and has no hand pager", () => {
   });
   assert.doesNotMatch(client, /unoHandPrev|unoHandPager|unoHandNext/);
   assert.match(css, /\.unoTopTools/);
-  assert.match(css, /grid-template-columns:repeat\(var\(--hand-cols/);
+  assert.match(css, /grid-template-columns:repeat\(calc\(var\(--hand-cols/);
   assert.match(appCss, /#unoScreen\.app-menu-open \.unoTopTools/);
   assert.match(appCss, /\.unoHandPager/);
   const server = fs.readFileSync(path.join(__dirname, "uno.js"), "utf8");
