@@ -7,9 +7,9 @@
     yellow: "#e6c200"
   };
 
-  function iconImg(name) {
-    return '<img src="assets/uno/icons/' + name + '.svg" alt="" width="18" height="18" draggable="false">';
-  }
+  const PERSON_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="12" cy="8" r="3.4" fill="#fff"/><path fill="#fff" d="M6 19.2c.7-3.2 3-4.8 6-4.8s5.3 1.6 6 4.8z"/></svg>';
+  const MUSIC_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M9 17.5V6.2L19 4v11.2"/><circle cx="7.2" cy="17.5" r="2.3" fill="currentColor"/><circle cx="17.2" cy="15.2" r="2.3" fill="currentColor"/></svg>';
+  const SOUND_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M4 9.5h3.2L12 5.2v13.6l-4.8-4.3H4z"/><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M15.5 9.2a3.6 3.6 0 010 5.6M17.8 7a6.2 6.2 0 010 10"/></svg>';
 
   const SCREEN_HTML =
     '<div class="unoTitleRow">' +
@@ -392,9 +392,8 @@
       const label = local ? "You" : (p.name || "Player");
       chip.title = label + (p.isBot ? ", bot" : "") + ", " + p.handCount + (p.handCount === 1 ? " card" : " cards");
       chip.innerHTML =
-        '<div class="unoAvatar" style="background:hsl(' + avatarHue(p.name || label) + ',52%,42%)" aria-hidden="true">' +
-          '<img src="assets/uno/icons/user.svg" alt="">' +
-        "</div>" +
+        '<div class="unoAvatar" style="background:hsl(' + avatarHue(p.name || label) + ',52%,42%)">' +
+          PERSON_ICON + "</div>" +
         '<div class="unoSeatText">' +
           '<div class="unoName">' + label +
           (p.isBot ? ' <span class="botTag">BOT</span>' : "") +
@@ -515,25 +514,19 @@
 
   function fitHandTiles() {
     const fit = window.UnoHandFit;
-    if (!unoHand || !fit) return null;
-    const host = unoHand.parentElement;
-    const boxW = host && host.clientWidth ? host.clientWidth : unoHand.clientWidth;
-    const box = fit.fit(Math.max(1, hand.length), boxW, unoHand.clientHeight || 150);
+    if (!unoHand || !fit) return;
+    const box = fit.fit(hand.length, unoHand.clientWidth, unoHand.clientHeight || 150);
+    const overlap = box.overlap || 0;
+    const narrow = Math.max(1, box.width - overlap);
+    unoHand.style.gridTemplateColumns = box.cols <= 1
+      ? box.width + "px"
+      : "repeat(" + (box.cols - 1) + ", " + narrow + "px) " + box.width + "px";
     unoHand.style.setProperty("--hand-cols", String(box.cols));
     unoHand.style.setProperty("--hand-rows", String(box.rows));
     unoHand.style.setProperty("--hand-tile-w", box.width + "px");
     unoHand.style.setProperty("--hand-tile-h", box.height + "px");
     unoHand.style.setProperty("--hand-gap", box.gap + "px");
-    unoHand.style.setProperty("--hand-overlap", (box.overlap || 0) + "px");
-    const span = box.width * box.cols - (box.overlap || 0) * Math.max(0, box.cols - 1);
-    if (box.rows > 1) {
-      unoHand.style.flexWrap = "wrap";
-      unoHand.style.maxWidth = Math.max(box.width, span) + "px";
-    } else {
-      unoHand.style.flexWrap = "nowrap";
-      unoHand.style.maxWidth = "100%";
-    }
-    return box;
+    unoHand.style.setProperty("--hand-overlap", overlap + "px");
   }
 
   function renderHand(animateId) {
