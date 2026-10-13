@@ -2,6 +2,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const vm = require("vm");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const uno = require("./uno");
@@ -279,6 +280,25 @@ test("UNO lobbies can seat six players", () => {
   assert.equal(uno.normalizeMaxPlayers(6), 6);
   assert.equal(uno.normalizeMaxPlayers(7), 2);
   assert.equal(uno.normalizeMaxPlayers("5"), 5);
+});
+
+test("UNO client loads and builds the table markup", () => {
+  const client = fs.readFileSync(path.join(__dirname, "../uno.js"), "utf8");
+  const declared = client.indexOf("function iconImg");
+  const used = client.indexOf("iconImg(");
+  assert.ok(declared !== -1 && used !== -1 && declared < used);
+  const sandbox = {
+    window: {},
+    document: {
+      getElementById() { return null; },
+      addEventListener() {},
+      documentElement: { classList: { contains() { return false; } } }
+    }
+  };
+  sandbox.window = sandbox;
+  vm.runInNewContext(client, sandbox, { filename: "uno.js" });
+  assert.equal(typeof sandbox.Uno.init, "function");
+  assert.equal(sandbox.Uno.isActive(), false);
 });
 
 test("UNO menu matches the Dominoes controls and has no hand pager", () => {
