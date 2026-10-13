@@ -125,7 +125,7 @@
       const btn = $(id);
       if (btn && !btn.dataset.appTabWired) {
         btn.dataset.appTabWired = "1";
-        if (id !== "cartsPlayBtn") btn.addEventListener("click", () => setTab("room"));
+        if (id === "joinBtn") btn.addEventListener("click", () => setTab("room"));
       }
     });
 

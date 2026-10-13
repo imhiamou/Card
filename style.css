@@ -580,7 +580,7 @@ color:#9aabc4;
 font-size:14px;
 line-height:1.4;
 }
-#lobbyScreen .lobbyConfig:has(> :not(.hidden):not(.lobbyConfigEmpty)) > .lobbyConfigEmpty{
+.lobbyConfig:has(> :not(.hidden):not(.lobbyConfigEmpty)) > .lobbyConfigEmpty{
 display:none;
 }
 #lobbyScreen #hhMapPreview{
@@ -721,4 +721,60 @@ cursor:pointer;
 background:#4f9cff;
 color:#0b1a2a;
 font-weight:bold;
+}
+
+.lobbySetup{
+position:fixed;
+inset:0;
+z-index:80;
+display:flex;
+align-items:flex-end;
+justify-content:center;
+padding:12px;
+padding-bottom:calc(env(safe-area-inset-bottom,0px) + 12px);
+background:rgba(8,12,20,.72);
+box-sizing:border-box;
+font-family:Inter,system-ui,sans-serif;
+}
+.lobbySetup.hidden{display:none}
+.lobbySetupCard{
+width:min(480px,100%);
+max-height:min(92dvh,760px);
+overflow:auto;
+background:#161d2b;
+color:#e8eef8;
+border:1px solid #3a4d68;
+border-radius:16px;
+padding:16px;
+box-shadow:0 16px 40px rgba(0,0,0,.4);
+}
+.lobbySetupCard h2{margin:0 0 4px;font-size:20px}
+.lobbySetupLead{margin:0 0 10px;color:#b7c6da;font-size:13px}
+.lobbySetupError{min-height:1.2em;margin:8px 0;color:#ffb4b4;font-size:13px}
+.lobbySetupError:empty{display:none}
+.lobbySetupActions{display:flex;justify-content:flex-end;gap:8px}
+#lobbySetupCancel,#lobbySetupConfirm{
+width:auto;
+min-height:44px;
+margin:0;
+padding:8px 14px;
+border-radius:10px;
+font-weight:800;
+font-family:inherit;
+}
+#lobbySetupCancel{
+background:#243044;
+color:#fff;
+border:1px solid #3d5270;
+}
+#lobbySetupConfirm{
+background:#4f9cff;
+color:#0b1220;
+border:0;
+}
+#lobbySetupBody h3{margin:10px 0 6px}
+#lobbySetupBody input,
+#lobbySetupBody select,
+#lobbySetupBody button{
+margin:0 0 10px;
 }

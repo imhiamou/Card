@@ -286,9 +286,12 @@ test("UNO menu matches the Dominoes controls and has no hand pager", () => {
   });
   assert.doesNotMatch(client, /unoHandPrev|unoHandPager|unoHandNext/);
   assert.match(css, /\.unoTopTools/);
-  assert.match(css, /grid-template-columns:repeat\(var\(--hand-cols/);
+  assert.match(css, /\.unoHand\{[\s\S]*?display:flex/);
   assert.match(appCss, /#unoScreen\.app-menu-open \.unoTopTools/);
   assert.match(appCss, /\.unoHandPager/);
+  const seven = fit.fit(7, 340, 180);
+  assert.equal(seven.rows, 1);
+  assert.ok(seven.width >= 48);
   const server = fs.readFileSync(path.join(__dirname, "uno.js"), "utf8");
   assert.match(server, /left the table/);
   assert.match(server, /left the room/);

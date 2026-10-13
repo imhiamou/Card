@@ -329,6 +329,14 @@
     }
   }
 
+  function updateButtonLabel(text, busy) {
+    const button = document.getElementById("gamewebCheckUpdate");
+    if (!button) return;
+    button.textContent = text;
+    button.disabled = !!busy;
+    button.setAttribute("aria-busy", busy ? "true" : "false");
+  }
+
   async function check(manual) {
     if (!isAndroidApp()) return;
     if (checking) {
@@ -336,6 +344,7 @@
       return;
     }
     checking = true;
+    if (manual) updateButtonLabel("Checking…", true);
     try {
       const installed = await plugin().getInstalled();
       const found = await discover();
@@ -362,6 +371,12 @@
       else console.warn("[gameweb-update] " + message);
     } finally {
       checking = false;
+      const button = document.getElementById("gamewebCheckUpdate");
+      if (button && button.textContent === "Checking…") updateButtonLabel("Updates", false);
+      else if (button) {
+        button.disabled = false;
+        button.setAttribute("aria-busy", "false");
+      }
     }
   }
 
@@ -374,6 +389,7 @@
     button.type = "button";
     button.id = "gamewebCheckUpdate";
     button.textContent = "Updates";
+    button.setAttribute("aria-label", "Check for updates");
     button.addEventListener("click", () => { check(true); });
     const title = lobby.querySelector("h1");
     if (title) title.insertAdjacentElement("afterend", button);
