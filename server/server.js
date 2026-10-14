@@ -1509,8 +1509,8 @@ io.on("connection", (socket) => {
     // Stop any pending bot actions before the room state disappears.
     const room = rooms[roomCode];
     if (room) {
-      if (room.dominoBotTimer) clearTimeout(room.dominoBotTimer);
-      if (room.unoBotTimer) clearTimeout(room.unoBotTimer);
+      domino.clearBotTimer(room);
+      uno.clearBotTimer(room);
       if (room.hh) hiddenHunter.stopRoom(room);
     }
 
