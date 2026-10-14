@@ -353,7 +353,63 @@ function scheduleBotTurn(room, io, roomCode) {
   }, botDelayMs(room));
 }
 
-/** Execute one bot decision (play a card, or draw / take the penalty). */
+/**
+ * Public table facts for the bot. Opponent hands and the draw pile
+ * are intentionally omitted.
+ */
+function publicBotState(room, playableIds) {
+  const u = room.uno;
+  const nextSeat = room.players[advanceIndex(room, u.turnIndex, 1)];
+  return {
+    hand: u.hands[u.currentTurn] || [],
+    playableIds: playableIds || [],
+    pendingPenalty: u.pendingPenalty,
+    pendingKind: u.pendingKind,
+    nextPlayerHandCount: nextSeat ? (u.hands[nextSeat.id] || []).length : 7,
+    turnIndex: u.turnIndex,
+    direction: u.direction || 1,
+    seats: room.players.map((player) => ({
+      handCount: (u.hands[player.id] || []).length,
+      away: isAway(room, player.id)
+    })),
+    discard: (u.discard || []).map(publicCard),
+    awaitingDrawnPlay: !!(u.awaitingDrawnPlay && u.awaitingDrawnPlay.cardId),
+    misses: room.players.map((player) => {
+      const miss = u.forcedMiss && u.forcedMiss[player.id];
+      if (!miss) return null;
+      return {
+        color: miss.color || null,
+        kind: miss.kind || null,
+        value: miss.value,
+        blank: miss.blank
+      };
+    })
+  };
+}
+
+/** Remember that this player had no legal play for the current top. */
+function noteForcedMiss(room, playerId) {
+  const u = room.uno;
+  if (!u || u.pendingPenalty > 0) return;
+  const hand = u.hands[playerId] || [];
+  if (listPlayable(u, hand).length > 0) return;
+  const top = topDiscard(u);
+  if (!top) return;
+  if (!u.forcedMiss) u.forcedMiss = {};
+  u.forcedMiss[playerId] = {
+    color: currentColor(u),
+    kind: top.kind,
+    value: top.value,
+    blank: hand.length
+  };
+}
+
+function clearForcedMiss(room, playerId) {
+  const u = room.uno;
+  if (u && u.forcedMiss) delete u.forcedMiss[playerId];
+}
+
+/** One fresh decision if this bot's turn is still open and nothing is queued. */
 function settleUnoBot(room, io, roomCode, botId) {
   if (roomsRef && roomsRef[roomCode] !== room) return;
   const u = room.uno;
@@ -385,41 +441,39 @@ function runBotTurn(room, io, roomCode, botId) {
   const botSocket = room.botSockets && room.botSockets[botId];
   if (!botSocket) return;
 
-  // Defensive: complete a staged wild (bots normally send color up front).
-  if (u.pendingColorChooser === botId) {
-    botSocket.handlers["unoChooseColor"]({
-      roomCode,
-      color: unoBot.pickColor(u.hands[botId] || [])
-    });
-    settleUnoBot(room, io, roomCode, botId);
-    return;
-  }
-
   const hand = u.hands[botId] || [];
   let playable = listPlayable(u, hand);
   // After drawing, only the drawn card may be played (mirror of emitFullState).
   if (u.awaitingDrawnPlay) {
     playable = playable.filter((id) => id === u.awaitingDrawnPlay.cardId);
   }
+  const botState = publicBotState(room, playable);
+
+  // Defensive: complete a staged wild (bots normally send color up front).
+  if (u.pendingColorChooser === botId) {
+    botSocket.handlers["unoChooseColor"]({
+      roomCode,
+      color: unoBot.pickColor(hand, botState)
+    });
+    settleUnoBot(room, io, roomCode, botId);
+    return;
+  }
 
   if (playable.length > 0) {
-    const nextSeat = room.players[advanceIndex(room, u.turnIndex, 1)];
-    const move = unoBot.getUnoMove({
-      hand,
-      playableIds: playable,
-      pendingPenalty: u.pendingPenalty,
-      pendingKind: u.pendingKind,
-      nextPlayerHandCount: nextSeat ? (u.hands[nextSeat.id] || []).length : 7
-    });
-    const cardId = move && playable.includes(move.cardId) ? move.cardId : playable[0];
-    const card = hand.find((c) => c.id === cardId);
-    const payload = { roomCode, cardId };
-    if (card && isWild(card)) {
-      payload.color = (move && move.color) ||
-        unoBot.pickColor(hand.filter((c) => c.id !== cardId));
+    const move = unoBot.getUnoMove(botState);
+    if (move && move.action === "draw") {
+      botSocket.handlers["unoDraw"]({ roomCode });
+    } else {
+      const cardId = move && playable.includes(move.cardId) ? move.cardId : playable[0];
+      const card = hand.find((c) => c.id === cardId);
+      const payload = { roomCode, cardId };
+      if (card && isWild(card)) {
+        payload.color = (move && move.color) ||
+          unoBot.pickColor(hand.filter((c) => c.id !== cardId), botState);
+      }
+      // Same handler + validation as a human "unoPlayCard" event.
+      botSocket.handlers["unoPlayCard"](payload);
     }
-    // Same handler + validation as a human "unoPlayCard" event.
-    botSocket.handlers["unoPlayCard"](payload);
   } else {
     // No playable card: "unoDraw" draws one card, accepts a pending
     // penalty stack, or passes after an unplayable drawn card — the same
@@ -751,7 +805,8 @@ function initRound(room) {
     over: false,
     winnerId: null,
     turnsPlayed: 0,
-    cardsPlayed: 0
+    cardsPlayed: 0,
+    forcedMiss: {}
   };
   room.unoRematch = {};
 
@@ -889,7 +944,8 @@ function registerSocket(socket, io, rooms) {
       }
     }
 
-    // Commit the play.
+    // Commit the play. A successful play retires any forced-miss note.
+    clearForcedMiss(room, socket.id);
     hand.splice(idx, 1);
     const played = Object.assign({}, card);
     if (chosenColor) played.chosenColor = chosenColor;
@@ -952,6 +1008,7 @@ function registerSocket(socket, io, rooms) {
       return;
     }
 
+    clearForcedMiss(room, socket.id);
     const card = hand.splice(idx, 1)[0];
     const played = Object.assign({}, card, { chosenColor: color });
     u.discard.push(played);
@@ -1040,6 +1097,8 @@ function registerSocket(socket, io, rooms) {
       return;
     }
 
+    const hadNoPlay = listPlayable(u, u.hands[socket.id] || []).length === 0;
+    if (hadNoPlay) noteForcedMiss(room, socket.id);
     const drawn = drawFromPile(u, 1);
     if (!drawn.length) {
       // ensureDrawPile already recycles every discard under the top.
@@ -1071,6 +1130,9 @@ function registerSocket(socket, io, rooms) {
       return;
     }
 
+    if (u.forcedMiss && u.forcedMiss[socket.id]) {
+      u.forcedMiss[socket.id].blank = u.hands[socket.id].length;
+    }
     // Unplayable — automatic pass.
     u.turnsPlayed += 1;
     advanceTurn(room, 1);
@@ -1243,5 +1305,6 @@ module.exports = {
   isAway,
   rememberRooms,
   playersAtTable,
-  initRound
+  initRound,
+  publicBotState
 };
