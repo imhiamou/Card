@@ -176,6 +176,7 @@ function advanceIndex(room, fromIndex, steps) {
 function setTurnByIndex(room, idx) {
   room.uno.turnIndex = idx;
   room.uno.currentTurn = room.players[idx].id;
+  room.unoBotRecoveries = 0;
 }
 
 function isAway(room, playerId) {
@@ -203,6 +204,10 @@ function advanceTurn(room, steps) {
 }
 
 function clearBotTimer(room) {
+  if (!room) return;
+  // Bump the epoch first so a callback that already left the timer queue
+  // cannot clear a newer timer or act for the old turn.
+  room.unoBotEpoch = (room.unoBotEpoch || 0) + 1;
   if (room.unoBotTimer) {
     clearTimeout(room.unoBotTimer);
     room.unoBotTimer = null;
@@ -336,18 +341,47 @@ function scheduleBotTurn(room, io, roomCode) {
   if (room.unoBotTimer) return; // one pending bot action at a time
 
   const botId = current.id;
+  const epoch = room.unoBotEpoch || 0;
   room.unoBotTimer = setTimeout(() => {
+    if ((room.unoBotEpoch || 0) !== epoch) return;
+    if (roomsRef && roomsRef[roomCode] !== room) {
+      console.warn("[bot] stale room ignored game=uno room=%s bot=%s action=turn", roomCode, botId);
+      return;
+    }
     room.unoBotTimer = null;
     runBotTurn(room, io, roomCode, botId);
   }, botDelayMs(room));
 }
 
 /** Execute one bot decision (play a card, or draw / take the penalty). */
+function settleUnoBot(room, io, roomCode, botId) {
+  if (roomsRef && roomsRef[roomCode] !== room) return;
+  const u = room.uno;
+  if (!u || u.over || u.currentTurn !== botId) return;
+  if (room.unoBotTimer) return;
+  const attempt = (room.unoBotRecoveries || 0) + 1;
+  room.unoBotRecoveries = attempt;
+  const action = room.botSockets && room.botSockets[botId] && room.botSockets[botId].botAction;
+  if (attempt > 1) {
+    console.warn("[bot] stopped retry game=uno room=%s bot=%s action=%s", roomCode, botId, action || "unknown");
+    return;
+  }
+  // One fresh decision from the current state. The same rejected payload
+  // is not replayed, and a second miss stops.
+  console.warn("[bot] retrying turn game=uno room=%s bot=%s action=%s", roomCode, botId, action || "unknown");
+  scheduleBotTurn(room, io, roomCode);
+}
+
 function runBotTurn(room, io, roomCode, botId) {
   // Room may have been torn down (player left) while the bot "thought".
   if (roomsRef && roomsRef[roomCode] !== room) return;
   const u = room.uno;
-  if (!u || u.over || u.currentTurn !== botId) return;
+  if (!u || u.over || u.currentTurn !== botId) {
+    if (u && !u.over && u.currentTurn !== botId) {
+      console.warn("[bot] stale turn ignored game=uno room=%s bot=%s action=turn", roomCode, botId);
+    }
+    return;
+  }
   const botSocket = room.botSockets && room.botSockets[botId];
   if (!botSocket) return;
 
@@ -357,6 +391,7 @@ function runBotTurn(room, io, roomCode, botId) {
       roomCode,
       color: unoBot.pickColor(u.hands[botId] || [])
     });
+    settleUnoBot(room, io, roomCode, botId);
     return;
   }
 
@@ -385,13 +420,13 @@ function runBotTurn(room, io, roomCode, botId) {
     }
     // Same handler + validation as a human "unoPlayCard" event.
     botSocket.handlers["unoPlayCard"](payload);
-    return;
+  } else {
+    // No playable card: "unoDraw" draws one card, accepts a pending
+    // penalty stack, or passes after an unplayable drawn card — the same
+    // paths a human takes through the same handler.
+    botSocket.handlers["unoDraw"]({ roomCode });
   }
-
-  // No playable card: "unoDraw" draws one card, accepts a pending
-  // penalty stack, or passes after an unplayable drawn card — the same
-  // paths a human takes through the same handler.
-  botSocket.handlers["unoDraw"]({ roomCode });
+  settleUnoBot(room, io, roomCode, botId);
 }
 
 /** Bots automatically call UNO when they reach exactly one card. */
@@ -1007,7 +1042,16 @@ function registerSocket(socket, io, rooms) {
 
     const drawn = drawFromPile(u, 1);
     if (!drawn.length) {
+      // ensureDrawPile already recycles every discard under the top.
+      // Nothing remains to draw. Passing matches an unplayable draw when
+      // this player also has no legal card; a player who can still play
+      // keeps the turn and plays instead of getting stuck on Draw.
       socket.emit("errorMessage", "No cards left to draw.");
+      if (listPlayable(u, u.hands[socket.id] || []).length > 0) return;
+      u.turnsPlayed += 1;
+      advanceTurn(room, 1);
+      resolveForcedPenalty(room, io, roomCode);
+      emitFullState(room, io, roomCode);
       return;
     }
     const card = drawn[0];
@@ -1195,6 +1239,7 @@ module.exports = {
   ALLOWED_MAX_PLAYERS,
   leaveTable,
   leaveRoom,
+  clearBotTimer,
   isAway,
   rememberRooms,
   playersAtTable,

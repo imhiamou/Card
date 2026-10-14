@@ -488,12 +488,18 @@ function rememberRoundWinner(room) {
   room.dominoMatch.roundsCompleted = (room.dominoMatch.roundsCompleted || 0) + 1;
 }
 
-function initRound(room) {
-  // A fresh deal invalidates any scheduled bot action from the old round.
+function clearBotTimer(room) {
+  if (!room) return;
+  room.dominoBotEpoch = (room.dominoBotEpoch || 0) + 1;
   if (room.dominoBotTimer) {
     clearTimeout(room.dominoBotTimer);
     room.dominoBotTimer = null;
   }
+}
+
+function initRound(room) {
+  // A fresh deal invalidates any scheduled bot action from the old round.
+  clearBotTimer(room);
   const playerIds = room.players.map((p) => p.id);
   ensureMatch(room);
   const firstRound = !room.dominoMatch.roundsCompleted;
@@ -763,10 +769,32 @@ function scheduleBotTurn(room, io, roomCode) {
   if (room.dominoBotTimer) return; // one pending bot action at a time
 
   const botId = current.id;
+  const epoch = room.dominoBotEpoch || 0;
   room.dominoBotTimer = setTimeout(() => {
+    if ((room.dominoBotEpoch || 0) !== epoch) return;
+    if (roomsRef && roomsRef[roomCode] !== room) {
+      console.warn("[bot] stale room ignored game=dominoes room=%s bot=%s action=turn", roomCode, botId);
+      return;
+    }
     room.dominoBotTimer = null;
     runBotTurn(room, io, roomCode, botId);
   }, botDelayMs(room));
+}
+
+function settleDominoBot(room, io, roomCode, botId) {
+  if (roomsRef && roomsRef[roomCode] !== room) return;
+  const d = room.domino;
+  if (!d || d.over || d.currentTurn !== botId) return;
+  if (room.dominoBotTimer) return;
+  const attempt = (room.dominoBotRecoveries || 0) + 1;
+  room.dominoBotRecoveries = attempt;
+  const action = room.botSockets && room.botSockets[botId] && room.botSockets[botId].botAction;
+  if (attempt > 1) {
+    console.warn("[bot] stopped retry game=dominoes room=%s bot=%s action=%s", roomCode, botId, action || "unknown");
+    return;
+  }
+  console.warn("[bot] retrying turn game=dominoes room=%s bot=%s action=%s", roomCode, botId, action || "unknown");
+  scheduleBotTurn(room, io, roomCode);
 }
 
 /** Execute one bot decision (play one tile, or draw one tile). */
@@ -774,7 +802,12 @@ function runBotTurn(room, io, roomCode, botId) {
   // Room may have been torn down (player left) while the bot "thought".
   if (roomsRef && roomsRef[roomCode] !== room) return;
   const d = room.domino;
-  if (!d || d.over || d.currentTurn !== botId) return;
+  if (!d || d.over || d.currentTurn !== botId) {
+    if (d && !d.over && d.currentTurn !== botId) {
+      console.warn("[bot] stale turn ignored game=dominoes room=%s bot=%s action=turn", roomCode, botId);
+    }
+    return;
+  }
   const botSocket = room.botSockets && room.botSockets[botId];
   if (!botSocket) return;
 
@@ -793,16 +826,18 @@ function runBotTurn(room, io, roomCode, botId) {
       : moves[0];
     // Same handler + validation as a human "dominoPlayTile" event.
     botSocket.handlers["dominoPlayTile"]({ roomCode, tileId: move.tileId, side: move.side });
-    return;
-  }
-
-  if (d.boneyard.length > 0 && d.chain.length > 0) {
+  } else if (d.boneyard.length > 0 && d.chain.length > 0) {
     // Same handler + validation as a human "dominoDraw" event. If the
     // drawn tile is still unplayable the handler keeps the bot's turn,
     // emits state, and this scheduler queues the next draw.
     botSocket.handlers["dominoDraw"]({ roomCode });
+  } else if (!d.over && d.boneyard.length === 0) {
+    // No legal tile and an empty boneyard. Pass with the same rules used
+    // after a human draw, instead of leaving this callback as a no-op.
+    resolveAutoPasses(room, io, roomCode);
+    if (!d.over && (!roomsRef || roomsRef[roomCode] === room)) emitFullState(room, io, roomCode);
   }
-  // No moves + empty boneyard: resolveAutoPasses already advanced the turn.
+  settleDominoBot(room, io, roomCode, botId);
 }
 
 /** After a round ends, bots vote Play Again so humans can rematch. */
@@ -822,6 +857,7 @@ function advanceTurn(room) {
   const ids = room.players.map((p) => p.id);
   room.domino.turnIndex = (room.domino.turnIndex + 1) % ids.length;
   room.domino.currentTurn = ids[room.domino.turnIndex];
+  room.dominoBotRecoveries = 0;
 }
 
 /**
@@ -1053,8 +1089,7 @@ function registerSocket(socket, io, rooms) {
     if (speed !== "slow" && speed !== "normal" && speed !== "fast") return;
     room.dominoBotSpeed = speed;
     if (room.dominoBotTimer) {
-      clearTimeout(room.dominoBotTimer);
-      room.dominoBotTimer = null;
+      clearBotTimer(room);
       scheduleBotTurn(room, io, roomCode);
     }
   });
@@ -1310,5 +1345,6 @@ module.exports = {
   ALLOWED_MAX_PLAYERS,
   HAND_SIZE,
   MAX_PIP,
-  botDelayMs
+  botDelayMs,
+  clearBotTimer
 };
