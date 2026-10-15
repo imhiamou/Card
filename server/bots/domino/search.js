@@ -271,6 +271,7 @@ function searchMoves(view, beliefs, ranked, weights, options, rng, limits) {
       mean: mean,
       wins: wins[index],
       samplesUsed: counts[index]
+      score: row.score + scale * trust * (mean / unit)
     };
   });
   blended.sort((a, b) => b.score - a.score || a.index - b.index);

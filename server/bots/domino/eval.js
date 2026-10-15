@@ -135,6 +135,9 @@ function scoreMoveParts(view, beliefs, move, weights, options) {
   const preview = previewEnds(view, move);
   if (!preview) return { score: -Infinity, parts: null };
   const parts = blankParts();
+function scoreMove(view, beliefs, move, weights, options) {
+  const preview = previewEnds(view, move);
+  if (!preview) return -Infinity;
   const rest = (view.hand || []).filter((tile) => tile.id !== preview.tile.id);
   const ignoreTeam = !!(options && options.ignoreTeam);
   if (rest.length === 0) {
@@ -147,6 +150,7 @@ function scoreMoveParts(view, beliefs, move, weights, options) {
     parts.immediateWin = weights.roundWin;
     parts.pointBonus = weights.pointScale * award;
     return { score: parts.immediateWin + parts.pointBonus, parts: parts };
+    return weights.roundWin + weights.pointScale * award;
   }
 
   const left = preview.leftEnd;
@@ -164,12 +168,16 @@ function scoreMoveParts(view, beliefs, move, weights, options) {
   } else if (next && isOpponent(view, next.id)) {
     parts.denyNext = -(weights.denyNext * pNext);
     score += parts.denyNext;
+    score -= weights.roundWin * weights.oppOutScale * pNext;
+  } else if (next && isOpponent(view, next.id)) {
+    score -= weights.denyNext * pNext;
     if (pNext === 0 && next.handCount > 0) {
       // A forced pass is worth taking when the team is not heavier. A large
       // pip deficit makes the same pass a way of handing the blocked round over.
       const passWeight = edge >= 0 ? 1 : Math.max(-1, edge * 1.5);
       parts.forcePass = weights.forcePass * passWeight;
       score += parts.forcePass;
+      score += weights.forcePass * passWeight;
     }
   }
 
@@ -191,6 +199,16 @@ function scoreMoveParts(view, beliefs, move, weights, options) {
   const outs = rest.filter((tile) => matchesEither(tile, left, right)).length;
   parts.ownOuts = weights.ownOuts * outs;
   score += parts.ownOuts;
+    score += weights.mateCanReply * pMate * replyWeight;
+    score += weights.mateSuit * suitAffinity(beliefs, mate.id, left, right) * replyWeight;
+  }
+
+  if (other && isOpponent(view, other.id) && other !== next) {
+    score -= weights.otherOpp * canPlayProbability(view, beliefs, other, left, right);
+  }
+
+  const outs = rest.filter((tile) => matchesEither(tile, left, right)).length;
+  score += weights.ownOuts * outs;
 
   let unlocked = 0;
   let stuck = 0;
@@ -215,6 +233,13 @@ function scoreMoveParts(view, beliefs, move, weights, options) {
 
 function scoreMove(view, beliefs, move, weights, options) {
   return scoreMoveParts(view, beliefs, move, weights, options).score;
+  score += weights.stuckDoubleRelief * unlocked;
+  score -= weights.stuckDoubleRelief * 0.6 * stuck;
+
+  score += weights.shedPips * (pips(preview.tile) / 12);
+  if (preview.tile.a === preview.tile.b) score += weights.dumpDouble * (preview.tile.a / 6);
+  score += weights.blockEquity * edge;
+  return score;
 }
 
 function rankMoves(view, beliefs, weights, options) {
@@ -226,6 +251,10 @@ function rankMoves(view, beliefs, weights, options) {
       index: index,
       score: detail.score,
       parts: detail.parts
+    ranked.push({
+      move: { tileId: move.tileId, side: move.side },
+      index: index,
+      score: scoreMove(view, beliefs, move, weights, options)
     });
   });
   ranked.sort((a, b) => b.score - a.score || a.index - b.index);

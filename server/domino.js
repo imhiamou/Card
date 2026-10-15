@@ -905,6 +905,7 @@ function runBotTurn(room, io, roomCode, botId) {
   const moves = validMovesFor(room, botId);
   if (moves.length > 0) {
     const choice = decideBotMove(room, roomCode, botId).move;
+    const choice = dominoBot.getDominoMove(decisionView(room, botId));
     const move = choice && moves.some((m) => m.tileId === choice.tileId && m.side === choice.side)
       ? choice
       : moves[0];
@@ -1504,4 +1505,5 @@ module.exports = {
   decisionView,
   decideBotMove,
   INSPECT_ROOM
+  decisionView
 };
