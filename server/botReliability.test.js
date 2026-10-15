@@ -206,8 +206,8 @@ test("bot scoring still prefers the same UNO cards and wild colors", () => {
   assert.equal(new Set(again).size, 1);
 });
 
-test("bot scoring still prefers the same Dominoes placements", () => {
-  const opening = dominoBot.getDominoMove({
+test("legacy Dominoes bot still prefers the original placements", () => {
+  const opening = dominoBot.legacyGetDominoMove({
     hand: [tile(6, 5), tile(5, 0), tile(6, 6), tile(1, 2)],
     validMoves: ["5-6", "0-5", "6-6", "1-2"].map((id) => ({ tileId: id, side: "center" })),
     leftEnd: null,
@@ -217,7 +217,7 @@ test("bot scoring still prefers the same Dominoes placements", () => {
   });
   assert.deepEqual(opening, { tileId: "6-6", side: "center" });
 
-  const suit = dominoBot.getDominoMove({
+  const suit = dominoBot.legacyGetDominoMove({
     hand: [tile(6, 0), tile(1, 1), tile(1, 2), tile(1, 3), tile(1, 4)],
     validMoves: [
       { tileId: "0-6", side: "left" },
@@ -233,7 +233,7 @@ test("bot scoring still prefers the same Dominoes placements", () => {
   });
   assert.deepEqual(suit, { tileId: "1-1", side: "right" });
 
-  const heavy = dominoBot.getDominoMove({
+  const heavy = dominoBot.legacyGetDominoMove({
     hand: [tile(6, 5), tile(2, 0), tile(0, 1), tile(0, 3), tile(0, 4)],
     validMoves: [
       { tileId: "5-6", side: "left" },
@@ -246,7 +246,7 @@ test("bot scoring still prefers the same Dominoes placements", () => {
   });
   assert.deepEqual(heavy, { tileId: "5-6", side: "left" });
 
-  const tie = dominoBot.getDominoMove({
+  const tie = dominoBot.legacyGetDominoMove({
     hand: [tile(4, 6)],
     validMoves: [
       { tileId: "4-6", side: "left" },
