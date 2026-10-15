@@ -527,7 +527,8 @@ function initRound(room) {
     turnIndex: Math.max(0, playerIds.indexOf(starterId)),
     teamMode: teams.teamMode,
     teamA: teams.teamA,
-    teamB: teams.teamB
+    teamB: teams.teamB,
+    publicLog: []
   };
   room.dominoRematch = {};
 }
@@ -694,6 +695,45 @@ function publicBoard(room) {
   };
 }
 
+function notePublic(state, entry) {
+  if (!state) return;
+  if (!state.publicLog) state.publicLog = [];
+  state.publicLog.push(entry);
+}
+
+/**
+ * Facts the bot is allowed to use: its own hand plus public table history.
+ * Other hands stay on the server and are not copied into this view.
+ */
+function decisionView(room, botId) {
+  const d = room.domino;
+  return {
+    selfId: botId,
+    hand: (d.hands[botId] || []).map((tile) => ({ id: tile.id, a: tile.a, b: tile.b })),
+    validMoves: validMovesFor(room, botId).map((move) => ({ tileId: move.tileId, side: move.side })),
+    leftEnd: d.leftEnd,
+    rightEnd: d.rightEnd,
+    chain: (d.chain || []).map((tile) => ({ id: tile.id, a: tile.a, b: tile.b })),
+    players: room.players.map((player) => ({
+      id: player.id,
+      handCount: d.hands[player.id] ? d.hands[player.id].length : 0,
+      team: teamOfPlayer(d, player.id)
+    })),
+    teamMode: !!d.teamMode,
+    teamA: d.teamA ? d.teamA.slice() : null,
+    teamB: d.teamB ? d.teamB.slice() : null,
+    log: (d.publicLog || []).map((entry) => {
+      const copy = Object.assign({}, entry);
+      if (entry.tile) copy.tile = { id: entry.tile.id, a: entry.tile.a, b: entry.tile.b };
+      return copy;
+    }),
+    boneyardCount: d.boneyard ? d.boneyard.length : 0,
+    mustPlayId: d.mustPlayId || null,
+    firstRound: !!d.firstRound,
+    match: publicMatchScoreboard(room)
+  };
+}
+
 function validMovesFor(room, playerId) {
   const d = room.domino;
   return listValidMoves(
@@ -813,14 +853,7 @@ function runBotTurn(room, io, roomCode, botId) {
 
   const moves = validMovesFor(room, botId);
   if (moves.length > 0) {
-    const choice = dominoBot.getDominoMove({
-      hand: d.hands[botId] || [],
-      validMoves: moves,
-      leftEnd: d.leftEnd,
-      rightEnd: d.rightEnd,
-      chainLength: d.chain.length,
-      teamMode: !!d.teamMode
-    });
+    const choice = dominoBot.getDominoMove(decisionView(room, botId));
     const move = choice && moves.some((m) => m.tileId === choice.tileId && m.side === choice.side)
       ? choice
       : moves[0];
@@ -878,6 +911,12 @@ function resolveAutoPasses(room, io, roomCode) {
 
     // Auto-pass — no ask.
     d.consecutivePasses += 1;
+    notePublic(d, {
+      type: "pass",
+      playerId: d.currentTurn,
+      leftEnd: d.leftEnd,
+      rightEnd: d.rightEnd
+    });
     const passer = room.players.find((p) => p.id === d.currentTurn);
     // "dominoPassed" — Dominoes only. Announces an automatic pass.
     io.to(roomCode).emit("dominoPassed", {
@@ -1145,11 +1184,23 @@ function registerSocket(socket, io, rooms) {
       return;
     }
 
+    const leftBefore = d.leftEnd;
+    const rightBefore = d.rightEnd;
     const placed = placeTile(d, tile, side === "center" ? "center" : side);
     if (!placed) {
       socket.emit("errorMessage", "Illegal placement.");
       return;
     }
+    notePublic(d, {
+      type: "play",
+      playerId: socket.id,
+      tile: { id: tile.id, a: tile.a, b: tile.b },
+      side: side === "center" ? "center" : side,
+      leftEndBefore: leftBefore,
+      rightEndBefore: rightBefore,
+      leftEnd: d.leftEnd,
+      rightEnd: d.rightEnd
+    });
 
     hand.splice(idx, 1);
     d.consecutivePasses = 0;
@@ -1215,6 +1266,7 @@ function registerSocket(socket, io, rooms) {
 
     const drawn = d.boneyard.pop();
     d.hands[socket.id].push(drawn);
+    notePublic(d, { type: "draw", playerId: socket.id });
     const me = room.players.find((p) => p.id === socket.id);
 
     // "dominoDrawn" — Dominoes only. Public draw notice (tile hidden).
@@ -1228,6 +1280,12 @@ function registerSocket(socket, io, rooms) {
     // After drawing: if still no move and yard empty → auto-pass; else stay on turn.
     if (!playerHasAnyMove(d.hands[socket.id], d) && d.boneyard.length === 0) {
       d.consecutivePasses += 1;
+      notePublic(d, {
+        type: "pass",
+        playerId: socket.id,
+        leftEnd: d.leftEnd,
+        rightEnd: d.rightEnd
+      });
       io.to(roomCode).emit("dominoPassed", {
         by: socket.id,
         name: me ? me.name : "Player",
@@ -1346,5 +1404,6 @@ module.exports = {
   HAND_SIZE,
   MAX_PIP,
   botDelayMs,
-  clearBotTimer
+  clearBotTimer,
+  decisionView
 };
