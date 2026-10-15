@@ -215,6 +215,7 @@ function searchMoves(view, beliefs, ranked, weights, options, rng, limits) {
   const started = Date.now();
   const totals = ranked.map(() => 0);
   const counts = ranked.map(() => 0);
+  const wins = ranked.map(() => 0);
   let used = 0;
   let nodes = 0;
   let conflicts = 0;
@@ -242,6 +243,7 @@ function searchMoves(view, beliefs, ranked, weights, options, rng, limits) {
     for (let i = 0; i < ranked.length; i++) {
       totals[i] += sampleValues[i];
       counts[i] += 1;
+      if (sampleValues[i] > 0) wins[i] += 1;
     }
   }
   const elapsed = Date.now() - started;
@@ -264,7 +266,11 @@ function searchMoves(view, beliefs, ranked, weights, options, rng, limits) {
       move: row.move,
       index: row.index,
       prior: row.score,
-      score: row.score + scale * trust * (mean / unit)
+      parts: row.parts || null,
+      score: row.score + scale * trust * (mean / unit),
+      mean: mean,
+      wins: wins[index],
+      samplesUsed: counts[index]
     };
   });
   blended.sort((a, b) => b.score - a.score || a.index - b.index);

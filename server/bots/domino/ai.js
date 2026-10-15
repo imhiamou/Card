@@ -5,6 +5,7 @@ const { hashString, mulberry32 } = require("./sample");
 const { rankMoves } = require("./eval");
 const { searchMoves } = require("./search");
 const { mergeWeights, mergeLimits } = require("./weights");
+const { buildDiagnostics } = require("./inspect");
 
 /*
  * Callers that only know how long the chain is (the older bot tests) never
@@ -115,25 +116,15 @@ function getDominoMove(state, options) {
     return {
       tileId: chosen.tileId,
       side: chosen.side,
-      diagnostics: {
-        stage: report && report.samples ? "searched" : "heuristic",
-        samples: report ? report.samples : 0,
-        conflicts: report ? report.conflicts : 0,
-        conflict: report ? report.conflict : "",
-        nodes: report ? report.nodes : 0,
-        ms: report ? report.ms : 0,
-        scores: ranked.slice(0, 6).map((row) => ({
-          tileId: row.move.tileId,
-          side: row.move.side,
-          score: Math.round(row.score * 1000) / 1000
-        })),
-        beliefs: Object.keys(beliefs).map((id) => ({
-          playerId: id,
-          impossible: beliefs[id].knownImpossibleNumbers,
-          strong: beliefs[id].suspectedStrongNumbers,
-          remaining: beliefs[id].remainingTileCount
-        }))
-      }
+      diagnostics: buildDiagnostics({
+        view: view,
+        beliefs: beliefs,
+        ranked: ranked,
+        chosen: chosen,
+        report: report,
+        weights: weights,
+        options: options
+      })
     };
   }
   return { tileId: chosen.tileId, side: chosen.side };

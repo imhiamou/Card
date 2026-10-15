@@ -66,10 +66,20 @@
     '<p id="domMsg"></p>' +
     '<div id="domEndButtons" class="domEndButtons hidden">' +
       '<button type="button" id="domPlayAgainBtn">Play Again</button>' +
+    '</div>' +
+    '<div id="domInspect" class="domInspect hidden" role="dialog" aria-labelledby="domInspectTitle">' +
+      '<div class="domInspectBar">' +
+        '<h3 id="domInspectTitle">Strategy inspector</h3>' +
+        '<button type="button" id="domInspectClose">Close</button>' +
+      '</div>' +
+      '<p id="domInspectState"></p>' +
+      '<div id="domInspectBody"></div>' +
     '</div>';
 
   let socket = null;
   let currentRoom = null;
+  let inspectBotId = null;
+  let inspectRequest = 0;
   let active = false;
   let gameOver = false;
   let myTurn = false;
@@ -924,7 +934,98 @@
       "</div>" +
       teamLine +
       '<div class="domCount">' + p.handCount + " dominoes</div>";
+    if (window.DominoInspect && p.isBot) {
+      const decision = window.DominoInspect.inspectClick(currentRoom, p, inspectBotId);
+      if (decision.action !== "none") {
+        chip.classList.add("inspectable");
+        if (p.id === inspectBotId) chip.classList.add("inspected");
+        chip.setAttribute("role", "button");
+        chip.tabIndex = 0;
+        const activate = (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          const next = window.DominoInspect.inspectClick(currentRoom, p, inspectBotId);
+          if (next.action === "close") closeInspect();
+          else if (next.action === "open") openInspect(next.botId);
+        };
+        chip.addEventListener("click", activate);
+        chip.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") activate(event);
+        });
+      }
+    }
     return chip;
+  }
+
+  function inspectPanel() {
+    return document.getElementById("domInspect");
+  }
+
+  function markInspectStale() {
+    if (!inspectBotId || !window.DominoInspect) return;
+    const next = window.DominoInspect.onTableEvent({ open: true, botId: inspectBotId }, "dominoState");
+    const state = document.getElementById("domInspectState");
+    if (state && next.stale) state.textContent = "Re-evaluating";
+    const body = document.getElementById("domInspectBody");
+    if (body) body.setAttribute("data-stale", "1");
+  }
+
+  function renderInspect(snapshot) {
+    const body = document.getElementById("domInspectBody");
+    const state = document.getElementById("domInspectState");
+    if (!body || !window.DominoInspect) return;
+    let model = null;
+    try {
+      model = window.DominoInspect.renderModel(snapshot);
+    } catch (err) {
+      model = { status: "The diagnostic snapshot could not be shown.", sections: [] };
+    }
+    if (state) state.textContent = model.status;
+    body.removeAttribute("data-stale");
+    body.textContent = "";
+    (model.sections || []).forEach((section) => {
+      const heading = document.createElement("h4");
+      heading.textContent = section.heading || "";
+      body.appendChild(heading);
+      const list = document.createElement("ul");
+      (section.lines || []).forEach((line) => {
+        const item = document.createElement("li");
+        item.textContent = line;
+        list.appendChild(item);
+      });
+      body.appendChild(list);
+    });
+  }
+
+  function requestInspect() {
+    if (!inspectBotId || !socket || !window.DominoInspect) return;
+    if (window.DominoInspect.normalizeRoom(currentRoom) !== window.DominoInspect.INSPECT_ROOM) {
+      closeInspect();
+      return;
+    }
+    const requestId = ++inspectRequest;
+    markInspectStale();
+    socket.emit("dominoInspect", {
+      roomCode: currentRoom,
+      botId: inspectBotId,
+      requestId: requestId
+    });
+  }
+
+  function openInspect(botId) {
+    inspectBotId = botId;
+    const panel = inspectPanel();
+    if (panel) panel.classList.remove("hidden");
+    requestInspect();
+  }
+
+  function closeInspect() {
+    inspectBotId = null;
+    inspectRequest += 1;
+    const panel = inspectPanel();
+    if (panel) panel.classList.add("hidden");
+    const body = document.getElementById("domInspectBody");
+    if (body) body.textContent = "";
   }
 
   function renderPlayers(currentTurnId) {
@@ -1086,6 +1187,7 @@
     renderBoard(options.animatePlayId);
     renderHand(options.animateDrawId);
     renderChrome(data);
+    if (inspectBotId) requestInspect();
     if (data.over && (data.matchScoreboard || data.scores)) {
       showEndUi(data.scores, data.winnerId, data.message, {
         teamMode,
@@ -1788,6 +1890,11 @@
       lobbyBtn.dataset.wired = "1";
       lobbyBtn.onclick = () => returnToLobby();
     }
+    const inspectClose = $("domInspectClose");
+    if (inspectClose && !inspectClose.dataset.wired) {
+      inspectClose.dataset.wired = "1";
+      inspectClose.onclick = () => closeInspect();
+    }
     const boardNav = $("domBoardNav");
     if (boardNav && !boardNav.dataset.wired) {
       boardNav.dataset.wired = "1";
@@ -1918,8 +2025,21 @@
     });
 
     // "dominoPlayed" — Dominoes only.
+    socket.on("dominoInspectResult", (data) => {
+      if (!data || data.requestId !== inspectRequest || !inspectBotId) return;
+      if (!data.ok || !data.snapshot) {
+        renderInspect({ available: false, reason: "The strategy inspector is not available for this room." });
+        return;
+      }
+      const snapshot = Object.assign({}, data.snapshot, {
+        currentTurnId: data.currentTurnId || data.snapshot.currentTurnId
+      });
+      renderInspect(snapshot);
+    });
+
     socket.on("dominoPlayed", (data) => {
       if (!active) return;
+      if (inspectBotId) markInspectStale();
       sfx("playCard");
       if (data.board) board = data.board;
       renderBoard(data.tile && data.tile.id);
@@ -1930,6 +2050,7 @@
     // "dominoDrawn" — Dominoes only.
     socket.on("dominoDrawn", (data) => {
       if (!active) return;
+      if (inspectBotId) markInspectStale();
       sfx("draw");
       if (board) board.boneyardCount = data.boneyardCount;
       if (domBoneyard) domBoneyard.textContent = "Boneyard: " + data.boneyardCount;
@@ -1956,6 +2077,7 @@
     // "dominoPassed" — Dominoes only.
     socket.on("dominoPassed", (data) => {
       if (!active) return;
+      if (inspectBotId) markInspectStale();
       sfx("skipTurn");
       flashSeatToast(data.by, "SKIPPED");
       domMsg.textContent = (data.name || "Player") + " passes.";
