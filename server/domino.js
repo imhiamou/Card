@@ -13,6 +13,7 @@
  */
 
 const dominoBot = require("./bots/dominoBot");
+const dominoInspect = require("./bots/domino/inspect");
 
 const MAX_PIP = 6;
 const HAND_SIZE = 7;
@@ -837,6 +838,56 @@ function settleDominoBot(room, io, roomCode, botId) {
   scheduleBotTurn(room, io, roomCode);
 }
 
+const INSPECT_ROOM = "1111";
+
+/**
+ * The move runBotTurn will play. Room 1111 stores the explain snapshot
+ * with that move so the inspector describes the decision that executes.
+ * Other rooms keep the normal decision and store nothing.
+ */
+function decideBotMove(room, roomCode, botId) {
+  const view = decisionView(room, botId);
+  const code = typeof roomCode === "string" ? roomCode.trim().toUpperCase() : "";
+  if (code !== INSPECT_ROOM) {
+    return { move: dominoBot.getDominoMove(view), snapshot: null, restricted: true, key: null };
+  }
+  const key = dominoInspect.positionKey(view);
+  if (!room.dominoDecisions) room.dominoDecisions = {};
+  const cached = room.dominoDecisions[botId];
+  if (cached && cached.key === key) return cached;
+  const explained = dominoBot.getDominoMove(view, { explain: true });
+  const move = explained ? { tileId: explained.tileId, side: explained.side } : null;
+  const snapshot = explained && explained.diagnostics
+    ? explained.diagnostics
+    : dominoInspect.unavailableSnapshot(view, "No legal move is available.");
+  const stored = { key: key, move: move, snapshot: snapshot, restricted: false };
+  room.dominoDecisions[botId] = stored;
+  return stored;
+}
+
+function inspectPayload(stored, room, botId) {
+  let snapshot = stored && stored.snapshot
+    ? stored.snapshot
+    : dominoInspect.unavailableSnapshot(decisionView(room, botId));
+  if (snapshot && snapshot.selected && room.domino.currentTurn !== botId) {
+    const note = "It is not this bot's turn, so this preference can change before the bot plays.";
+    const selected = Object.assign({}, snapshot.selected, { conditional: true, assumption: note });
+    snapshot = Object.assign({}, snapshot, {
+      selected: selected,
+      plan: snapshot.plan ? Object.assign({}, snapshot.plan, { selected: selected }) : snapshot.plan
+    });
+  }
+  return {
+    ok: true,
+    room: INSPECT_ROOM,
+    botId: botId,
+    currentTurnId: room.domino.currentTurn,
+    leftEnd: room.domino.leftEnd,
+    rightEnd: room.domino.rightEnd,
+    snapshot: snapshot
+  };
+}
+
 /** Execute one bot decision (play one tile, or draw one tile). */
 function runBotTurn(room, io, roomCode, botId) {
   // Room may have been torn down (player left) while the bot "thought".
@@ -853,7 +904,7 @@ function runBotTurn(room, io, roomCode, botId) {
 
   const moves = validMovesFor(room, botId);
   if (moves.length > 0) {
-    const choice = dominoBot.getDominoMove(decisionView(room, botId));
+    const choice = decideBotMove(room, roomCode, botId).move;
     const move = choice && moves.some((m) => m.tileId === choice.tileId && m.side === choice.side)
       ? choice
       : moves[0];
@@ -1119,6 +1170,51 @@ function registerSocket(socket, io, rooms) {
    * Does not change legality, turn order, or which tile a bot chooses.
    * Payload: { roomCode, speed: "slow"|"normal"|"fast" }
    */
+  /*
+   * "dominoInspect" — development inspector for room 1111 only.
+   * The server checks the room registry. A client that only rewrites
+   * its local room code is refused. The reply goes to the requesting
+   * socket and is never broadcast. Anyone who can join room 1111 can
+   * read that room's bot snapshots; there is no separate dev login.
+   */
+  socket.on("dominoInspect", (data) => {
+    const roomCode = data && typeof data.roomCode === "string" ? data.roomCode.trim().toUpperCase() : "";
+    const requestId = data && data.requestId;
+    if (roomCode !== INSPECT_ROOM) {
+      socket.emit("dominoInspectResult", { ok: false, error: "unavailable", requestId: requestId });
+      return;
+    }
+    const room = rooms[roomCode];
+    if (!room || room.gameMode !== "dominoes" || !room.domino) {
+      socket.emit("dominoInspectResult", { ok: false, error: "unavailable", requestId: requestId });
+      return;
+    }
+    if (!room.players.some((player) => player.id === socket.id)) {
+      socket.emit("dominoInspectResult", { ok: false, error: "unavailable", requestId: requestId });
+      return;
+    }
+    const botId = data && typeof data.botId === "string" ? data.botId : "";
+    const bot = room.players.find((player) => player.id === botId && player.isBot);
+    if (!bot) {
+      socket.emit("dominoInspectResult", { ok: false, error: "unavailable", requestId: requestId });
+      return;
+    }
+    let payload = null;
+    try {
+      payload = inspectPayload(decideBotMove(room, roomCode, botId), room, botId);
+    } catch (err) {
+      payload = {
+        ok: true,
+        room: INSPECT_ROOM,
+        botId: botId,
+        currentTurnId: room.domino.currentTurn,
+        snapshot: dominoInspect.unavailableSnapshot(null, "The diagnostic snapshot could not be built.")
+      };
+    }
+    payload.requestId = requestId;
+    socket.emit("dominoInspectResult", payload);
+  });
+
   socket.on("dominoSetBotSpeed", (data) => {
     const roomCode = data && typeof data.roomCode === "string" ? data.roomCode.trim().toUpperCase() : "";
     const room = rooms[roomCode];
@@ -1405,5 +1501,7 @@ module.exports = {
   MAX_PIP,
   botDelayMs,
   clearBotTimer,
-  decisionView
+  decisionView,
+  decideBotMove,
+  INSPECT_ROOM
 };

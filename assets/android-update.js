@@ -204,8 +204,44 @@
       permissionRequired: false,
       installResult: "not-started",
       dismissed: false,
-      failureVisible: false
+      failureVisible: false,
+      deferred: false
     };
+  }
+
+  function statusMessage(diagnostic) {
+    const d = diagnostic || emptyDiagnostic();
+    if (d.stage === "checking") return "The check is in progress.";
+    if (d.failureVisible || d.stage === "failed") {
+      return "The server or version endpoint could not be reached.";
+    }
+    if (d.newer && d.selectedVersion) {
+      const installed = d.installedVersionName ||
+        (d.installedVersionCode != null ? String(d.installedVersionCode) : "unknown");
+      let text = "A newer version exists, and the user should refresh or update the application. Current version: " +
+        installed + ". Available version: " + d.selectedVersion + ".";
+      if (d.deferred) text += " The installer will wait until you return to the lobby.";
+      return text;
+    }
+    if (d.stage === "no-update" && d.selectedVersion && !d.newer) {
+      const installed = d.installedVersionName || d.selectedVersion;
+      return "The current version is the latest available. Current version: " + installed + ".";
+    }
+    if (d.stage === "no-update") {
+      return "The server or version endpoint could not be reached.";
+    }
+    if (d.stage === "permission") return "Allow Gameweb to install unknown apps, then tap Check for updates.";
+    if (d.installResult === "unknown") return "Android's installer was opened. The installation result is not known yet.";
+    return "";
+  }
+
+  function matchIsActive() {
+    if (typeof document === "undefined") return false;
+    const ids = ["gameScreen", "placementScreen", "dominoScreen", "unoScreen", "hiddenHunterScreen", "cartsScreen"];
+    return ids.some((id) => {
+      const el = document.getElementById(id);
+      return !!(el && el.classList && !el.classList.contains("hidden"));
+    });
   }
 
   function formatDiagnostic(diagnostic) {
@@ -264,6 +300,7 @@
     const onDiagnostic = options && options.onDiagnostic ? options.onDiagnostic : function () {};
     const onProgress = options && options.onProgress ? options.onProgress : function () {};
     const now = options && options.now ? options.now : function () { return Date.now(); };
+    const matchActive = options && typeof options.matchActive === "function" ? options.matchActive : matchIsActive;
     const diagnostic = emptyDiagnostic();
     let busy = false;
     let lastAuto = 0;
@@ -513,6 +550,7 @@
       diagnostic.stage = "checking";
       diagnostic.error = "";
       diagnostic.failureVisible = false;
+      diagnostic.deferred = false;
       publish();
       try {
         let installed = null;
@@ -547,7 +585,7 @@
           diagnostic.apkName = "";
           diagnostic.checksumFound = false;
           diagnostic.checksumValid = false;
-          const message = "No published Android release with an APK was found.";
+          const message = "The server or version endpoint could not be reached.";
           publish();
           if (manual) notify(message);
           return result(manual ? message : "");
@@ -577,12 +615,18 @@
         if (!diagnostic.newer) {
           diagnostic.stage = "no-update";
           prepared = null;
-          const message = "Gameweb " + (diagnostic.installedVersionName || manifest.version) + " is up to date.";
+          const message = "The current version is the latest available.";
           publish();
           if (manual) notify(message);
           return result(manual ? message : "");
         }
         diagnostic.stage = "available";
+        if (matchActive()) {
+          diagnostic.deferred = true;
+          publish();
+          return result("An update is available. The installer will wait until you return to the lobby.");
+        }
+        diagnostic.deferred = false;
         const dismissed = storage.get(DISMISS_KEY) || "";
         diagnostic.dismissed = dismissed === manifest.version;
         publish();
@@ -703,12 +747,8 @@
     return "interrupted";
   }
 
-  function ensureStatus() {
-    let node = document.getElementById("gamewebUpdateStatus");
-    if (node) return node;
-    node = document.createElement("p");
-    node.id = "gamewebUpdateStatus";
-    node.hidden = true;
+  function ensureDetails(node) {
+    if (!node || !isAndroidApp() || document.getElementById("gamewebUpdateDetails")) return;
     const details = document.createElement("button");
     details.type = "button";
     details.id = "gamewebUpdateDetails";
@@ -718,10 +758,20 @@
       notify(formatDiagnostic(current));
     });
     node.appendChild(details);
-    const lobby = document.getElementById("lobbyScreen");
-    const title = lobby && lobby.querySelector("h1");
-    if (title) title.insertAdjacentElement("afterend", node);
-    else if (lobby) lobby.insertBefore(node, lobby.firstChild);
+  }
+
+  function ensureStatus() {
+    let node = document.getElementById("gamewebUpdateStatus");
+    if (!node) {
+      node = document.createElement("p");
+      node.id = "gamewebUpdateStatus";
+      node.hidden = true;
+      const lobby = document.getElementById("lobbyScreen");
+      const title = lobby && lobby.querySelector("h1");
+      if (title) title.insertAdjacentElement("afterend", node);
+      else if (lobby) lobby.insertBefore(node, lobby.firstChild);
+    }
+    ensureDetails(node);
     return node;
   }
 
@@ -731,7 +781,7 @@
     if (stage === "downloading" || stage === "verifying") return "Downloading…";
     if (diagnostic && diagnostic.failureVisible) return "Check failed";
     if (diagnostic && diagnostic.newer && diagnostic.selectedVersion) return "Update " + diagnostic.selectedVersion;
-    return "Updates";
+    return "Check for updates";
   }
 
   function render(diagnostic) {
@@ -745,27 +795,17 @@
     if (!document.getElementById("gamewebUpdateStatus") && !document.getElementById("lobbyScreen")) return;
     const status = ensureStatus();
     const details = document.getElementById("gamewebUpdateDetails");
-    let text = "";
-    if (diagnostic.failureVisible && diagnostic.error) text = diagnostic.error;
-    else if (diagnostic.newer && diagnostic.selectedVersion) {
-      const installed = diagnostic.installedVersionName || diagnostic.installedVersionCode || "unknown";
-      text = "Gameweb " + diagnostic.selectedVersion + " is available. This device has " + installed + ".";
-    } else if (diagnostic.stage === "permission") {
-      text = "Allow Gameweb to install unknown apps, then tap Updates.";
-    } else if (diagnostic.installResult === "unknown") {
-      text = "Android's installer was opened. The installation result is not known yet.";
-    }
+    const text = statusMessage(diagnostic);
+    showDeferredNote(diagnostic.deferred ? text : "");
     const showDetails = diagnosticsReady || diagnostic.failureVisible || diagnostic.newer ||
       diagnostic.stage === "permission" || diagnostic.stage === "waiting" ||
       diagnostic.installResult === "unknown" || diagnostic.installResult === "permission";
     status.hidden = !text && !showDetails;
-    if (details) {
-      const label = status.querySelector("span");
-      const span = label || document.createElement("span");
-      span.textContent = text ? text + " " : "";
-      if (!label) status.insertBefore(span, details);
-      details.hidden = !showDetails;
-    }
+    const label = status.querySelector("span");
+    const span = label || document.createElement("span");
+    span.textContent = text ? text + " " : "";
+    if (!label) status.insertBefore(span, status.firstChild);
+    if (details) details.hidden = !showDetails;
   }
 
   function ensureSession() {
@@ -805,21 +845,65 @@
     await current.check(!!manual);
   }
 
-  function installManualCheck() {
-    if (!isAndroidApp() || !document.body) return;
-    if (document.getElementById("gamewebCheckUpdate")) return;
-    const lobby = document.getElementById("lobbyScreen");
-    if (!lobby) return;
-    const button = document.createElement("button");
-    button.type = "button";
-    button.id = "gamewebCheckUpdate";
-    button.textContent = "Updates";
+  function bindUpdateButton(button) {
+    if (!button || button.dataset.updateBound === "1") return;
+    button.dataset.updateBound = "1";
     button.setAttribute("aria-label", "Check for updates");
     button.addEventListener("click", () => {
       diagnosticsReady = true;
       if (session) render(session.getDiagnostic());
       check(true);
     });
+  }
+
+  function showDeferredNote(text) {
+    if (typeof document === "undefined") return;
+    let node = document.getElementById("gamewebUpdateDeferred");
+    if (!text) {
+      if (node) node.hidden = true;
+      return;
+    }
+    if (!node) {
+      node = document.createElement("p");
+      node.id = "gamewebUpdateDeferred";
+      node.setAttribute("role", "status");
+      node.style.cssText = "position:fixed;left:16px;right:16px;bottom:16px;z-index:70;margin:0;padding:12px 14px;border-radius:12px;background:#181c24;color:#f4f1ea;font:15px/1.4 sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.35)";
+      document.body.appendChild(node);
+    }
+    node.hidden = false;
+    node.textContent = text;
+  }
+
+  function watchLobbyReturn() {
+    const lobby = document.getElementById("lobbyScreen");
+    if (!lobby || typeof MutationObserver === "undefined") return;
+    const observer = new MutationObserver(() => {
+      if (lobby.classList.contains("hidden") || matchIsActive()) return;
+      if (!session) return;
+      const diagnostic = session.getDiagnostic();
+      if (!diagnostic.deferred || !diagnostic.newer) return;
+      check(true);
+    });
+    observer.observe(lobby, { attributes: true, attributeFilter: ["class"] });
+  }
+
+  function installManualCheck() {
+    if (!isAndroidApp() || !document.body) return;
+    const webRefresh = document.getElementById("lobbyUpdateAction");
+    if (webRefresh) webRefresh.remove();
+    const existing = document.getElementById("gamewebCheckUpdate");
+    if (existing) {
+      bindUpdateButton(existing);
+      ensureStatus();
+      return;
+    }
+    const lobby = document.getElementById("lobbyScreen");
+    if (!lobby) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.id = "gamewebCheckUpdate";
+    button.textContent = "Check for updates";
+    bindUpdateButton(button);
     const title = lobby.querySelector("h1");
     if (title) title.insertAdjacentElement("afterend", button);
     else lobby.insertBefore(button, lobby.firstChild);
@@ -862,6 +946,7 @@
     if (booted || !isAndroidApp()) return;
     booted = true;
     installManualCheck();
+    watchLobbyReturn();
     watchForeground();
     check(false);
   }
@@ -904,6 +989,7 @@
     sha256Hex: sha256Hex,
     formatDiagnostic: formatDiagnostic,
     buttonLabel: buttonLabel,
+    statusMessage: statusMessage,
     createSession: createSession,
     start: start,
     check: check

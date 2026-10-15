@@ -113,9 +113,28 @@ function blockEdge(view, beliefs, tile) {
   return (opp - (own + mate)) / 30;
 }
 
-function scoreMove(view, beliefs, move, weights, options) {
+function blankParts() {
+  return {
+    immediateWin: 0,
+    pointBonus: 0,
+    oppOut: 0,
+    denyNext: 0,
+    forcePass: 0,
+    mateReply: 0,
+    mateSuit: 0,
+    otherOpp: 0,
+    ownOuts: 0,
+    stuckDouble: 0,
+    shedPips: 0,
+    dumpDouble: 0,
+    blockEquity: 0
+  };
+}
+
+function scoreMoveParts(view, beliefs, move, weights, options) {
   const preview = previewEnds(view, move);
-  if (!preview) return -Infinity;
+  if (!preview) return { score: -Infinity, parts: null };
+  const parts = blankParts();
   const rest = (view.hand || []).filter((tile) => tile.id !== preview.tile.id);
   const ignoreTeam = !!(options && options.ignoreTeam);
   if (rest.length === 0) {
@@ -125,7 +144,9 @@ function scoreMove(view, beliefs, move, weights, options) {
       if (view.teamMode && isMate(view, player.id)) return;
       award += expectedPips(view, beliefs, player);
     });
-    return weights.roundWin + weights.pointScale * award;
+    parts.immediateWin = weights.roundWin;
+    parts.pointBonus = weights.pointScale * award;
+    return { score: parts.immediateWin + parts.pointBonus, parts: parts };
   }
 
   const left = preview.leftEnd;
@@ -138,14 +159,17 @@ function scoreMove(view, beliefs, move, weights, options) {
 
   const pNext = next && next.id !== view.selfId ? canPlayProbability(view, beliefs, next, left, right) : 0;
   if (next && next.handCount === 1 && isOpponent(view, next.id)) {
-    score -= weights.roundWin * weights.oppOutScale * pNext;
+    parts.oppOut = -(weights.roundWin * weights.oppOutScale * pNext);
+    score += parts.oppOut;
   } else if (next && isOpponent(view, next.id)) {
-    score -= weights.denyNext * pNext;
+    parts.denyNext = -(weights.denyNext * pNext);
+    score += parts.denyNext;
     if (pNext === 0 && next.handCount > 0) {
       // A forced pass is worth taking when the team is not heavier. A large
       // pip deficit makes the same pass a way of handing the blocked round over.
       const passWeight = edge >= 0 ? 1 : Math.max(-1, edge * 1.5);
-      score += weights.forcePass * passWeight;
+      parts.forcePass = weights.forcePass * passWeight;
+      score += parts.forcePass;
     }
   }
 
@@ -153,16 +177,20 @@ function scoreMove(view, beliefs, move, weights, options) {
     const pMate = canPlayProbability(view, beliefs, mate, left, right);
     const mateNext = next && mate.id === next.id;
     const replyWeight = mateNext || pNext === 0 ? 1 : 0.45;
-    score += weights.mateCanReply * pMate * replyWeight;
-    score += weights.mateSuit * suitAffinity(beliefs, mate.id, left, right) * replyWeight;
+    parts.mateReply = weights.mateCanReply * pMate * replyWeight;
+    parts.mateSuit = weights.mateSuit * suitAffinity(beliefs, mate.id, left, right) * replyWeight;
+    score += parts.mateReply;
+    score += parts.mateSuit;
   }
 
   if (other && isOpponent(view, other.id) && other !== next) {
-    score -= weights.otherOpp * canPlayProbability(view, beliefs, other, left, right);
+    parts.otherOpp = -(weights.otherOpp * canPlayProbability(view, beliefs, other, left, right));
+    score += parts.otherOpp;
   }
 
   const outs = rest.filter((tile) => matchesEither(tile, left, right)).length;
-  score += weights.ownOuts * outs;
+  parts.ownOuts = weights.ownOuts * outs;
+  score += parts.ownOuts;
 
   let unlocked = 0;
   let stuck = 0;
@@ -171,22 +199,33 @@ function scoreMove(view, beliefs, move, weights, options) {
     if (tile.a === left || tile.a === right) unlocked += 1;
     else stuck += 1;
   });
-  score += weights.stuckDoubleRelief * unlocked;
-  score -= weights.stuckDoubleRelief * 0.6 * stuck;
+  parts.stuckDouble = weights.stuckDoubleRelief * unlocked - weights.stuckDoubleRelief * 0.6 * stuck;
+  score += parts.stuckDouble;
 
-  score += weights.shedPips * (pips(preview.tile) / 12);
-  if (preview.tile.a === preview.tile.b) score += weights.dumpDouble * (preview.tile.a / 6);
-  score += weights.blockEquity * edge;
-  return score;
+  parts.shedPips = weights.shedPips * (pips(preview.tile) / 12);
+  score += parts.shedPips;
+  if (preview.tile.a === preview.tile.b) {
+    parts.dumpDouble = weights.dumpDouble * (preview.tile.a / 6);
+    score += parts.dumpDouble;
+  }
+  parts.blockEquity = weights.blockEquity * edge;
+  score += parts.blockEquity;
+  return { score: score, parts: parts };
+}
+
+function scoreMove(view, beliefs, move, weights, options) {
+  return scoreMoveParts(view, beliefs, move, weights, options).score;
 }
 
 function rankMoves(view, beliefs, weights, options) {
   const ranked = [];
   (view.validMoves || []).forEach((move, index) => {
+    const detail = scoreMoveParts(view, beliefs, move, weights, options);
     ranked.push({
       move: { tileId: move.tileId, side: move.side },
       index: index,
-      score: scoreMove(view, beliefs, move, weights, options)
+      score: detail.score,
+      parts: detail.parts
     });
   });
   ranked.sort((a, b) => b.score - a.score || a.index - b.index);
@@ -200,6 +239,7 @@ module.exports = {
   previewEnds,
   canPlayProbability,
   scoreMove,
+  scoreMoveParts,
   rankMoves,
   touches
 };

@@ -103,7 +103,8 @@ function sessionWith(options) {
     ask: options.ask || (async () => "interrupted"),
     notify: options.notify || ((message) => { notes.push(message); }),
     onProgress: (event) => { progress.push(event); },
-    now: options.now
+    now: options.now,
+    matchActive: options.matchActive
   });
   return { session, plugin, store, notes, progress };
 }
@@ -378,6 +379,25 @@ describe("android update prompt", () => {
     const cooled = await session.check(false);
     assert.equal(cooled.quiet, true);
     assert.equal(plugin.calls.fetch.length, 3);
+  });
+
+  it("defers the installer while a match is on screen", async () => {
+    let asked = 0;
+    const { session, plugin } = sessionWith({
+      matchActive: () => true,
+      ask: async () => {
+        asked += 1;
+        return "update";
+      }
+    });
+    const outcome = await session.check(true);
+    assert.equal(asked, 0);
+    assert.equal(plugin.calls.download, 0);
+    assert.equal(outcome.diagnostic.deferred, true);
+    assert.equal(outcome.diagnostic.newer, true);
+    assert.match(update.statusMessage(outcome.diagnostic), /A newer version exists/);
+    assert.match(update.statusMessage(outcome.diagnostic), /return to the lobby/);
+    assert.doesNotMatch(update.statusMessage(outcome.diagnostic), /The current version is the latest available/);
   });
 
   it("shows both versions in the confirmation and in the diagnostic text", async () => {

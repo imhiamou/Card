@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="gameweb-version" content="1.0.0">
 <title>Hidden Duel</title>
 <script>
 (function(){
@@ -29,6 +30,11 @@
      Character is chosen later for Hidden Hunt. -->
 <div class="box" id="lobbyScreen">
 <h1>Hidden Duel</h1>
+<div class="lobbyUpdate" id="lobbyUpdate">
+<button type="button" id="gamewebCheckUpdate">Check for updates</button>
+<p id="gamewebUpdateStatus" class="lobbyUpdateStatus" role="status" hidden></p>
+<button type="button" id="lobbyUpdateAction" class="hidden">Refresh</button>
+</div>
 <div class="lobbyColumns">
 
 <section class="lobbyCol lobbyIdentity">
@@ -286,6 +292,7 @@
 <script src="assets/ui-notice.js"></script>
 <script src="game-sfx.js"></script>
 <script src="assets/mobile-layout.js"></script>
+<script src="assets/domino-inspect.js"></script>
 <script src="domino.js"></script>
 <script src="assets/uno-hand-fit.js"></script>
 <script src="uno.js"></script>
@@ -297,5 +304,6 @@
 <script src="index.js"></script>
 <script src="assets/mobile-app.js"></script>
 <script src="assets/android-update.js"></script>
+<script src="assets/lobby-update.js"></script>
 </body>
 </html>
