@@ -35,6 +35,11 @@ jobs:
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
+      # Stamp the loaded page and version.json with this commit so a
+      # cached document can be compared with a fresh manifest.
+      - name: Stamp web version
+        run: node scripts/stamp-web-version.js
+
       # The site is plain HTML/CSS/JS — upload the repo root as-is.
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

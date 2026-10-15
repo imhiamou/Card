@@ -66,10 +66,22 @@
     '<p id="domMsg"></p>' +
     '<div id="domEndButtons" class="domEndButtons hidden">' +
       '<button type="button" id="domPlayAgainBtn">Play Again</button>' +
+    '</div>' +
+    '<div id="domInspect" class="domInspect hidden" role="dialog" aria-labelledby="domInspectTitle">' +
+      '<div class="domInspectBar">' +
+        '<h3 id="domInspectTitle">Strategy inspector</h3>' +
+        '<button type="button" id="domInspectClose">Close</button>' +
+      '</div>' +
+      '<p id="domInspectState"></p>' +
+      '<div id="domInspectBody"></div>' +
     '</div>';
 
   let socket = null;
   let currentRoom = null;
+  let inspectBotId = null;
+  let inspectRequest = 0;
+  let inspectPanelState = null;
+  let diagnosticStore = {};
   let active = false;
   let gameOver = false;
   let myTurn = false;
@@ -924,7 +936,146 @@
       "</div>" +
       teamLine +
       '<div class="domCount">' + p.handCount + " dominoes</div>";
+    if (window.DominoInspect && p.isBot) {
+      const decision = window.DominoInspect.inspectClick(currentRoom, p, inspectBotId);
+      if (decision.action !== "none") {
+        chip.classList.add("inspectable");
+        if (p.id === inspectBotId) chip.classList.add("inspected");
+        chip.setAttribute("role", "button");
+        chip.tabIndex = 0;
+        const activate = (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          const next = window.DominoInspect.inspectClick(currentRoom, p, inspectBotId);
+          if (next.action === "close") closeInspect();
+          else if (next.action === "open") openInspect(next.botId);
+        };
+        chip.addEventListener("click", activate);
+        chip.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") activate(event);
+        });
+      }
+    }
     return chip;
+  }
+
+  function inspectPanel() {
+    return document.getElementById("domInspect");
+  }
+
+  function paintInspect(panel) {
+    const state = document.getElementById("domInspectState");
+    if (state && window.DominoInspect) state.textContent = window.DominoInspect.statusText(panel);
+    if (!panel || panel.status === "evaluating" || panel.status === "thinking") return;
+    if (panel.snapshot) renderInspect(panel.snapshot);
+    else if (panel.status === "error") {
+      renderInspect({ available: false, status: "error", error: panel.error, reason: panel.error });
+    }
+  }
+
+  function renderInspect(snapshot) {
+    const body = document.getElementById("domInspectBody");
+    if (!body || !window.DominoInspect) return;
+    let model = null;
+    try {
+      model = window.DominoInspect.renderModel(snapshot);
+    } catch (err) {
+      model = {
+        status: "error",
+        sections: [{ heading: "Error", lines: ["The diagnostic snapshot could not be shown."] }]
+      };
+    }
+    body.removeAttribute("data-stale");
+    body.textContent = "";
+    (model.sections || []).forEach((section) => {
+      const heading = document.createElement("h4");
+      heading.textContent = section.heading || "";
+      body.appendChild(heading);
+      const list = document.createElement("ul");
+      (section.lines || []).forEach((line) => {
+        const item = document.createElement("li");
+        item.textContent = line;
+        list.appendChild(item);
+      });
+      body.appendChild(list);
+    });
+  }
+
+  function noteInspectActivity(eventName) {
+    if (!inspectBotId || !window.DominoInspect) return;
+    inspectPanelState = window.DominoInspect.onTableEvent(
+      inspectPanelState || { open: true, botId: inspectBotId, status: "ready", snapshot: null },
+      eventName
+    );
+    const state = document.getElementById("domInspectState");
+    if (state) state.textContent = window.DominoInspect.statusText(inspectPanelState);
+  }
+
+  function applyBotDiagnostics(map) {
+    if (!map || typeof map !== "object") return;
+    diagnosticStore = map;
+    if (!inspectBotId || !window.DominoInspect) return;
+    const snap = map[inspectBotId];
+    if (!snap) {
+      inspectPanelState = window.DominoInspect.failEvaluation(
+        inspectPanelState,
+        "No decision has been recorded for this bot."
+      );
+      paintInspect(inspectPanelState);
+      return;
+    }
+    inspectPanelState = window.DominoInspect.completeEvaluation(inspectPanelState, snap);
+    paintInspect(inspectPanelState);
+  }
+
+  function requestInspect() {
+    if (!inspectBotId || !socket || !window.DominoInspect) return;
+    if (window.DominoInspect.normalizeRoom(currentRoom) !== window.DominoInspect.INSPECT_ROOM) {
+      closeInspect();
+      return;
+    }
+    const requestId = ++inspectRequest;
+    const waitingFor = requestId;
+    const waitingBot = inspectBotId;
+    socket.emit("dominoInspect", {
+      roomCode: currentRoom,
+      botId: inspectBotId,
+      requestId: requestId
+    });
+    setTimeout(() => {
+      if (inspectRequest !== waitingFor || inspectBotId !== waitingBot) return;
+      if (inspectPanelState && inspectPanelState.status === "ready" && inspectPanelState.snapshot) return;
+      if (diagnosticStore[waitingBot]) return;
+      inspectPanelState = window.DominoInspect.failEvaluation(
+        inspectPanelState,
+        "The decision snapshot was not received."
+      );
+      paintInspect(inspectPanelState);
+    }, 4000);
+  }
+
+  function openInspect(botId) {
+    inspectBotId = botId;
+    const panel = inspectPanel();
+    if (panel) panel.classList.remove("hidden");
+    const snap = diagnosticStore[botId];
+    if (snap && window.DominoInspect) {
+      inspectPanelState = window.DominoInspect.panelFromSnapshot(botId, snap);
+      paintInspect(inspectPanelState);
+      return;
+    }
+    inspectPanelState = { open: true, botId: botId, status: "evaluating", snapshot: null, error: null };
+    paintInspect(inspectPanelState);
+    requestInspect();
+  }
+
+  function closeInspect() {
+    inspectBotId = null;
+    inspectRequest += 1;
+    const panel = inspectPanel();
+    if (panel) panel.classList.add("hidden");
+    const body = document.getElementById("domInspectBody");
+    if (body) body.textContent = "";
   }
 
   function renderPlayers(currentTurnId) {
@@ -1086,6 +1237,7 @@
     renderBoard(options.animatePlayId);
     renderHand(options.animateDrawId);
     renderChrome(data);
+    if (data.botDiagnostics) applyBotDiagnostics(data.botDiagnostics);
     if (data.over && (data.matchScoreboard || data.scores)) {
       showEndUi(data.scores, data.winnerId, data.message, {
         teamMode,
@@ -1788,6 +1940,11 @@
       lobbyBtn.dataset.wired = "1";
       lobbyBtn.onclick = () => returnToLobby();
     }
+    const inspectClose = $("domInspectClose");
+    if (inspectClose && !inspectClose.dataset.wired) {
+      inspectClose.dataset.wired = "1";
+      inspectClose.onclick = () => closeInspect();
+    }
     const boardNav = $("domBoardNav");
     if (boardNav && !boardNav.dataset.wired) {
       boardNav.dataset.wired = "1";
@@ -1918,8 +2075,29 @@
     });
 
     // "dominoPlayed" — Dominoes only.
+    socket.on("dominoInspectResult", (data) => {
+      if (!data || !window.DominoInspect) return;
+      const botId = data.botId || (data.snapshot && (data.snapshot.playerId || data.snapshot.botId));
+      if (data.ok && data.snapshot && botId) diagnosticStore[botId] = data.snapshot;
+      if (!inspectBotId || (botId && botId !== inspectBotId)) return;
+      if (!data.ok || !data.snapshot) {
+        inspectPanelState = window.DominoInspect.failEvaluation(
+          inspectPanelState,
+          "The strategy inspector is not available for this room."
+        );
+        paintInspect(inspectPanelState);
+        return;
+      }
+      const snapshot = Object.assign({}, data.snapshot, {
+        currentTurnId: data.currentTurnId || data.snapshot.currentTurnId
+      });
+      inspectPanelState = window.DominoInspect.completeEvaluation(inspectPanelState, snapshot);
+      paintInspect(inspectPanelState);
+    });
+
     socket.on("dominoPlayed", (data) => {
       if (!active) return;
+      noteInspectActivity("dominoPlayed");
       sfx("playCard");
       if (data.board) board = data.board;
       renderBoard(data.tile && data.tile.id);
@@ -1930,6 +2108,7 @@
     // "dominoDrawn" — Dominoes only.
     socket.on("dominoDrawn", (data) => {
       if (!active) return;
+      noteInspectActivity("dominoDrawn");
       sfx("draw");
       if (board) board.boneyardCount = data.boneyardCount;
       if (domBoneyard) domBoneyard.textContent = "Boneyard: " + data.boneyardCount;
@@ -1956,6 +2135,7 @@
     // "dominoPassed" — Dominoes only.
     socket.on("dominoPassed", (data) => {
       if (!active) return;
+      noteInspectActivity("dominoPassed");
       sfx("skipTurn");
       flashSeatToast(data.by, "SKIPPED");
       domMsg.textContent = (data.name || "Player") + " passes.";
