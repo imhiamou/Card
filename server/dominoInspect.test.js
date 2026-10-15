@@ -233,13 +233,19 @@ test("a pass, a new end, and a new decision change the snapshot", () => {
   assert.equal(weakOpp.provenVoids.some((note) => note.pip === 4), false);
   assert.ok(weakOpp.suspectedWeak.some((note) => note.pip === 4 && note.confidence === "probabilistic"));
 
-  let panel = { open: true, botId: "botA", stale: false, status: "Current decision" };
+  const finished = passed.diagnostics;
+  let panel = client.panelFromSnapshot("bot", finished);
+  assert.equal(panel.status, "ready");
+  assert.equal(panel.snapshot.selectedMove.tileId, passed.tileId);
   ["dominoPlayed", "dominoPassed", "dominoDrawn", "dominoState"].forEach((eventName) => {
     panel = client.onTableEvent(panel, eventName);
-    assert.equal(panel.stale, true);
-    assert.equal(panel.status, "Re-evaluating");
+    assert.equal(panel.status, "evaluating");
+    assert.equal(panel.snapshot.selectedMove.tileId, passed.tileId);
   });
-  assert.equal(client.onTableEvent({ open: false }, "dominoState").stale, false);
+  panel = client.completeEvaluation(panel, before.diagnostics);
+  assert.equal(panel.status, "ready");
+  assert.equal(panel.snapshot.selectedMove.tileId, before.tileId);
+  assert.notEqual(client.statusText(panel), "Evaluating");
 });
 
 test("own-finish priority is explained from the real scores and hidden hands stay hidden", () => {
@@ -281,7 +287,43 @@ test("own-finish priority is explained from the real scores and hidden hands sta
 
   const model = client.renderModel(null);
   assert.equal(model.sections.length >= 5, true);
+  assert.notEqual(model.status, "Evaluating");
   assert.equal(client.renderModel({}).sections[0].lines.some((line) => line.includes("unavailable")), true);
   const broken = client.renderModel({ selected: null, components: null, plan: null, comparison: {} });
   assert.equal(broken.sections.some((section) => section.heading === "Why this move was selected"), true);
+
+  const failed = client.failEvaluation(client.panelFromSnapshot("bot", move.diagnostics), "search failed");
+  assert.equal(failed.status, "error");
+  assert.match(client.statusText(failed), /search failed/);
+  assert.equal(failed.snapshot.selectedMove.tileId, move.tileId);
+  const empty = client.failEvaluation({ open: true, botId: "bot", snapshot: null }, "The decision snapshot was not received.");
+  assert.equal(empty.status, "error");
+  assert.notEqual(empty.status, "evaluating");
+  const reopened = client.panelFromSnapshot("bot", move.diagnostics);
+  assert.equal(reopened.status, "ready");
+  assert.equal(reopened.snapshot.selectedMove.tileId, move.diagnostics.selectedMove.tileId);
+});
+
+test("room 1111 state carries the finished decision and other rooms do not", () => {
+  const room = roomFor([tile(1, 2), tile(2, 6)], [tile(3, 4)], [tile(1, 4)]);
+  assert.deepEqual(domino.inspectStateExtra(room, "ABCD"), {});
+  const extra = domino.inspectStateExtra(room, "1111");
+  const decided = domino.decideBotMove(room, "1111", "botA");
+  const published = extra.botDiagnostics.botA;
+  assert.equal(published.status, "ready");
+  assert.equal(published.selectedMove.tileId, decided.move.tileId);
+  assert.equal(published.selectedMove.side, decided.move.side);
+  assert.ok(published.legalMoves.length >= 1);
+  published.candidateEvaluations.forEach((row) => {
+    assert.equal(published.legalMoves.some((move) => move.tileId === row.tileId && move.side === row.side), true);
+  });
+  const text = JSON.stringify(published);
+  assert.equal(text.includes("3-4"), false);
+  assert.equal(text.includes("0-0"), false);
+  const other = client.panelFromSnapshot("botB", extra.botDiagnostics.botB);
+  assert.equal(other.snapshot.playerId, "botB");
+  assert.notEqual(other.snapshot.selectedMove && other.snapshot.selectedMove.tileId, published.selectedMove.tileId);
+  const again = client.panelFromSnapshot("botA", extra.botDiagnostics.botA);
+  assert.equal(again.status, "ready");
+  assert.equal(again.snapshot.reasoning.length > 0, true);
 });

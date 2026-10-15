@@ -254,7 +254,8 @@ function searchMoves(view, beliefs, ranked, weights, options, rng, limits) {
       conflicts: conflicts,
       conflict: conflictNote,
       nodes: nodes,
-      ms: elapsed
+      ms: elapsed,
+      interrupted: target > 0
     };
   }
   const trust = Math.min(1.25, Math.sqrt(used / 8));
@@ -280,7 +281,8 @@ function searchMoves(view, beliefs, ranked, weights, options, rng, limits) {
     conflicts: conflicts,
     conflict: conflictNote,
     nodes: nodes,
-    ms: elapsed
+    ms: elapsed,
+    interrupted: used < target
   };
 }
 

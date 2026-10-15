@@ -392,15 +392,31 @@ function publicBelief(belief) {
 }
 
 function unavailableSnapshot(view, reason) {
+  const message = reason || "A diagnostic snapshot is unavailable.";
   return {
     available: false,
-    reason: reason || "A diagnostic snapshot is unavailable.",
+    status: "error",
+    error: message,
+    reason: message,
     positionKey: positionKey(view || {}),
     botId: view && view.selfId,
+    playerId: view && view.selfId,
+    team: view && view.players && view.selfId
+      ? ((view.players.find((player) => player.id === view.selfId) || {}).team || null)
+      : null,
     hand: (view && view.hand ? view.hand : []).map(copyTile),
+    legalMoves: (view && view.validMoves ? view.validMoves : []).map((move) => ({
+      tileId: move.tileId,
+      side: move.side
+    })),
     selected: null,
-    mode: { label: null, reason: reason || "No decision was recorded." },
-    plan: { selected: null, continuation: [], alternatives: [], note: reason || "No plan was recorded." },
+    selectedMove: null,
+    candidateEvaluations: [],
+    mode: { label: null, reason: message },
+    strategicMode: { label: null, reason: message },
+    plan: { selected: null, continuation: [], alternatives: [], note: message },
+    plannedContinuation: [],
+    reasoning: message,
     scores: [],
     stage: "unavailable",
     samples: 0,
@@ -408,8 +424,48 @@ function unavailableSnapshot(view, reason) {
     conflict: "",
     nodes: 0,
     ms: 0,
+    searchStats: { stage: "unavailable", samples: 0, conflicts: 0, nodes: 0, ms: 0, interrupted: false },
     beliefs: []
   };
+}
+
+function clientSnapshot(diagnostics) {
+  const source = diagnostics || unavailableSnapshot(null, "No decision was recorded.");
+  let copy = null;
+  try {
+    copy = JSON.parse(JSON.stringify(source));
+  } catch (err) {
+    copy = unavailableSnapshot(null, "The diagnostic snapshot could not be serialized.");
+  }
+  if (!copy.status) copy.status = copy.available === false ? "error" : "ready";
+  copy.playerId = copy.playerId || copy.botId || null;
+  copy.teamId = copy.teamId || copy.team || null;
+  copy.boardEnds = copy.boardEnds || {
+    left: copy.leftEnd == null ? null : copy.leftEnd,
+    right: copy.rightEnd == null ? null : copy.rightEnd
+  };
+  copy.selectedMove = copy.selectedMove || copy.selected || null;
+  copy.legalMoves = Array.isArray(copy.legalMoves) ? copy.legalMoves : [];
+  copy.candidateEvaluations = Array.isArray(copy.candidateEvaluations) ? copy.candidateEvaluations : (copy.scores || []);
+  copy.plannedContinuation = Array.isArray(copy.plannedContinuation)
+    ? copy.plannedContinuation
+    : (copy.plan && copy.plan.continuation) || [];
+  copy.strategicMode = copy.strategicMode || copy.mode || null;
+  copy.reasoning = copy.reasoning || (copy.comparison && copy.comparison.text) || null;
+  copy.teammateAnalysis = copy.teammateAnalysis || copy.partnership || null;
+  copy.opponentAnalysis = copy.opponentAnalysis || copy.opponents || null;
+  copy.searchStats = copy.searchStats || {
+    stage: copy.stage,
+    samples: copy.samples,
+    conflicts: copy.conflicts,
+    nodes: copy.nodes,
+    ms: copy.ms,
+    interrupted: false
+  };
+  copy.lastUpdatedAt = Date.now();
+  if (copy.status === "error" && !copy.error) copy.error = copy.reason || "The decision failed.";
+  if (copy.status !== "error") copy.error = null;
+  return copy;
 }
 
 function buildDiagnostics(input) {
@@ -471,6 +527,34 @@ function buildDiagnostics(input) {
     conflict: report ? report.conflict : "",
     nodes: report ? report.nodes : 0,
     ms: report ? report.ms : 0,
+    status: "ready",
+    error: null,
+    playerId: view.selfId,
+    teamId: ((view.players || []).find((player) => player.id === view.selfId) || {}).team || null,
+    boardEnds: { left: view.leftEnd, right: view.rightEnd },
+    legalMoves: (view.validMoves || []).map((move) => ({ tileId: move.tileId, side: move.side })),
+    selectedMove: selected,
+    candidateEvaluations: ranked.map((row) => ({
+      tileId: row.move.tileId,
+      side: row.move.side,
+      score: round3(row.score),
+      parts: row.parts || null,
+      wins: row.wins == null ? null : row.wins,
+      samplesUsed: row.samplesUsed == null ? null : row.samplesUsed
+    })),
+    plannedContinuation: projected ? projected.steps : [],
+    strategicMode: mode,
+    reasoning: overrideText(chosen, alternative, samples).text,
+    teammateAnalysis: partnershipReport(view, beliefs, chosen),
+    opponentAnalysis: opponentReport(view, beliefs, chosen),
+    searchStats: {
+      stage: report && report.samples ? "searched" : "heuristic",
+      samples: samples,
+      conflicts: report ? report.conflicts : 0,
+      nodes: report ? report.nodes : 0,
+      ms: report ? report.ms : 0,
+      interrupted: !!(report && report.interrupted)
+    },
     scores: ranked.slice(0, 6).map((row) => ({
       tileId: row.move.tileId,
       side: row.move.side,
@@ -495,6 +579,7 @@ module.exports = {
   deriveMode,
   buildDiagnostics,
   unavailableSnapshot,
+  clientSnapshot,
   MODE_WIN,
   MODE_MATE,
   MODE_BLOCK,

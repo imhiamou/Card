@@ -24,15 +24,66 @@
   }
 
   function onTableEvent(panel, eventName) {
-    const state = panel || { open: false, stale: false, status: "" };
-    if (!state.open) return { open: false, botId: state.botId || null, stale: false, status: state.status || "" };
+    const state = panel || { open: false, status: "ready", snapshot: null };
+    if (!state.open) {
+      return { open: false, botId: state.botId || null, status: state.status || "ready", snapshot: state.snapshot || null, error: null };
+    }
     if (REFRESH_EVENTS.indexOf(eventName) < 0) return state;
+    return beginEvaluation(state);
+  }
+
+  function panelFromSnapshot(botId, snapshot) {
+    if (!snapshot) {
+      return { open: true, botId: botId, status: "evaluating", snapshot: null, error: null };
+    }
+    const failed = snapshot.status === "error" || snapshot.available === false;
     return {
       open: true,
-      botId: state.botId,
-      stale: true,
-      status: "Re-evaluating"
+      botId: botId,
+      status: failed ? "error" : "ready",
+      snapshot: snapshot,
+      error: failed ? (snapshot.error || snapshot.reason || "The decision failed.") : null
     };
+  }
+
+  function beginEvaluation(panel) {
+    const current = panel || { open: false };
+    if (!current.open) return current;
+    return {
+      open: true,
+      botId: current.botId,
+      status: "evaluating",
+      snapshot: current.snapshot || null,
+      error: null
+    };
+  }
+
+  function completeEvaluation(panel, snapshot) {
+    const botId = (snapshot && (snapshot.playerId || snapshot.botId)) || (panel && panel.botId) || null;
+    const next = panelFromSnapshot(botId, snapshot);
+    if (snapshot && snapshot.lastUpdatedAt && panel && panel.snapshot && panel.snapshot.lastUpdatedAt) {
+      if (snapshot.lastUpdatedAt < panel.snapshot.lastUpdatedAt && (panel.snapshot.playerId || panel.snapshot.botId) === botId) {
+        return panel;
+      }
+    }
+    return next;
+  }
+
+  function failEvaluation(panel, error) {
+    return {
+      open: true,
+      botId: panel && panel.botId,
+      status: "error",
+      snapshot: panel && panel.snapshot || null,
+      error: error || "The decision snapshot was not received."
+    };
+  }
+
+  function statusText(panel) {
+    if (!panel) return "Ready";
+    if (panel.status === "thinking" || panel.status === "evaluating") return "Evaluating";
+    if (panel.status === "error") return panel.error || "The decision failed.";
+    return "Ready";
   }
 
   function text(value) {
@@ -61,7 +112,22 @@
     const comparison = snap.comparison || {};
     const confidence = snap.confidence || {};
     const players = Array.isArray(snap.players) ? snap.players : [];
+    const legalMoves = Array.isArray(snap.legalMoves) ? snap.legalMoves : [];
+    const candidates = Array.isArray(snap.candidateEvaluations) ? snap.candidateEvaluations : (snap.scores || []);
     const sections = [];
+
+    sections.push({
+      heading: "Legal moves",
+      lines: legalMoves.length
+        ? legalMoves.map((move) => (move.tileId || "tile") + " on the " + (move.side || "unknown") + " end")
+        : ["unavailable"]
+    });
+    sections.push({
+      heading: "Candidate evaluations",
+      lines: candidates.length
+        ? candidates.map((row) => (row.tileId || "tile") + " on the " + (row.side || "unknown") + " end, score " + text(row.score))
+        : ["unavailable"]
+    });
 
     sections.push({
       heading: "Current status",
@@ -146,8 +212,11 @@
       lines: [text(comparison.text)]
     });
 
+    const header = snap.status === "error" || snap.available === false
+      ? (snap.error || snap.reason || "The decision failed.")
+      : (snap.status === "evaluating" || snap.status === "thinking" ? "Evaluating" : "Ready");
     return {
-      status: snap.available === false ? text(snap.reason) : "Current decision",
+      status: header,
       sections: sections
     };
   }
@@ -157,6 +226,11 @@
     normalizeRoom: normalizeRoom,
     inspectClick: inspectClick,
     onTableEvent: onTableEvent,
+    panelFromSnapshot: panelFromSnapshot,
+    beginEvaluation: beginEvaluation,
+    completeEvaluation: completeEvaluation,
+    failEvaluation: failEvaluation,
+    statusText: statusText,
     renderModel: renderModel
   };
 });
