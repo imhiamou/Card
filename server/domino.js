@@ -750,6 +750,12 @@ function validMovesFor(room, playerId) {
 function emitFullState(room, io, roomCode, extra) {
   const d = room.domino;
   const teams = publicTeams(room);
+  let inspectExtra = {};
+  try {
+    inspectExtra = inspectStateExtra(room, roomCode);
+  } catch (err) {
+    inspectExtra = {};
+  }
   room.players.forEach((player) => {
     const moves = d.over ? [] : (player.id === d.currentTurn ? validMovesFor(room, player.id) : []);
     const myTeam = teamOfPlayer(d, player.id);
@@ -784,6 +790,7 @@ function emitFullState(room, io, roomCode, extra) {
       winnerId: d.winnerId,
       winnerTeam: d.winnerTeam,
       winReason: d.winReason,
+      ...inspectExtra,
       ...(extra || {})
     });
   });
@@ -855,14 +862,55 @@ function decideBotMove(room, roomCode, botId) {
   if (!room.dominoDecisions) room.dominoDecisions = {};
   const cached = room.dominoDecisions[botId];
   if (cached && cached.key === key) return cached;
-  const explained = dominoBot.getDominoMove(view, { explain: true });
+  let explained = null;
+  try {
+    explained = dominoBot.getDominoMove(view, { explain: true });
+  } catch (err) {
+    const snapshot = dominoInspect.clientSnapshot(
+      dominoInspect.unavailableSnapshot(view, err && err.message ? err.message : "The decision failed.")
+    );
+    let move = null;
+    try {
+      move = dominoBot.getDominoMove(view);
+    } catch (ignored) {
+      move = null;
+    }
+    const stored = { key: key, move: move, snapshot: snapshot, restricted: false };
+    room.dominoDecisions[botId] = stored;
+    return stored;
+  }
   const move = explained ? { tileId: explained.tileId, side: explained.side } : null;
   const snapshot = explained && explained.diagnostics
-    ? explained.diagnostics
-    : dominoInspect.unavailableSnapshot(view, "No legal move is available.");
+    ? dominoInspect.clientSnapshot(explained.diagnostics)
+    : dominoInspect.clientSnapshot(dominoInspect.unavailableSnapshot(view, "No legal move is available."));
   const stored = { key: key, move: move, snapshot: snapshot, restricted: false };
   room.dominoDecisions[botId] = stored;
   return stored;
+}
+
+function inspectStateExtra(room, roomCode) {
+  const code = typeof roomCode === "string" ? roomCode.trim().toUpperCase() : "";
+  if (code !== INSPECT_ROOM || !room || !room.domino) return {};
+  const botDiagnostics = {};
+  room.players.forEach((player) => {
+    if (!player.isBot) return;
+    try {
+      const decided = decideBotMove(room, code, player.id);
+      botDiagnostics[player.id] = decided && decided.snapshot
+        ? decided.snapshot
+        : dominoInspect.clientSnapshot(dominoInspect.unavailableSnapshot(
+          decisionView(room, player.id),
+          "No decision was recorded."
+        ));
+    } catch (err) {
+      botDiagnostics[player.id] = dominoInspect.clientSnapshot(
+        dominoInspect.unavailableSnapshot(null, err && err.message ? err.message : "The decision failed.")
+      );
+      botDiagnostics[player.id].playerId = player.id;
+      botDiagnostics[player.id].botId = player.id;
+    }
+  });
+  return { botDiagnostics: botDiagnostics };
 }
 
 function inspectPayload(stored, room, botId) {
@@ -874,6 +922,7 @@ function inspectPayload(stored, room, botId) {
     const selected = Object.assign({}, snapshot.selected, { conditional: true, assumption: note });
     snapshot = Object.assign({}, snapshot, {
       selected: selected,
+      selectedMove: selected,
       plan: snapshot.plan ? Object.assign({}, snapshot.plan, { selected: selected }) : snapshot.plan
     });
   }
@@ -904,8 +953,17 @@ function runBotTurn(room, io, roomCode, botId) {
 
   const moves = validMovesFor(room, botId);
   if (moves.length > 0) {
-    const choice = decideBotMove(room, roomCode, botId).move;
-    const choice = dominoBot.getDominoMove(decisionView(room, botId));
+    let choice = null;
+    try {
+      choice = decideBotMove(room, roomCode, botId).move;
+    } catch (err) {
+      console.warn("[bot] decision failed game=dominoes room=%s bot=%s", roomCode, botId);
+      try {
+        choice = dominoBot.getDominoMove(decisionView(room, botId));
+      } catch (ignored) {
+        choice = null;
+      }
+    }
     const move = choice && moves.some((m) => m.tileId === choice.tileId && m.side === choice.side)
       ? choice
       : moves[0];
@@ -1125,6 +1183,12 @@ function onLobbyFull(room, io, roomCode) {
   ensureMatch(room);
   initRound(room);
   const teams = publicTeams(room);
+  let openingInspect = {};
+  try {
+    openingInspect = inspectStateExtra(room, roomCode);
+  } catch (err) {
+    openingInspect = {};
+  }
   room.players.forEach((player) => {
     const d = room.domino;
     const moves = player.id === d.currentTurn ? validMovesFor(room, player.id) : [];
@@ -1149,7 +1213,8 @@ function onLobbyFull(room, io, roomCode) {
       validMoves: moves,
       canDraw: false,
       maxPlayers: room.maxPlayers || room.players.length,
-      matchScoreboard: publicMatchScoreboard(room)
+      matchScoreboard: publicMatchScoreboard(room),
+      ...openingInspect
     });
   });
   // Opening turn may need auto-pass only if somehow no moves and empty yard (shouldn't).
@@ -1504,6 +1569,6 @@ module.exports = {
   clearBotTimer,
   decisionView,
   decideBotMove,
+  inspectStateExtra,
   INSPECT_ROOM
-  decisionView
 };
