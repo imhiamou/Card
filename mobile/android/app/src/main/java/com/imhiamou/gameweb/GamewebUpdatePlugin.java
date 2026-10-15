@@ -8,17 +8,23 @@ import android.content.pm.Signature;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
+import android.util.Log;
 import androidx.core.content.FileProvider;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
+import java.net.SocketTimeoutException;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
@@ -27,6 +33,7 @@ import java.util.regex.Pattern;
 
 @CapacitorPlugin(name = "GamewebUpdate")
 public class GamewebUpdatePlugin extends Plugin {
+    private static final String TAG = "GamewebUpdate";
     private static final Pattern VERSION = Pattern.compile("^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$");
     private static final int MAX_REDIRECTS = 5;
     private static final int MAX_BYTES = 180 * 1024 * 1024;
@@ -38,11 +45,24 @@ public class GamewebUpdatePlugin extends Plugin {
     public void getInstalled(PluginCall call) {
         try {
             PackageInfo info = getContext().getPackageManager().getPackageInfo(PACKAGE_NAME, signingFlags());
+            boolean canInstall = true;
+            if (Build.VERSION.SDK_INT >= 26) {
+                canInstall = getContext().getPackageManager().canRequestPackageInstalls();
+            }
+            String versionName = info.versionName == null ? "" : info.versionName;
+            try {
+                cleanupDownloads(versionCodeOf(info));
+            } catch (Exception ignored) {
+                log("cleanup", "skipped");
+            }
             JSObject result = new JSObject();
-            result.put("versionName", info.versionName == null ? "" : info.versionName);
+            result.put("versionName", versionName);
             result.put("versionCode", versionCodeOf(info));
+            result.put("canRequestPackageInstalls", canInstall);
+            log("installed", "version=" + versionName);
             call.resolve(result);
         } catch (Exception err) {
+            log("installed", "unreadable");
             call.reject("The installed Gameweb version could not be read.");
         }
     }
@@ -54,9 +74,11 @@ public class GamewebUpdatePlugin extends Plugin {
         String prefix = call.getString("prefix", "v");
         final String url;
         final int maxBytes;
+        final String subject;
         if ("releases".equals(kind)) {
             url = "https://api.github.com/repos/imhiamou/Card/releases?per_page=100";
             maxBytes = 2 * 1024 * 1024;
+            subject = "update list";
         } else if ("manifest".equals(kind)) {
             if (!VERSION.matcher(version).matches() || versionCodeOfName(version) < 1) {
                 call.reject("The update version is not a supported Gameweb release.");
@@ -68,19 +90,24 @@ public class GamewebUpdatePlugin extends Plugin {
             }
             url = "https://github.com/imhiamou/Card/releases/download/" + prefix + version + "/android-latest.json";
             maxBytes = 64 * 1024;
+            subject = "update metadata";
         } else {
             call.reject("The update request is not recognized.");
             return;
         }
         executor.execute(() -> {
             try {
-                String body = readText(url, maxBytes);
+                log(subject, "request");
+                String body = readText(url, maxBytes, subject);
                 JSObject result = new JSObject();
                 result.put("body", body);
+                log(subject, "received");
                 call.resolve(result);
             } catch (UpdateException err) {
+                log(subject, err.getMessage());
                 call.reject(err.getMessage());
             } catch (Exception err) {
+                log(subject, "unreachable");
                 call.reject("GitHub could not be reached. Check the connection and try again.");
             }
         });
@@ -91,18 +118,7 @@ public class GamewebUpdatePlugin extends Plugin {
         String version = call.getString("version", "");
         String sha256 = call.getString("sha256", "");
         String prefix = call.getString("prefix", "v");
-        if (!VERSION.matcher(version).matches() || versionCodeOfName(version) < 1) {
-            call.reject("The update version is not a supported Gameweb release.");
-            return;
-        }
-        if (!"v".equals(prefix) && !"V".equals(prefix)) {
-            call.reject("The update version is not a supported Gameweb release.");
-            return;
-        }
-        if (!sha256.matches("^[a-f0-9]{64}$")) {
-            call.reject("The update checksum is invalid.");
-            return;
-        }
+        if (!validRelease(version, prefix, sha256, call)) return;
         if (busy) {
             call.reject("An update download is already in progress.");
             return;
@@ -111,22 +127,79 @@ public class GamewebUpdatePlugin extends Plugin {
         executor.execute(() -> {
             File apk = null;
             try {
+                log("download", "version=" + version);
                 apk = download(version, prefix, sha256, call);
+                log("verify", "version=" + version);
                 verifyPackage(apk, version);
-                install(apk, call);
+                handOff(apk, call);
             } catch (UpdateException err) {
                 deleteQuietly(apk);
+                busy = false;
+                log("download", err.getMessage());
                 call.reject(err.getMessage());
             } catch (Exception err) {
                 deleteQuietly(apk);
-                call.reject("The update could not be downloaded.");
-            } finally {
                 busy = false;
+                log("download", "failed");
+                call.reject("The update could not be downloaded.");
             }
         });
     }
 
-    private String readText(String url, int maxBytes) throws Exception {
+    @PluginMethod
+    public void resumeInstall(PluginCall call) {
+        String version = call.getString("version", "");
+        String sha256 = call.getString("sha256", "");
+        String prefix = call.getString("prefix", "v");
+        if (!validRelease(version, prefix, sha256, call)) return;
+        if (busy) {
+            call.reject("An update download is already in progress.");
+            return;
+        }
+        busy = true;
+        executor.execute(() -> {
+            File apk = new File(new File(getContext().getCacheDir(), "updates"), "Gameweb-" + version + ".apk");
+            try {
+                if (!apk.isFile()) {
+                    throw new UpdateException("The downloaded update is no longer on this device. Start the download again.");
+                }
+                log("resume", "version=" + version);
+                byte[] actual = sha256Of(apk);
+                if (!MessageDigest.isEqual(actual, hexToBytes(sha256))) {
+                    deleteQuietly(apk);
+                    throw new UpdateException("The downloaded update did not match the published checksum.");
+                }
+                verifyPackage(apk, version);
+                handOff(apk, call);
+            } catch (UpdateException err) {
+                busy = false;
+                log("resume", err.getMessage());
+                call.reject(err.getMessage());
+            } catch (Exception err) {
+                busy = false;
+                log("resume", "failed");
+                call.reject("The update could not be opened.");
+            }
+        });
+    }
+
+    private boolean validRelease(String version, String prefix, String sha256, PluginCall call) {
+        if (!VERSION.matcher(version).matches() || versionCodeOfName(version) < 1) {
+            call.reject("The update version is not a supported Gameweb release.");
+            return false;
+        }
+        if (!"v".equals(prefix) && !"V".equals(prefix)) {
+            call.reject("The update version is not a supported Gameweb release.");
+            return false;
+        }
+        if (!sha256.matches("^[a-f0-9]{64}$")) {
+            call.reject("The update checksum is invalid.");
+            return false;
+        }
+        return true;
+    }
+
+    private String readText(String url, int maxBytes, String subject) throws Exception {
         URL current = new URL(url);
         HttpURLConnection connection = null;
         try {
@@ -142,7 +215,7 @@ public class GamewebUpdatePlugin extends Plugin {
                 connection.setRequestProperty("Accept", "application/vnd.github+json, application/json");
                 int status = connection.getResponseCode();
                 if (status == 429 || status == 403) {
-                    throw new UpdateException("GitHub rate limit. Try the update again later.");
+                    throw statusError(connection, status, subject);
                 }
                 if (status == 301 || status == 302 || status == 303 || status == 307 || status == 308) {
                     String location = connection.getHeaderField("Location");
@@ -165,7 +238,7 @@ public class GamewebUpdatePlugin extends Plugin {
                     byte[] buffer = new byte[4096];
                     int read;
                     int received = 0;
-                    java.io.ByteArrayOutputStream collected = new java.io.ByteArrayOutputStream();
+                    ByteArrayOutputStream collected = new ByteArrayOutputStream();
                     while ((read = input.read(buffer)) >= 0) {
                         received += read;
                         if (received > maxBytes) {
@@ -176,12 +249,18 @@ public class GamewebUpdatePlugin extends Plugin {
                     if (received == 0) {
                         throw new UpdateException("The update metadata was empty.");
                     }
-                    return new String(collected.toByteArray(), java.nio.charset.StandardCharsets.UTF_8);
+                    return new String(collected.toByteArray(), StandardCharsets.UTF_8);
                 } finally {
                     try { input.close(); } catch (Exception ignored) { /* closed */ }
                 }
             }
             throw new UpdateException("The update could not be read.");
+        } catch (UpdateException err) {
+            throw err;
+        } catch (SocketTimeoutException err) {
+            throw new UpdateException("The update timed out. Check the connection and try again.");
+        } catch (IOException err) {
+            throw new UpdateException("GitHub could not be reached. Check the connection and try again.");
         } finally {
             if (connection != null) connection.disconnect();
         }
@@ -190,6 +269,7 @@ public class GamewebUpdatePlugin extends Plugin {
     private File download(String version, String prefix, String expectedSha, PluginCall call) throws Exception {
         URL current = new URL(apkUrl(version, prefix));
         HttpURLConnection connection = null;
+        File partial = null;
         try {
             for (int redirect = 0; redirect <= MAX_REDIRECTS; redirect++) {
                 if (!"https".equals(current.getProtocol()) || !allowedHost(current.getHost())) {
@@ -203,7 +283,7 @@ public class GamewebUpdatePlugin extends Plugin {
                 connection.setRequestProperty("Accept", "application/vnd.android.package-archive");
                 int status = connection.getResponseCode();
                 if (status == 429 || status == 403) {
-                    throw new UpdateException("GitHub rate limit. Try the update again later.");
+                    throw statusError(connection, status, "update package");
                 }
                 if (status == 301 || status == 302 || status == 303 || status == 307 || status == 308) {
                     String location = connection.getHeaderField("Location");
@@ -226,42 +306,56 @@ public class GamewebUpdatePlugin extends Plugin {
                 if (!dir.isDirectory() && !dir.mkdirs()) {
                     throw new UpdateException("The update could not be stored on this device.");
                 }
+                partial = new File(dir, "Gameweb-" + version + ".apk.partial");
                 File apk = new File(dir, "Gameweb-" + version + ".apk");
-                deleteQuietly(apk);
+                deleteQuietly(partial);
+                MessageDigest digest = MessageDigest.getInstance("SHA-256");
+                InputStream input = connection.getInputStream();
+                FileOutputStream output = new FileOutputStream(partial);
                 try {
-                    MessageDigest digest = MessageDigest.getInstance("SHA-256");
-                    InputStream input = connection.getInputStream();
-                    FileOutputStream output = new FileOutputStream(apk);
-                    try {
-                        byte[] buffer = new byte[8192];
-                        long received = 0;
-                        int read;
-                        while ((read = input.read(buffer)) >= 0) {
-                            received += read;
-                            if (received > MAX_BYTES) {
-                                throw new UpdateException("The update package is too large.");
-                            }
-                            output.write(buffer, 0, read);
-                            digest.update(buffer, 0, read);
-                            if ((received & 0x3ffff) == 0) notifyProgress(call, received, advertised);
+                    byte[] buffer = new byte[8192];
+                    long received = 0;
+                    int read;
+                    while ((read = input.read(buffer)) >= 0) {
+                        received += read;
+                        if (received > MAX_BYTES) {
+                            throw new UpdateException("The update package is too large.");
                         }
-                        notifyProgress(call, received, advertised > 0 ? advertised : received);
-                    } finally {
-                        try { output.close(); } catch (Exception ignored) { /* closed */ }
-                        try { input.close(); } catch (Exception ignored) { /* closed */ }
+                        output.write(buffer, 0, read);
+                        digest.update(buffer, 0, read);
+                        if ((received & 0x3ffff) == 0) notifyProgress(call, received, advertised);
                     }
-                    byte[] actual = digest.digest();
-                    byte[] expected = hexToBytes(expectedSha);
-                    if (!MessageDigest.isEqual(actual, expected)) {
-                        throw new UpdateException("The downloaded update did not match the published checksum.");
-                    }
-                    return apk;
-                } catch (Exception err) {
-                    deleteQuietly(apk);
-                    throw err;
+                    notifyProgress(call, received, advertised > 0 ? advertised : received);
+                } finally {
+                    try { output.close(); } catch (Exception ignored) { /* closed */ }
+                    try { input.close(); } catch (Exception ignored) { /* closed */ }
                 }
+                if (!MessageDigest.isEqual(digest.digest(), hexToBytes(expectedSha))) {
+                    throw new UpdateException("The downloaded update did not match the published checksum.");
+                }
+                if (apk.exists() && !apk.delete()) {
+                    throw new UpdateException("The update could not be stored on this device.");
+                }
+                if (!partial.renameTo(apk)) {
+                    throw new UpdateException("The update could not be stored on this device.");
+                }
+                partial = null;
+                log("download", "complete version=" + version);
+                return apk;
             }
             throw new UpdateException("The update package was not on the GitHub Release.");
+        } catch (UpdateException err) {
+            deleteQuietly(partial);
+            throw err;
+        } catch (SocketTimeoutException err) {
+            deleteQuietly(partial);
+            throw new UpdateException("The update timed out. Check the connection and try again.");
+        } catch (IOException err) {
+            deleteQuietly(partial);
+            throw new UpdateException("GitHub could not be reached. Check the connection and try again.");
+        } catch (Exception err) {
+            deleteQuietly(partial);
+            throw err;
         } finally {
             if (connection != null) connection.disconnect();
         }
@@ -298,40 +392,110 @@ public class GamewebUpdatePlugin extends Plugin {
         }
     }
 
-    private void install(File apk, PluginCall call) {
+    private void handOff(File apk, PluginCall call) {
         if (getActivity() == null) {
+            busy = false;
+            log("install", "no activity");
             call.reject("Android did not open the package installer.");
             return;
         }
         getActivity().runOnUiThread(() -> {
             try {
-                if (Build.VERSION.SDK_INT >= 26 && !getContext().getPackageManager().canRequestPackageInstalls()) {
-                    Intent settings = new Intent(
-                        Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                        Uri.parse("package:" + PACKAGE_NAME)
-                    );
-                    settings.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                    getActivity().startActivity(settings);
-                    call.reject("Allow Gameweb to install updates, then start the update again. Android still asks you to confirm the installation.");
-                    return;
-                }
-                Uri uri = FileProvider.getUriForFile(
-                    getContext(),
-                    PACKAGE_NAME + ".fileprovider",
-                    apk
-                );
-                Intent intent = new Intent(Intent.ACTION_VIEW);
-                intent.setDataAndType(uri, "application/vnd.android.package-archive");
-                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
-                intent.setClipData(ClipData.newRawUri("", uri));
-                getActivity().startActivity(intent);
-                JSObject result = new JSObject();
-                result.put("started", true);
-                call.resolve(result);
+                presentInstaller(apk, call);
             } catch (Exception err) {
+                log("install", "failed");
                 call.reject("Android did not open the package installer.");
+            } finally {
+                busy = false;
             }
         });
+    }
+
+    private void presentInstaller(File apk, PluginCall call) {
+        if (Build.VERSION.SDK_INT >= 26 && !getContext().getPackageManager().canRequestPackageInstalls()) {
+            Intent settings = new Intent(
+                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                Uri.parse("package:" + PACKAGE_NAME)
+            );
+            settings.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getActivity().startActivity(settings);
+            log("permission", "settings");
+            JSObject result = new JSObject();
+            result.put("installerOpened", false);
+            result.put("permissionRequired", true);
+            result.put("installed", false);
+            result.put("result", "permission");
+            call.resolve(result);
+            return;
+        }
+        Uri uri = FileProvider.getUriForFile(
+            getContext(),
+            PACKAGE_NAME + ".fileprovider",
+            apk
+        );
+        Intent intent = new Intent(Intent.ACTION_VIEW);
+        intent.setDataAndType(uri, "application/vnd.android.package-archive");
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+        intent.setClipData(ClipData.newRawUri("", uri));
+        getActivity().startActivity(intent);
+        log("install", "installer opened");
+        JSObject result = new JSObject();
+        result.put("installerOpened", true);
+        result.put("permissionRequired", false);
+        result.put("installed", false);
+        result.put("result", "unknown");
+        call.resolve(result);
+    }
+
+    private void cleanupDownloads(long installedCode) {
+        if (busy) return;
+        File dir = new File(getContext().getCacheDir(), "updates");
+        File[] files = dir.listFiles();
+        if (files == null) return;
+        for (File file : files) {
+            String name = file.getName();
+            if (name.endsWith(".partial")) {
+                deleteQuietly(file);
+                log("cleanup", "partial");
+                continue;
+            }
+            if (name.startsWith("Gameweb-") && name.endsWith(".apk")) {
+                String version = name.substring("Gameweb-".length(), name.length() - ".apk".length());
+                int code = versionCodeOfName(version);
+                if (code >= 1 && code <= installedCode) {
+                    deleteQuietly(file);
+                    log("cleanup", "old version=" + version);
+                }
+            }
+        }
+    }
+
+    private static UpdateException statusError(HttpURLConnection connection, int status, String subject) {
+        if (status == 429 || rateLimited(connection)) {
+            return new UpdateException("GitHub rate limit. Try the update again later.");
+        }
+        return new UpdateException("GitHub refused the " + subject + " (403).");
+    }
+
+    private static boolean rateLimited(HttpURLConnection connection) {
+        String remaining = connection.getHeaderField("X-RateLimit-Remaining");
+        if (remaining != null && remaining.trim().equals("0")) return true;
+        return errorSnippet(connection).toLowerCase(Locale.US).contains("rate limit");
+    }
+
+    private static String errorSnippet(HttpURLConnection connection) {
+        InputStream error = connection.getErrorStream();
+        if (error == null) return "";
+        try {
+            byte[] buffer = new byte[512];
+            int read = error.read(buffer);
+            if (read <= 0) return "";
+            return new String(buffer, 0, read, StandardCharsets.UTF_8);
+        } catch (Exception err) {
+            return "";
+        } finally {
+            try { error.close(); } catch (Exception ignored) { /* closed */ }
+        }
     }
 
     private void notifyProgress(PluginCall call, long received, long total) {
@@ -406,6 +570,19 @@ public class GamewebUpdatePlugin extends Plugin {
         return true;
     }
 
+    private static byte[] sha256Of(File file) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        InputStream input = new FileInputStream(file);
+        try {
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = input.read(buffer)) >= 0) digest.update(buffer, 0, read);
+        } finally {
+            try { input.close(); } catch (Exception ignored) { /* closed */ }
+        }
+        return digest.digest();
+    }
+
     private static byte[] hexToBytes(String hex) {
         byte[] out = new byte[hex.length() / 2];
         for (int i = 0; i < hex.length(); i += 2) {
@@ -418,6 +595,11 @@ public class GamewebUpdatePlugin extends Plugin {
         if (file != null && file.exists() && !file.delete()) {
             file.deleteOnExit();
         }
+    }
+
+    private static void log(String stage, String detail) {
+        if (detail == null || detail.isEmpty()) Log.i(TAG, "stage=" + stage);
+        else Log.i(TAG, "stage=" + stage + " " + detail);
     }
 
     private static final class UpdateException extends Exception {

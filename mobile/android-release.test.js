@@ -130,12 +130,13 @@ describe("android version metadata", () => {
     const script = fs.readFileSync(path.join(repoRoot, "assets/android-update.js"), "utf8");
     const plugin = fs.readFileSync(path.join(repoRoot, "mobile/android/app/src/main/java/com/imhiamou/gameweb/GamewebUpdatePlugin.java"), "utf8");
     assert.equal(script.includes("releases/latest/download"), false);
-    assert.match(script, /https:\/\/api\.github\.com\/repos\/imhiamou\/Card\/releases\?per_page=100/);
+    assert.equal(/\bfetch\s*\(/.test(script), false);
     assert.match(script, /appStateChange/);
     assert.match(script, /visibilitychange/);
     assert.match(plugin, /https:\/\/api\.github\.com\/repos\/imhiamou\/Card\/releases\?per_page=100/);
     assert.equal(plugin.includes("call.getString(\"url\""), false);
     assert.match(plugin, /downloadAndInstall/);
+    assert.match(plugin, /resumeInstall/);
   });
 
   it("checks a sha256 checksum and ignores unexpected metadata hosts", () => {

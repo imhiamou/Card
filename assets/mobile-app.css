@@ -123,6 +123,31 @@ html.gameweb-app #gamewebCheckUpdate::before {
   mask: url("uno/icons/refresh-cw.svg") center / contain no-repeat;
 }
 
+html.gameweb-app #gamewebUpdateStatus {
+  margin: 0 0 8px;
+  font-size: 13px;
+  line-height: 1.35;
+  color: #d7deea;
+}
+
+html.gameweb-app #gamewebUpdateStatus span {
+  display: inline;
+}
+
+html.gameweb-app #gamewebUpdateDetails {
+  display: inline-flex;
+  width: auto;
+  min-height: 28px;
+  margin: 0 0 0 8px;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: #2a3344;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+}
+
 html.gameweb-app #lobbyScreen .lobbyColumns {
   flex: 1 1 auto;
   min-height: 0;
