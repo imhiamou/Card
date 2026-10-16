@@ -529,7 +529,8 @@ function initRound(room) {
     teamMode: teams.teamMode,
     teamA: teams.teamA,
     teamB: teams.teamB,
-    publicLog: []
+    publicLog: [],
+    roundId: (room.dominoRoundCounter = (room.dominoRoundCounter || 0) + 1)
   };
   room.dominoRematch = {};
 }
@@ -709,6 +710,8 @@ function notePublic(state, entry) {
 function decisionView(room, botId) {
   const d = room.domino;
   return {
+    gameId: roomCode,
+    roundId: d.roundId || 1,
     selfId: botId,
     hand: (d.hands[botId] || []).map((tile) => ({ id: tile.id, a: tile.a, b: tile.b })),
     validMoves: validMovesFor(room, botId).map((move) => ({ tileId: move.tileId, side: move.side })),
@@ -1025,7 +1028,9 @@ function resolveAutoPasses(room, io, roomCode) {
       type: "pass",
       playerId: d.currentTurn,
       leftEnd: d.leftEnd,
-      rightEnd: d.rightEnd
+      rightEnd: d.rightEnd,
+      handSizeBefore: hand.length,
+      handSizeAfter: hand.length
     });
     const passer = room.players.find((p) => p.id === d.currentTurn);
     // "dominoPassed" — Dominoes only. Announces an automatic pass.
@@ -1338,7 +1343,8 @@ function registerSocket(socket, io, rooms) {
       return;
     }
 
-    const legal = validMovesFor(room, socket.id).some(
+    const legalMovesBefore = validMovesFor(room, socket.id);
+    const legal = legalMovesBefore.some(
       (m) => m.tileId === tileId && (d.chain.length === 0 ? m.side === "center" : m.side === side)
     );
     if (!legal) {
@@ -1361,7 +1367,10 @@ function registerSocket(socket, io, rooms) {
       leftEndBefore: leftBefore,
       rightEndBefore: rightBefore,
       leftEnd: d.leftEnd,
-      rightEnd: d.rightEnd
+      rightEnd: d.rightEnd,
+      legalAlternatives: legalMovesBefore.length,
+      handSizeBefore: hand.length,
+      handSizeAfter: hand.length - 1
     });
 
     hand.splice(idx, 1);
