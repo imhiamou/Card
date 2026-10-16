@@ -577,3 +577,26 @@ test("client diagnostics redact all hidden tile identities and hand contents", (
   assert.equal(snapshot.selected.side, "left");
   assert.equal(snapshot.inventory.byPip[0].inHand, 1);
 });
+
+
+test("strategic plans do not carry across rounds with the same hand signature", () => {
+  clearPlans();
+  const hand = [tile(4, 4), tile(0, 4), tile(1, 4), tile(2, 4)];
+  const first = normalize(base({
+    gameId: "room-test",
+    roundNumber: 1,
+    hand,
+    validMoves: [{ tileId: "4-4", side: "left" }],
+    leftEnd: 4,
+    rightEnd: 6,
+    chain: [tile(4, 6)]
+  }));
+  const firstPlan = resolvePlan(first, buildBeliefs(first));
+  assert.equal(firstPlan.mode, "self-control");
+  assert.equal(firstPlan.held, false);
+
+  const nextRound = Object.assign({}, first, { roundNumber: 2 });
+  const nextPlan = resolvePlan(nextRound, buildBeliefs(nextRound));
+  assert.equal(nextPlan.mode, "self-control");
+  assert.equal(nextPlan.held, false);
+});
