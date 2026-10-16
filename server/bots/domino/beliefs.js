@@ -101,8 +101,10 @@ function buildBeliefs(view, options) {
       if (exposed != null) belief.support[exposed] += 0.5;
       [tile.a, tile.b].forEach((pip) => {
         if (!belief.hard.has(pip)) return;
+        // A play contradicting a no-draw pass is inconsistent history. Do not
+        // silently erase the historical constraint; record the conflict and
+        // let constrained sampling fall back safely if no allocation remains.
         belief.contradictions.push({ pip: pip, tileId: tile.id, index: index });
-        belief.hard.delete(pip);
       });
       belief.recent.push({ type: "play", tileId: tile.id });
       running[event.playerId] = Math.max(0, (running[event.playerId] || 0) - 1);
