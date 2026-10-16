@@ -287,6 +287,17 @@ function withLines(plan) {
   if (!copy.mode || copy.mode === "none" || copy.target == null) {
     const reason = copy.evidence || "No number-control plan is committed.";
     copy.lines = [copy.switched ? "The previous plan was dropped. " + reason : reason];
+    if (copy.teammateTarget != null) {
+      copy.lines.push("Separate teammate-support target: " + copy.teammateTarget +
+        " (confidence " + round1(copy.teammateConfidence) + ").");
+    }
+    if (copy.teammateVoidNumbers && copy.teammateVoidNumbers.length) {
+      copy.lines.push("Teammate numbers ruled out by public passes: " + copy.teammateVoidNumbers.join(", ") + ".");
+    }
+    if (copy.teammateSuspectedMissingNumbers && copy.teammateSuspectedMissingNumbers.length) {
+      copy.lines.push("Teammate may lack these numbers after repeatedly playing away from them: " +
+        copy.teammateSuspectedMissingNumbers.join(", ") + " (suspected, not confirmed).");
+    }
     return copy;
   }
   const whose = copy.owner === "self" ? "this hand" : copy.owner === "teammate" ? "the teammate" : "an opponent";
