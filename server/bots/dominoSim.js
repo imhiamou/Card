@@ -300,7 +300,8 @@ function choose(strategy, view, rng, config) {
   if (strategy === "illegal") return { tileId: "9-9", side: "left" };
   const limits = Object.assign({}, QUIET);
   const options = { limits: limits };
-  if (strategy === "ai" || strategy === "ai-no-passes" || strategy === "ai-no-team" || strategy === "no-hands") {
+  if (strategy === "ai" || strategy === "ai-no-passes" || strategy === "ai-no-team" || strategy === "no-hands" ||
+      strategy === "predict" || strategy === "no-future" || strategy === "predict-no-intent" || strategy === "predict-no-sample") {
     Object.assign(limits, config && config.aiLimits ? config.aiLimits : {
       samples: 4,
       maxMs: 12,
@@ -310,8 +311,10 @@ function choose(strategy, view, rng, config) {
   }
   if (strategy === "no-passes" || strategy === "ai-no-passes") options.ignorePasses = true;
   if (strategy === "no-team" || strategy === "ai-no-team") options.ignoreTeam = true;
-  if (strategy === "no-intent") options.ignoreIntent = true;
+  if (strategy === "no-intent" || strategy === "predict-no-intent") options.ignoreIntent = true;
   if (strategy === "no-hands") options.ignoreHands = true;
+  if (strategy === "no-future") options.ignoreFuture = true;
+  if (strategy === "predict-no-sample") options.ignoreSamples = true;
   if (strategy === "baseline") {
     options.ignoreIntent = true;
     options.weights = {
@@ -466,7 +469,8 @@ function playTable(table, strategies, seed, stats, config) {
     map[id] = Array.isArray(strategies) ? strategies[index] : strategies[id];
   });
   let guard = 0;
-  while (!table.over && guard++ < 400) {
+  const cap = config && config.maxSteps ? config.maxSteps : 400;
+  while (!table.over && guard++ < cap) {
     stepTable(table, map, rng, stats, config);
     const books = account(table);
     if (books.unique !== books.count) {
@@ -475,7 +479,7 @@ function playTable(table, strategies, seed, stats, config) {
       break;
     }
   }
-  if (!table.over) {
+  if (!table.over && !(config && config.maxSteps)) {
     table.over = true;
     table.winReason = "blocked";
   }

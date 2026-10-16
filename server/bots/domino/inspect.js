@@ -483,6 +483,144 @@ function publicBelief(belief) {
   };
 }
 
+function planSentence(pred, label) {
+  const samples = pred.samples;
+  const counts = pred.counts || {};
+  if (!pred.trusted) {
+    return "My plan: " + samples + " deals do not agree on the next board, so " + label + " stays the highest immediate evaluation.";
+  }
+  if (pred.pBotFinishNext >= 0.5 && pred.pBotFinishNext >= (pred.pTeammateFinish || 0)) {
+    return "My plan: Empty this hand. " + label + " leads to a finish in " + counts.botFinish + " of " + samples + " deals.";
+  }
+  if (pred.pTeammateFinish >= 0.5 && pred.pTeammateFinish > (pred.pBotFinishNext || 0)) {
+    return "My plan: Let my teammate finish. They empty their hand in " + counts.mateFinished + " of " + samples + " deals.";
+  }
+  if ((pred.pMaintain || 0) >= 0.5 && (pred.pMaintain || 0) >= (pred.pForcedAbandon || 0)) {
+    return "My plan: Keep my teammate's number available. They continue it in " + counts.maintained + " of " + samples + " deals.";
+  }
+  if ((pred.pForcedAbandon || 0) >= 0.5) {
+    return "My plan: " + label + " still leaves my teammate forced off their number in " + counts.forcedAbandon + " of " + samples + " deals.";
+  }
+  if ((pred.pRoundEnds || 0) >= 0.5 && pred.mean > 0) {
+    return "My plan: The round ends before my next turn in " + counts.endedBefore + " of " + samples + " deals, and the sampled result favors this team.";
+  }
+  if ((pred.pRoundEnds || 0) >= 0.5 && pred.mean < 0) {
+    return "My plan: The sampled deals lose before my next turn in " + counts.endedBefore + " of " + samples + ".";
+  }
+  return "My plan: " + label + " has the best sampled team result (" + round3(pred.mean) + ").";
+}
+
+function riskSentence(pred) {
+  const counts = pred.counts || {};
+  const samples = pred.samples;
+  if (counts.removed > 0) {
+    return "Main risk: An opponent removes my teammate's number before they act in " + counts.removed + " of " + samples + " deals.";
+  }
+  if (counts.forcedAbandon > 0) {
+    return "Main risk: My teammate is forced to give up their number in " + counts.forcedAbandon + " of " + samples + " deals.";
+  }
+  if (counts.matePassed > 0 && counts.matePlayed === 0) {
+    return "Main risk: My teammate passes in every sampled deal (" + counts.matePassed + " of " + samples + ").";
+  }
+  if (counts.endedBefore > 0 && pred.mean < 0) {
+    return "Main risk: The round ends against this team before my next turn in " + counts.endedBefore + " of " + samples + " deals.";
+  }
+  return "Main risk: The sampled deals did not show an opponent taking my teammate's number away.";
+}
+
+function responseSentence(pred, alternative, label) {
+  if (!alternative || !alternative.move) {
+    return "My response: " + label + " is the only simulated line.";
+  }
+  const altMean = alternative.prediction && alternative.prediction.samples
+    ? alternative.prediction.mean
+    : alternative.prior != null ? alternative.prior : alternative.score;
+  return "My response: Prefer " + label + " over " + alternative.move.tileId +
+    " on the " + alternative.move.side + " because the simulated means are " +
+    round3(pred.mean) + " and " + round3(altMean) + ".";
+}
+
+function describeNextTurn(view, chosen, alternative) {
+  const pred = chosen && chosen.prediction;
+  if (!pred || !pred.samples) {
+    return {
+      available: false,
+      samples: 0,
+      plan: null,
+      risk: null,
+      response: null,
+      lines: ["No intervening turns were simulated for this decision."],
+      expectedEnds: null,
+      actions: [],
+      rates: null
+    };
+  }
+  const tile = handTile(view, chosen.move.tileId);
+  const label = tileLabel(tile);
+  const plan = planSentence(pred, label);
+  const risk = riskSentence(pred);
+  const response = responseSentence(pred, alternative, label);
+  const samples = pred.samples;
+  const counts = pred.counts || {};
+  const lines = [plan, risk, response];
+  if (pred.modalEnds) {
+    lines.push(
+      "Expected ends when the turn returns: " + pred.modalEnds.left + " and " + pred.modalEnds.right +
+      " in " + pred.modalEnds.n + " of " + samples + " deals."
+    );
+  } else {
+    lines.push("The sampled deals did not agree on open ends for the next turn.");
+  }
+  (pred.actions || []).forEach((action) => {
+    if (!action || action.n == null) return;
+    if (action.type === "pass") {
+      lines.push(action.playerId + " passes in " + action.n + " of " + samples + " deals.");
+    } else {
+      const forced = action.forced ? " That play was the only legal tile in the sampled hand." : "";
+      lines.push(
+        action.playerId + " most often plays the " + action.side + " end and leaves " + action.exposed +
+        " (" + action.n + " of " + samples + ")." + forced
+      );
+    }
+  });
+  lines.push(
+    "Teammate plays in " + (counts.matePlayed || 0) + " of " + samples +
+    " and passes in " + (counts.matePassed || 0) + " of " + samples + "."
+  );
+  lines.push(
+    "Teammate keeps the preferred number in " + (counts.maintained || 0) +
+    " of " + samples + ", an opponent removes it in " + (counts.removed || 0) +
+    " of " + samples + ", and the teammate is forced to give it up in " + (counts.forcedAbandon || 0) +
+    " of " + samples + "."
+  );
+  return {
+    available: true,
+    samples: samples,
+    plan: plan,
+    risk: risk,
+    response: response,
+    lines: lines,
+    expectedEnds: pred.modalEnds || null,
+    actions: pred.actions || [],
+    rates: {
+      teammatePlay: pred.pTeammatePlay,
+      teammatePass: pred.pTeammatePass,
+      maintain: pred.pMaintain,
+      abandon: pred.pAbandon,
+      forcedAbandon: pred.pForcedAbandon,
+      preferredRemoved: pred.pPreferredRemoved,
+      preferredSurvives: pred.pPreferredSurvives,
+      teammateFinish: pred.pTeammateFinish,
+      opponentDanger: pred.pOpponentDanger,
+      botUseful: pred.pBotUseful,
+      botFinishNext: pred.pBotFinishNext,
+      roundEnds: pred.pRoundEnds
+    },
+    partnerContinuation: pred.partnerContinuation,
+    mean: round3(pred.mean)
+  };
+}
+
 function unavailableSnapshot(view, reason) {
   const message = reason || "A diagnostic snapshot is unavailable.";
   return {
@@ -578,6 +716,7 @@ function buildDiagnostics(input) {
   const mode = deriveMode(chosen && chosen.parts, {
     canEmpty: !!(projected && projected.steps && handCount > 0 && projected.steps.length + 1 >= handCount)
   });
+  const nextTurn = describeNextTurn(view, chosen, alternative);
   const confidence = selected && samples > 0 && selected.samplesUsed
     ? { kind: "sample-win-fraction", value: round3(selected.wins / selected.samplesUsed), samples: selected.samplesUsed }
     : { kind: "unavailable", value: null, samples: samples || 0 };
@@ -598,6 +737,7 @@ function buildDiagnostics(input) {
     selected: selected,
     mode: mode,
     summary: plainSummary(view, beliefs, chosen, mode),
+    nextTurn: nextTurn,
     inventory: beliefs._inventory ? {
       byPip: beliefs._inventory.byPip,
       unseenCount: beliefs._inventory.unseenCount,
@@ -620,7 +760,7 @@ function buildDiagnostics(input) {
     components: componentReport(chosen && chosen.parts),
     comparison: overrideText(chosen, alternative, samples),
     alternative: alternative ? moveRow(view, alternative, "alternative", true) : null,
-    stage: report && report.samples ? "searched" : "heuristic",
+    stage: report && report.forecast ? "forecast" : report && report.samples ? "searched" : "heuristic",
     samples: samples,
     conflicts: report ? report.conflicts : 0,
     conflict: report ? report.conflict : "",
@@ -639,7 +779,8 @@ function buildDiagnostics(input) {
       score: round3(row.score),
       parts: row.parts || null,
       wins: row.wins == null ? null : row.wins,
-      samplesUsed: row.samplesUsed == null ? null : row.samplesUsed
+      samplesUsed: row.samplesUsed == null ? null : row.samplesUsed,
+      prediction: row.prediction || null
     })),
     plannedContinuation: projected ? projected.steps : [],
     strategicMode: mode,
@@ -647,7 +788,7 @@ function buildDiagnostics(input) {
     teammateAnalysis: partnershipReport(view, beliefs, chosen),
     opponentAnalysis: opponentReport(view, beliefs, chosen),
     searchStats: {
-      stage: report && report.samples ? "searched" : "heuristic",
+      stage: report && report.forecast ? "forecast" : report && report.samples ? "searched" : "heuristic",
       samples: samples,
       conflicts: report ? report.conflicts : 0,
       nodes: report ? report.nodes : 0,
