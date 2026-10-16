@@ -118,7 +118,14 @@ function candidatePlans(view, beliefs, intentScores) {
 
   const mateId = teammateId(view);
   if (mateId) {
+    const mateBelief = beliefs && beliefs[mateId];
+    const mateVoids = mateBelief && Array.isArray(mateBelief.knownImpossibleNumbers)
+      ? mateBelief.knownImpossibleNumbers
+      : [];
     for (let pip = 0; pip <= 6; pip++) {
+      // A known void is stronger evidence than a historical preference:
+      // never build a support plan around a number the teammate cannot play.
+      if (mateVoids.includes(pip)) continue;
       const score = targetScore(view, beliefs, "teammate-support", pip, mateId, intentScores);
       if (score >= 1.7) {
         candidates.push({
