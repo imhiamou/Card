@@ -328,3 +328,28 @@ test("the selected plan switches to a newly supported teammate number", () => {
   assert.equal(changed.targetNumber, 6);
   assert.ok(changed.createdAtTurn > first.createdAtTurn);
 });
+
+
+test("paired headless benchmark records AI-vs-legacy outcomes without illegal or missed wins", () => {
+  strategy.clearMemory();
+  const result = dominoSim.compare({
+    left: ["ai", "ai"],
+    right: ["legacy", "legacy"],
+    matches: 12,
+    rounds: 4,
+    seed: 20261016,
+    aiLimits: { samples: 0, maxMs: 0, maxPlies: 18, maxNodes: 1800 }
+  });
+  assert.equal(result.matches, 24);
+  assert.equal(result.rounds, 96);
+  assert.equal(result.illegal, 0);
+  assert.equal(result.missedWins, 0);
+  console.log("Paired Dominoes AI-vs-legacy benchmark:", JSON.stringify({
+    matches: result.matches,
+    winRate: Number(result.winRate.toFixed(3)),
+    roundRate: Number(result.roundRate.toFixed(3)),
+    illegal: result.illegal,
+    missedWins: result.missedWins,
+    meanDecisionMs: Number(result.meanDecisionMs.toFixed(3))
+  }));
+});
