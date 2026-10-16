@@ -138,8 +138,12 @@ function stepSim(sim, weights, options) {
     if (moves.length) {
       const view = viewFromSim(sim, actorId);
       view.validMoves = moves;
-      const beliefs = buildBeliefs(view, options);
-      const ranked = rankMoves(view, beliefs, weights, options);
+      // The persistent plan belongs to the real bot, not to every simulated actor.
+      const simulationOptions = options && options.strategicPlan
+        ? Object.assign({}, options, { strategicPlan: null })
+        : options;
+      const beliefs = buildBeliefs(view, simulationOptions);
+      const ranked = rankMoves(view, beliefs, weights, simulationOptions);
       if (!ranked.length || !applyPlay(sim, actorId, ranked[0].move)) {
         sim.over = true;
         sim.winReason = "stuck";
