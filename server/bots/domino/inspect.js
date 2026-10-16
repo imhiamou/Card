@@ -505,6 +505,7 @@ function buildDiagnostics(input) {
     hand: (view.hand || []).map(copyTile),
     selected: selected,
     mode: mode,
+    strategicObjective: options && options.strategicPlan ? Object.assign({}, options.strategicPlan) : null,
     confidence: confidence,
     plan: {
       selected: selected,
