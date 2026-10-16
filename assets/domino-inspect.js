@@ -414,6 +414,20 @@
     const candidates = Array.isArray(snap.candidateEvaluations) ? snap.candidateEvaluations : (snap.scores || []);
     const search = snap.searchStats || {};
     const sections = [];
+    if (snap.historyConsistency) {
+      const consistency = snap.historyConsistency;
+      sections.push({
+        heading: "History consistency",
+        lines: consistency.contradictionCount
+          ? ["Contradictory public-history events: " + consistency.contradictionCount].concat(
+              (consistency.contradictions || []).map((item) =>
+                "Player " + text(item.playerId) + " played a tile containing " + text(item.number) +
+                " after a no-draw pass ruled that number out (history index " + text(item.moveIndex) + ")."
+              )
+            )
+          : ["No contradictions found in the recorded pass/play history."]
+      });
+    }
     if (snap.inventory && Array.isArray(snap.inventory.byPip)) {
       sections.push({
         heading: "Tile counts",
