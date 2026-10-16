@@ -258,6 +258,16 @@ function readPlays(view, playerId, row) {
   });
 }
 
+function choosePreferred(byPip) {
+  let preferred = null;
+  byPip.forEach((pipRow, pip) => {
+    if (preferred == null || pipRow.confidence > byPip[preferred].confidence) {
+      if (pipRow.confidence >= 0.45) preferred = pip;
+    }
+  });
+  return preferred;
+}
+
 function fillCounts(view, beliefs, playerId, row, inventory) {
   const belief = beliefs[playerId];
   const voids = hardSet(belief);
@@ -297,12 +307,7 @@ function fillCounts(view, beliefs, playerId, row, inventory) {
       ? Math.max(0, Math.min(1, net / 4))
       : 0;
   }
-  let preferred = null;
-  row.byPip.forEach((pipRow, pip) => {
-    if (preferred == null || pipRow.confidence > row.byPip[preferred].confidence) {
-      if (pipRow.confidence >= 0.45) preferred = pip;
-    }
-  });
+  const preferred = choosePreferred(row.byPip);
   row.preferred = preferred;
   row.confidence = preferred == null ? 0 : row.byPip[preferred].confidence;
 }
@@ -371,5 +376,6 @@ function publicIntention(intention) {
 module.exports = {
   annotateIntentions,
   publicIntention,
-  atLeastOne
+  atLeastOne,
+  choosePreferred
 };
