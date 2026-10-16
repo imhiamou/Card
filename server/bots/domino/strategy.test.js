@@ -4,6 +4,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const strategy = require("./strategy");
 const { api } = require("./engine");
+const dominoSim = require("../dominoSim");
 
 function baseView(overrides) {
   return Object.assign({
@@ -224,4 +225,45 @@ test("a clear own-suit control plan outranks teammate support when the hand is c
   assert.equal(plan.mode, "self-control");
   assert.equal(plan.targetNumber, 4);
   assert.equal(plan.targetPlayerId, "bot-a");
+});
+
+
+test("headless partnership simulation keeps round memory isolated and all plays legal", () => {
+  strategy.clearMemory();
+  const match = dominoSim.playMatch({
+    seats: ["ai", "ai", "legacy", "legacy"],
+    rounds: 8,
+    seed: 20261016,
+    teamMode: true,
+    aiLimits: { samples: 0, maxMs: 0, maxPlies: 1, maxNodes: 1 }
+  });
+  assert.equal(match.rounds.length, 8);
+  assert.equal(match.stats.illegal, 0);
+  assert.equal(match.stats.missedWins, 0);
+  match.rounds.forEach((round) => {
+    assert.equal(round.accounted.count, 28);
+    assert.equal(round.accounted.unique, 28);
+    assert.notEqual(round.winReason, "corrupt");
+  });
+});
+
+test("simulation public views preserve deal identity for persistent strategy memory", () => {
+  const table = dominoSim.makeTable({
+    gameId: "memory-isolation",
+    roundId: 9,
+    order: ["bot-a", "opp-b", "mate", "opp-c"],
+    hands: {
+      "bot-a": [{ id: "0-1", a: 0, b: 1 }],
+      "opp-b": [], mate: [], "opp-c": []
+    },
+    chain: [{ id: "2-3", a: 2, b: 3 }],
+    leftEnd: 2,
+    rightEnd: 3,
+    teamMode: true,
+    teamA: ["bot-a", "mate"],
+    teamB: ["opp-b", "opp-c"]
+  });
+  const view = dominoSim.publicView(table, "bot-a");
+  assert.equal(view.gameId, "memory-isolation");
+  assert.equal(view.roundId, 9);
 });
