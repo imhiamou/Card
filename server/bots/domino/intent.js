@@ -167,10 +167,10 @@ function handSizeThen(view, playerId, index) {
 }
 
 function signalWeight(forceChance) {
-  // Missing historical board data means "uncertain", not "uninformative".
-  // A modest weight lets repeated tile patterns survive draw/incomplete logs,
-  // while a play known to be forced still receives very little weight.
-  if (forceChance == null) return 0.6;
+  // Missing historical board data is not evidence that a choice was deliberate.
+  // Valid plays are still scored after draws because forceChance is computed
+  // per event rather than disabled globally for the entire round.
+  if (forceChance == null) return 0.35;
   if (forceChance >= 0.65) return 0.15;
   if (forceChance <= 0.35) return 1;
   return 0.45;
