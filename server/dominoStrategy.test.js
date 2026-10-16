@@ -460,6 +460,35 @@ test("a teammate finish outranks the committed self-control plan", () => {
   assert.equal(row(only, "6-6").parts.planFit, 0);
 });
 
+test("a known teammate void invalidates a committed support plan", () => {
+  clearPlans();
+  const state = base({
+    hand: [tile(0, 1), tile(2, 6), tile(3, 5)],
+    validMoves: [
+      { tileId: "2-6", side: "left" },
+      { tileId: "3-5", side: "right" }
+    ],
+    leftEnd: 2,
+    rightEnd: 3,
+    chain: [tile(1, 3), tile(3, 4)],
+    log: [
+      play("mate", 1, 3, "right", 2, 1, 2, 3),
+      play("mate", 3, 4, "right", 2, 3, 2, 4)
+    ]
+  });
+  const view = normalize(state);
+  const beliefs = buildBeliefs(view);
+  const first = resolvePlan(view, beliefs, {});
+  assert.equal(first.mode, "teammate-support");
+  assert.equal(first.target, 3);
+
+  // Public proof of a void must override the teammate's historical pattern.
+  beliefs.mate.knownImpossibleNumbers = [3];
+  const next = resolvePlan(view, beliefs, {});
+  assert.notEqual(next.mode, "teammate-support");
+  assert.notEqual(next.target, 3);
+});
+
 test("the inspector shows the recorded plan and the next-turn prediction", () => {
   clearPlans();
   const bridge = [
