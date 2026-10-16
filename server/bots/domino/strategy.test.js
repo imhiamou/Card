@@ -200,3 +200,28 @@ test("the strategic target changes the actual move ranking", () => {
   assert.equal(ranked[0].move.side, "left");
   assert.ok(ranked[0].score > ranked[1].score);
 });
+
+
+test("a clear own-suit control plan outranks teammate support when the hand is concentrated", () => {
+  strategy.clearMemory();
+  const view = baseView({
+    hand: [
+      { id: "4-4", a: 4, b: 4 },
+      { id: "4-5", a: 4, b: 5 },
+      { id: "4-6", a: 4, b: 6 },
+      { id: "2-4", a: 2, b: 4 }
+    ],
+    log: [
+      { type: "play", playerId: "mate", tile: { id: "1-6", a: 1, b: 6 },
+        side: "right", leftEnd: 1, rightEnd: 6, legalAlternatives: 3 },
+      { type: "play", playerId: "mate", tile: { id: "2-6", a: 2, b: 6 },
+        side: "right", leftEnd: 2, rightEnd: 6, legalAlternatives: 3 },
+      { type: "play", playerId: "mate", tile: { id: "3-6", a: 3, b: 6 },
+        side: "right", leftEnd: 3, rightEnd: 6, legalAlternatives: 3 }
+    ]
+  });
+  const plan = strategy.updateStrategicPlan(view, {});
+  assert.equal(plan.mode, "self-control");
+  assert.equal(plan.targetNumber, 4);
+  assert.equal(plan.targetPlayerId, "bot-a");
+});
