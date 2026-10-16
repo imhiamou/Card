@@ -166,6 +166,19 @@
     if (plan.note) planLines.push(plan.note);
     sections.push({ heading: "Planned tile sequence", lines: linesOf(planLines) });
 
+    const objective = snap.strategicObjective || {};
+    const objectiveLines = objective.mode ? [
+      "Objective: " + text(objective.mode),
+      "Target number: " + text(objective.targetNumber),
+      "Target player: " + text(objective.targetPlayerId),
+      "Confidence: " + text(objective.confidence),
+      "Evidence score: " + text(objective.supportingEvidenceCount),
+      "Plan reason: " + text(objective.reason),
+      "Plan created at turn: " + text(objective.createdAtTurn),
+      "Last reviewed at turn: " + text(objective.lastReviewedTurn)
+    ] : ["No persistent strategic objective was recorded."];
+    sections.push({ heading: "Persistent strategic objective", lines: objectiveLines });
+
     const partnerLines = [];
     if (partnership.available === false) {
       partnerLines.push(text(partnership.reason));
