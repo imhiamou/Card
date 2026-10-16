@@ -330,7 +330,7 @@ test("the selected plan switches to a newly supported teammate number", () => {
 });
 
 
-test("paired headless benchmark records AI-vs-legacy outcomes without illegal or missed wins", () => {
+test("search-enabled paired headless benchmark records AI-vs-legacy outcomes without illegal or missed wins", () => {
   strategy.clearMemory();
   const result = dominoSim.compare({
     left: ["ai", "ai"],
@@ -338,7 +338,7 @@ test("paired headless benchmark records AI-vs-legacy outcomes without illegal or
     matches: 12,
     rounds: 4,
     seed: 20261016,
-    aiLimits: { samples: 0, maxMs: 0, maxPlies: 18, maxNodes: 1800 }
+    aiLimits: { samples: 4, maxMs: 12, maxPlies: 18, maxNodes: 1800 }
   });
   assert.equal(result.matches, 24);
   assert.equal(result.rounds, 96);
