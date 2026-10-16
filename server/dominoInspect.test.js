@@ -327,3 +327,29 @@ test("room 1111 state carries the finished decision and other rooms do not", () 
   assert.equal(again.status, "ready");
   assert.equal(again.snapshot.reasoning.length > 0, true);
 });
+
+
+test("room 1111 lobby update test returns the current roster without mutating the game", () => {
+  const room = roomFor([tile(1, 2)], [tile(3, 4)], [tile(1, 4)]);
+  room.maxPlayers = 4;
+  const before = JSON.stringify(room.domino);
+  const human = socket("human");
+  const rooms = { "1111": room };
+  domino.registerSocket(human, io(), rooms);
+
+  human.handlers.dominoLobbyUpdateTest({ roomCode: "1111", requestId: 71 });
+  const update = human.emitted.find((item) => item.name === "dominoLobbyUpdate");
+  const result = human.emitted.find((item) => item.name === "dominoLobbyUpdateTestResult");
+  assert.ok(update);
+  assert.equal(update.data.room, "1111");
+  assert.equal(update.data.maxPlayers, 4);
+  assert.equal(update.data.players.length, 4);
+  assert.equal(result.data.ok, true);
+  assert.equal(result.data.requestId, 71);
+  assert.equal(JSON.stringify(room.domino), before);
+
+  human.handlers.dominoLobbyUpdateTest({ roomCode: "ABCD", requestId: 72 });
+  const rejected = human.emitted.filter((item) => item.name === "dominoLobbyUpdateTestResult").at(-1);
+  assert.equal(rejected.data.ok, false);
+  assert.equal(rejected.data.requestId, 72);
+});
