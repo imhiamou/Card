@@ -46,6 +46,8 @@ function normalize(state) {
   }
   return {
     selfId: selfId,
+    gameId: state && (state.gameId || state.roomId || state.roomCode) || null,
+    roundNumber: state && state.roundNumber != null ? state.roundNumber : (state && state.roundId != null ? state.roundId : null),
     hand: hand,
     validMoves: (state && state.validMoves ? state.validMoves : []).map((move) => ({
       tileId: move.tileId,
