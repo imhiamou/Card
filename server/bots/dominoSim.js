@@ -145,6 +145,8 @@ function publicView(table, playerId) {
     table.mustPlayId
   );
   return {
+    gameId: table.gameId || "simulation",
+    roundId: table.roundId == null ? 1 : table.roundId,
     selfId: playerId,
     hand: (table.hands[playerId] || []).map(cloneTile),
     validMoves: moves.map((move) => ({ tileId: move.tileId, side: move.side })),
@@ -430,6 +432,10 @@ function playMatch(options) {
   for (let round = 0; round < total; round++) {
     const dealRng = mulberry32(hashString(String(options.seed) + ":" + round));
     const table = startRound(order, match, dealRng, teamMode);
+    // Match and round identity must be part of the public decision view so
+    // persistent bot plans reset on a new deal, exactly as in live rooms.
+    table.gameId = "simulation:" + String(options.seed);
+    table.roundId = round + 1;
     playTable(table, strategies, hashString(String(options.seed) + ":play:" + round), stats, {
       seed: options.seed,
       aiLimits: options.aiLimits
