@@ -1287,6 +1287,31 @@ function registerSocket(socket, io, rooms) {
     socket.emit("dominoInspectResult", payload);
   });
 
+  // A read-only lobby event test, restricted to the dedicated inspector room.
+  // It exercises the same client update event without changing room state or
+  // broadcasting diagnostic data to other rooms.
+  socket.on("dominoLobbyUpdateTest", (data) => {
+    const roomCode = data && typeof data.roomCode === "string" ? data.roomCode.trim().toUpperCase() : "";
+    const requestId = data && data.requestId;
+    const room = rooms[roomCode];
+    if (roomCode !== INSPECT_ROOM || !room || room.gameMode !== "dominoes" ||
+        !room.players.some((player) => player.id === socket.id)) {
+      socket.emit("dominoLobbyUpdateTestResult", {
+        ok: false,
+        error: "Lobby update test is available only to seated players in room 1111.",
+        requestId: requestId
+      });
+      return;
+    }
+    socket.emit("dominoLobbyUpdate", {
+      room: roomCode,
+      maxPlayers: room.maxPlayers || 2,
+      teamMode: isTeamLobby(room),
+      players: publicLobbyPlayers(room)
+    });
+    socket.emit("dominoLobbyUpdateTestResult", { ok: true, requestId: requestId });
+  });
+
   socket.on("dominoSetBotSpeed", (data) => {
     const roomCode = data && typeof data.roomCode === "string" ? data.roomCode.trim().toUpperCase() : "";
     const room = rooms[roomCode];
