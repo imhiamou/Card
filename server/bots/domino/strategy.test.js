@@ -11,9 +11,9 @@ function baseView(overrides) {
     selfId: "bot-a",
     hand: [
       { id: "0-1", a: 0, b: 1 },
-      { id: "0-2", a: 0, b: 2 },
-      { id: "1-2", a: 1, b: 2 },
-      { id: "2-6", a: 2, b: 6 }
+      { id: "2-3", a: 2, b: 3 },
+      { id: "4-5", a: 4, b: 5 },
+      { id: "6-6", a: 6, b: 6 }
     ],
     players: [
       { id: "bot-a", handCount: 4, team: "A" },
