@@ -87,6 +87,8 @@ function makeTable(spec) {
   const order = spec.order.slice();
   const starter = spec.starter || order[0];
   return {
+    gameId: spec.gameId || "simulation",
+    roundId: spec.roundId == null ? 1 : spec.roundId,
     order: order,
     turn: Math.max(0, order.indexOf(starter)),
     hands: spec.hands,
