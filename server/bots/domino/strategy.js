@@ -57,7 +57,8 @@ function inferIntentScores(view) {
     let exposed = null;
     if (event.side === "left") exposed = event.leftEnd;
     else if (event.side === "right") exposed = event.rightEnd;
-    else if (event.side === "center") exposed = event.rightEnd != null ? event.rightEnd : event.leftEnd;
+    // An opening tile exposes two ends; its orientation is not a deliberate choice.
+    // Count its pips as weak evidence above, but do not infer intent from one end.
     if (!Number.isInteger(exposed) || exposed < 0 || exposed > 6) return;
 
     // A play with one legal choice is weak intent evidence; a genuine choice
