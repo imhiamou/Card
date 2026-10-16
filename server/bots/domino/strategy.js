@@ -200,7 +200,11 @@ function updateStrategicPlan(view, beliefs) {
     confidence: Number(confidence.toFixed(3)),
     score: Number((chosen.score || 0).toFixed(3)),
     reason: chosen.reason || "Maintaining the current plan while evidence remains stable.",
-    createdAtTurn: previous && chosen === previousCandidate ? previous.createdAtTurn : view.log.length,
+    createdAtTurn: previous && previous.mode === chosen.mode &&
+      previous.targetNumber === chosen.targetNumber &&
+      previous.targetPlayerId === chosen.targetPlayerId
+      ? previous.createdAtTurn
+      : view.log.length,
     lastReviewedTurn: view.log.length,
     switchThreshold: 1.35,
     supportingEvidenceCount: chosen.targetPlayerId && intents[chosen.targetPlayerId]
