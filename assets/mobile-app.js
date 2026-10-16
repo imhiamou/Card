@@ -4,7 +4,7 @@
   if (!document.documentElement.classList.contains("gameweb-app")) return;
 
   const $ = (id) => document.getElementById(id);
-  const SCROLLERS = ".hheLibScroll, .ceLibScroll, .ceGrid, .cePick, .ceCarts, .ceLibPreview, .ceLibCats, .hheProps, .ceRight, .ceDialog, #lobbyPlay, #lobbyUpdates, input, textarea, select";
+  const SCROLLERS = ".hheLibScroll, .ceLibScroll, .ceGrid, .cePick, .ceCarts, .ceLibPreview, .ceLibCats, .hheProps, .ceRight, .ceDialog, #lobbyPlay, #lobbyUpdates, .lobbySetupCard, input, textarea, select";
 
   function syncViewport() {
     const vv = window.visualViewport;

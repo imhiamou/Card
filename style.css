@@ -763,3 +763,53 @@ color:#0b1a2a;
 font-weight:bold;
 }
 
+.lobbySetup{
+position:fixed;
+inset:0;
+z-index:40;
+display:flex;
+align-items:center;
+justify-content:center;
+background:rgba(8,12,18,.55);
+padding:16px;
+box-sizing:border-box;
+}
+.lobbySetup.hidden{display:none}
+.lobbySetupCard{
+width:min(480px,100%);
+max-height:min(640px, calc(100dvh - 32px));
+overflow:auto;
+background:#2a3140;
+border:1px solid #3d4860;
+border-radius:12px;
+padding:16px 16px 12px;
+box-shadow:0 16px 40px rgba(0,0,0,.45);
+}
+.lobbySetupCard h2{margin:0 0 4px;font-size:20px}
+.lobbySetupLead{margin:0 0 10px;color:#b7c6da;font-size:13px}
+.lobbySetupError{min-height:1.2em;margin:8px 0;color:#ffb4b4;font-size:13px}
+.lobbySetupError:empty{display:none}
+.lobbySetupActions{display:flex;justify-content:flex-end;gap:8px}
+#lobbySetupCancel,#lobbySetupConfirm{
+width:auto;
+min-width:108px;
+margin:0;
+}
+#lobbySetupCancel{
+background:#232a38;
+color:#fff;
+border:1px solid #6aabff;
+}
+#lobbySetupConfirm{
+background:#4f9cff;
+color:#0b1220;
+border:none;
+font-weight:bold;
+}
+#lobbySetupBody h3{margin:10px 0 6px}
+#lobbySetupBody input,
+#lobbySetupBody select,
+#lobbySetupBody button{
+margin:0 0 8px;
+}
+

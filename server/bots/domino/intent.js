@@ -1,6 +1,6 @@
 "use strict";
 
-const { api, matchesEither, violates } = require("./engine");
+const { api, matchesEither, touches, violates } = require("./engine");
 const { unseenTiles } = require("./sample");
 const { buildInventory } = require("./inventory");
 
@@ -52,6 +52,14 @@ function blankPip() {
     forced: 0,
     maintained: 0,
     changedAway: 0,
+    matched: 0,
+    exposedPlays: 0,
+    inTile: 0,
+    bridged: 0,
+    continued: 0,
+    absent: 0,
+    missed: 0,
+    strategic: 0,
     confidence: 0,
     last: ""
   };
@@ -163,42 +171,82 @@ function signalWeight(forceChance) {
   return 0.45;
 }
 
+function tilePips(tile) {
+  if (!tile) return [];
+  if (tile.a === tile.b) return [tile.a];
+  return [tile.a, tile.b];
+}
+
 function readPlays(view, playerId, row) {
   const log = view.log || [];
+  let previous = null;
   log.forEach((event, index) => {
     if (!event || event.playerId !== playerId || event.type !== "play" || !event.tile) return;
     const before = inferBefore(event);
     const handSize = handSizeThen(view, playerId, index);
     let forceChance = null;
+    let unseen = [];
+    let voids = new Set();
     if (before && handSize != null && handSize > 0 && !(view.log || []).some((item) => item && item.type === "draw")) {
       const botIds = botTilesThen(view, index);
-      const unseen = unseenThen(view, index, botIds).filter((tile) => tile.id !== event.tile.id);
-      const voids = voidsBefore(log, playerId, index);
+      unseen = unseenThen(view, index, botIds).filter((tile) => tile.id !== event.tile.id);
+      voids = voidsBefore(log, playerId, index);
       const alternatives = unseen.filter((tile) => matchesEither(tile, before.left, before.right) && !violates(tile, voids));
       forceChance = 1 - atLeastOne(unseen.length, alternatives.length, Math.max(0, handSize - 1));
     }
     const weight = signalWeight(forceChance);
+    const matched = before ? (event.side === "left" ? before.left : before.right) : null;
     const exposed = event.side === "left" ? event.leftEnd : event.side === "right" ? event.rightEnd : null;
+    const otherEnd = before ? (event.side === "left" ? before.right : before.left) : null;
+    if (matched != null) row.byPip[matched].matched += 1;
+    if (exposed != null) row.byPip[exposed].exposedPlays += 1;
+    const pips = tilePips(event.tile);
+    // A tile that matches an end always contains that end. Sharing that pip
+    // with the previous chosen tile is the pattern. The new open end is only
+    // the other half of the tile unless they keep choosing it.
+    const spending = !!(previous && matched != null && tilePips(previous).indexOf(matched) >= 0 && exposed !== matched);
     if (weight >= 0.45) {
-      if (exposed != null) {
+      pips.forEach((pip) => {
+        row.byPip[pip].inTile += weight;
+      });
+      if (previous) {
+        const prev = tilePips(previous);
+        pips.forEach((pip) => {
+          if (prev.indexOf(pip) >= 0) row.byPip[pip].bridged += weight;
+        });
+        prev.forEach((pip) => {
+          if (pips.indexOf(pip) < 0) {
+            row.byPip[pip].absent += weight;
+            row.byPip[pip].last = "absent";
+          }
+        });
+      }
+      if (exposed != null && spending) {
+        row.byPip[exposed].deliberate += weight * 0.4;
+        row.byPip[matched].continued += weight;
+        row.byPip[matched].changedAway += weight * 0.5;
+        if (row.byPip[matched].last !== "absent") row.byPip[matched].last = "continued";
+      } else if (exposed != null) {
         row.byPip[exposed].deliberate += weight;
         row.byPip[exposed].last = "deliberate";
       }
-      if (before && event.side === "right" && before.right != null && exposed !== before.right) {
-        row.byPip[before.right].changedAway += weight;
-        row.byPip[before.right].last = "changed";
-      }
-      if (before && event.side === "left" && before.left != null && exposed !== before.left) {
-        row.byPip[before.left].changedAway += weight;
-        row.byPip[before.left].last = "changed";
+      if (!spending && before && matched != null && exposed != null && exposed !== matched) {
+        row.byPip[matched].changedAway += weight;
+        row.byPip[matched].last = "changed";
       }
       if (before && exposed != null && ((event.side === "right" && exposed === before.right) || (event.side === "left" && exposed === before.left))) {
         row.byPip[exposed].maintained += weight;
         row.byPip[exposed].last = "maintained";
       }
+      previous = event.tile;
     } else if (exposed != null) {
       row.byPip[exposed].forced += 1;
       row.byPip[exposed].last = "forced";
+    }
+    if (otherEnd != null && !touches(event.tile, otherEnd) && unseen.length && handSize != null) {
+      const otherChoices = unseen.filter((tile) => touches(tile, otherEnd) && !violates(tile, voids));
+      const chance = atLeastOne(unseen.length, otherChoices.length, Math.max(0, handSize - 1));
+      if (chance <= 0.4) row.byPip[otherEnd].missed += 1 - chance;
     }
     row.lastMoveForceChance = forceChance;
     row.lastMoveForced = forceChance != null && forceChance >= 0.65;
@@ -229,13 +277,19 @@ function fillCounts(view, beliefs, playerId, row, inventory) {
       pipRow.pAtLeastOne = atLeastOne(unseen.length, matches, handCount);
       pipRow.pMultiple = atLeastTwo(unseen.length, matches, handCount);
     }
-    // One play is not a preference, even when it also kept the same end.
-    // A later deliberate change cuts the earlier number instead of freezing it.
-    const trials = pipRow.deliberate + pipRow.forced;
-    let net = pipRow.deliberate + pipRow.maintained * 0.5 - pipRow.changedAway * 1.25;
-    if (pipRow.last === "changed") net *= 0.35;
-    pipRow.confidence = pipRow.deliberate >= 1.6 && net >= 1.6 && trials > 0
-      ? Math.max(0, Math.min(1, (net / 2) * (pipRow.deliberate / trials)))
+    // The useful number is the pip that keeps showing up inside the tiles
+    // they choose. Matching the board end, or leaving the other half open
+    // once, is not that number. A later tile that no longer contains it
+    // cuts the earlier reading.
+    const support = pipRow.inTile + pipRow.bridged + pipRow.continued;
+    let net = pipRow.inTile + pipRow.bridged * 0.8 + pipRow.continued * 0.6 +
+      pipRow.deliberate * 0.45 + pipRow.maintained * 0.35 -
+      pipRow.absent * 1.15 - pipRow.changedAway * 0.8 - pipRow.missed * 0.5;
+    if (pipRow.last === "absent" || pipRow.last === "changed") net *= 0.4;
+    pipRow.strategic = Math.round(net * 100) / 100;
+    const cannotHold = pipRow.pAtLeastOne < 0.12 && pipRow.missed >= 0.6;
+    pipRow.confidence = support >= 1.5 && net >= 1.5 && !cannotHold
+      ? Math.max(0, Math.min(1, net / 4))
       : 0;
   }
   let preferred = null;
@@ -295,6 +349,14 @@ function publicIntention(intention) {
       forced: row.forced,
       maintained: Math.round(row.maintained * 100) / 100,
       changedAway: Math.round(row.changedAway * 100) / 100,
+      matched: row.matched,
+      exposedPlays: row.exposedPlays,
+      inTile: Math.round(row.inTile * 100) / 100,
+      bridged: Math.round(row.bridged * 100) / 100,
+      continued: Math.round(row.continued * 100) / 100,
+      absent: Math.round(row.absent * 100) / 100,
+      missed: Math.round(row.missed * 100) / 100,
+      strategic: row.strategic,
       confidence: Math.round(row.confidence * 100) / 100,
       last: row.last
     }))

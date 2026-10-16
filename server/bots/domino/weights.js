@@ -61,7 +61,12 @@ const DEFAULT_WEIGHTS = {
   partnerKeep: 12,
   partnerAbandon: 10,
   partnerPass: 14,
-  partnerDanger: 11
+  partnerDanger: 11,
+  /*
+   * Small tie-break for the committed plan. It stays under a forced pass,
+   * a void, and a winning play, so the plan cannot veto those.
+   */
+  planFit: 3
 };
 
 const DEFAULT_LIMITS = {

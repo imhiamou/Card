@@ -6,6 +6,7 @@ const { rankMoves } = require("./eval");
 const { searchMoves } = require("./search");
 const { mergeWeights, mergeLimits } = require("./weights");
 const { buildDiagnostics } = require("./inspect");
+const { resolvePlan } = require("./plan");
 
 /*
  * Callers that only know how long the chain is (the older bot tests) never
@@ -99,6 +100,7 @@ function getDominoMove(state, options) {
   const weights = mergeWeights(options && options.weights);
   const limits = mergeLimits(options && options.limits);
   const beliefs = buildBeliefs(view, options);
+  beliefs._plan = resolvePlan(view, beliefs, options);
   let ranked = rankMoves(view, beliefs, weights, options);
   if (!ranked.length) {
     return { tileId: view.validMoves[0].tileId, side: view.validMoves[0].side };

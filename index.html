@@ -26,8 +26,8 @@
 </head>
 <body>
 
-<!-- Lobby: one Play panel (create, join, and the setup that panel needs)
-     and one Updates panel. Character is chosen later for Hidden Hunt. -->
+<!-- Lobby: Play holds the name and the room code. Game choice and the
+     settings for that game live in the setup popup. Updates is separate. -->
 <div class="box" id="lobbyScreen">
 <h1>Hidden Duel</h1>
 <div class="lobbyColumns">
@@ -37,7 +37,55 @@
 <section class="lobbyCol lobbyIdentity">
 <h3>Name</h3>
 <input id="playerName" placeholder="Enter your name (2-16 characters)" maxlength="16" autocomplete="nickname">
+</section>
 
+<section class="lobbyCol lobbyActions">
+<div id="lobbyMultiplayer">
+<h3>Create lobby</h3>
+<input id="createCode" placeholder="Choose Lobby Code (4-8 letters/numbers)" maxlength="8">
+<button id="createBtn">Create Lobby</button>
+
+<h3>Join lobby</h3>
+<input id="roomCode" placeholder="Lobby Code" maxlength="8">
+<button id="joinBtn">Join Lobby</button>
+</div>
+<div class="lobbyFeedback">
+<h2 id="status">Connecting...</h2>
+<h3 id="code"></h3>
+<button id="startBotsBtn" class="hidden">Start Now (fill empty seats with bots)</button>
+</div>
+<div id="dominoLobbyTeams" class="dominoLobbyTeams hidden">
+<div class="domLobbyTeamCol" data-team="A">
+<strong>Team A</strong>
+<ul id="dominoTeamAList"></ul>
+<button type="button" id="dominoJoinTeamA" class="domJoinTeamBtn">Join Team A</button>
+</div>
+<div class="domLobbyTeamCol" data-team="B">
+<strong>Team B</strong>
+<ul id="dominoTeamBList"></ul>
+<button type="button" id="dominoJoinTeamB" class="domJoinTeamBtn">Join Team B</button>
+</div>
+</div>
+</section>
+</section>
+
+<section class="lobbyCol lobbyUpdates" id="lobbyUpdates">
+<h2>Updates</h2>
+<div class="lobbyUpdate" id="lobbyUpdate">
+<button type="button" id="gamewebCheckUpdate">Check for updates</button>
+<p id="gamewebUpdateStatus" class="lobbyUpdateStatus" role="status" hidden></p>
+<button type="button" id="lobbyUpdateAction" class="hidden">Refresh</button>
+</div>
+</section>
+
+</div>
+</div>
+
+<div id="lobbySetup" class="lobbySetup hidden" role="dialog" aria-modal="true" aria-labelledby="lobbySetupTitle">
+<div class="lobbySetupCard">
+<h2 id="lobbySetupTitle">Lobby setup</h2>
+<p class="lobbySetupLead">Choose the game and its settings, then create the room.</p>
+<div id="lobbySetupBody">
 <h3>Game</h3>
 <select id="gameSelect">
 <option value="hidden-hunt" selected>Hidden Hunt</option>
@@ -46,8 +94,6 @@
 <option value="hidden-hunter">Hidden Hunter</option>
 <option value="carts">Carts</option>
 </select>
-</section>
-
 <section class="lobbyCol lobbyConfig">
 <p class="lobbyConfigEmpty">No extra setup for this game.</p>
 <div id="hiddenHunterHint" class="hidden hhLobbyCard">
@@ -94,20 +140,6 @@
 </div>
 </div>
 
-<!-- Shown while waiting in a 4-player Dominoes lobby -->
-<div id="dominoLobbyTeams" class="dominoLobbyTeams hidden">
-<div class="domLobbyTeamCol" data-team="A">
-<strong>Team A</strong>
-<ul id="dominoTeamAList"></ul>
-<button type="button" id="dominoJoinTeamA" class="domJoinTeamBtn">Join Team A</button>
-</div>
-<div class="domLobbyTeamCol" data-team="B">
-<strong>Team B</strong>
-<ul id="dominoTeamBList"></ul>
-<button type="button" id="dominoJoinTeamB" class="domJoinTeamBtn">Join Team B</button>
-</div>
-</div>
-
 <!-- UNO only: lobby creator picks 2–6 seats -->
 <div id="unoMaxPlayersWrap" class="hidden">
 <h3>Players</h3>
@@ -122,7 +154,9 @@
 
 <div id="cartsHint" class="hidden">
 <strong>CARTS</strong>
-<p>Local single player. Route each cart at the red intersection.</p>
+<p>Local single player. Confirming starts the game instead of creating a room.</p>
+<button type="button" id="cartsPlayBtn">Play Carts</button>
+<button type="button" id="cartsEditorBtn">Map editor</button>
 </div>
 
 <!-- Dominoes / UNO only: optionally fill empty seats with server bots -->
@@ -130,41 +164,12 @@
 <label class="botFillLabel"><input type="checkbox" id="botFillCheck"> Fill empty slots with bots</label>
 </div>
 </section>
-
-<section class="lobbyCol lobbyActions">
-<div id="lobbyMultiplayer">
-<h3>Create lobby</h3>
-<input id="createCode" placeholder="Choose Lobby Code (4-8 letters/numbers)" maxlength="8">
-<button id="createBtn">Create Lobby</button>
-
-<h3>Join lobby</h3>
-<input id="roomCode" placeholder="Lobby Code" maxlength="8">
-<button id="joinBtn">Join Lobby</button>
 </div>
-<div id="cartsPlayWrap" class="hidden">
-<h3>Play</h3>
-<p>Local single player. No lobby.</p>
-<button type="button" id="cartsPlayBtn">Play Carts</button>
-<button type="button" id="cartsEditorBtn">Map editor</button>
+<p id="lobbySetupError" class="lobbySetupError" role="alert"></p>
+<div class="lobbySetupActions">
+<button type="button" id="lobbySetupCancel">Cancel</button>
+<button type="button" id="lobbySetupConfirm">Create Lobby</button>
 </div>
-<div class="lobbyFeedback">
-<h2 id="status">Connecting...</h2>
-<h3 id="code"></h3>
-<!-- Shown to the creator of a bots-enabled Dominoes/UNO lobby -->
-<button id="startBotsBtn" class="hidden">Start Now (fill empty seats with bots)</button>
-</div>
-</section>
-</section>
-
-<section class="lobbyCol lobbyUpdates" id="lobbyUpdates">
-<h2>Updates</h2>
-<div class="lobbyUpdate" id="lobbyUpdate">
-<button type="button" id="gamewebCheckUpdate">Check for updates</button>
-<p id="gamewebUpdateStatus" class="lobbyUpdateStatus" role="status" hidden></p>
-<button type="button" id="lobbyUpdateAction" class="hidden">Refresh</button>
-</div>
-</section>
-
 </div>
 </div>
 

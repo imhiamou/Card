@@ -315,8 +315,10 @@ function choose(strategy, view, rng, config) {
   if (strategy === "no-hands") options.ignoreHands = true;
   if (strategy === "no-future") options.ignoreFuture = true;
   if (strategy === "predict-no-sample") options.ignoreSamples = true;
+  if (strategy === "no-plan") options.ignorePlan = true;
   if (strategy === "baseline") {
     options.ignoreIntent = true;
+    options.ignorePlan = true;
     options.weights = {
       shedPips: 12,
       dumpDouble: 5,
@@ -326,18 +328,21 @@ function choose(strategy, view, rng, config) {
       oppVoidExploit: 0,
       oppFeed: 0,
       mateFinish: 0,
-      otherFinish: 0
+      otherFinish: 0,
+      planFit: 0
     };
   }
   if (strategy === "passes") {
     options.ignoreIntent = true;
+    options.ignorePlan = true;
     options.weights = {
       mateSuit: 0,
       intentKeep: 0,
       mateFinish: 0,
       oppFeed: 0,
       shedPips: 8,
-      dumpDouble: 4
+      dumpDouble: 4,
+      planFit: 0
     };
   }
   options.seed = (config && config.seed) || 1;
