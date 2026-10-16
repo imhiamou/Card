@@ -159,13 +159,18 @@ function handSizeThen(view, playerId, index) {
     const event = log[i];
     if (!event || event.playerId !== playerId) continue;
     if (event.type === "play") later += 1;
-    if (event.type === "draw") return null;
+    if (event.type === "draw") later -= 1;
   }
-  return now + later;
+  // Reconstruct the hand size immediately after this historical play. A later
+  // draw is not a reason to discard every earlier observation.
+  return Math.max(0, now + later);
 }
 
 function signalWeight(forceChance) {
-  if (forceChance == null) return 0.35;
+  // Missing historical board data means "uncertain", not "uninformative".
+  // A modest weight lets repeated tile patterns survive draw/incomplete logs,
+  // while a play known to be forced still receives very little weight.
+  if (forceChance == null) return 0.6;
   if (forceChance >= 0.65) return 0.15;
   if (forceChance <= 0.35) return 1;
   return 0.45;
@@ -187,7 +192,7 @@ function readPlays(view, playerId, row) {
     let forceChance = null;
     let unseen = [];
     let voids = new Set();
-    if (before && handSize != null && handSize > 0 && !(view.log || []).some((item) => item && item.type === "draw")) {
+    if (before && handSize != null && handSize > 0) {
       const botIds = botTilesThen(view, index);
       unseen = unseenThen(view, index, botIds).filter((tile) => tile.id !== event.tile.id);
       voids = voidsBefore(log, playerId, index);
@@ -294,7 +299,7 @@ function fillCounts(view, beliefs, playerId, row, inventory) {
   }
   let preferred = null;
   row.byPip.forEach((pipRow, pip) => {
-    if (!preferred || pipRow.confidence > row.byPip[preferred].confidence) {
+    if (preferred == null || pipRow.confidence > row.byPip[preferred].confidence) {
       if (pipRow.confidence >= 0.45) preferred = pip;
     }
   });
