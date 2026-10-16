@@ -7,6 +7,7 @@
  */
 
 const memory = new Map();
+const teammateMemory = new Map();
 const SWITCH_MARGIN = 2;
 const MEMORY_LIMIT = 256;
 const stats = { decisions: 0, held: 0, switched: 0, started: 0, none: 0 };
@@ -47,6 +48,7 @@ function dealKey(view) {
 
 function clearPlans() {
   memory.clear();
+  teammateMemory.clear();
   stats.decisions = 0;
   stats.held = 0;
   stats.switched = 0;
@@ -104,23 +106,82 @@ function intentionOf(beliefs, id) {
   return belief && belief.intention ? belief.intention : null;
 }
 
+function teammateKey(view, mateId) {
+  const game = view.gameId || view.roomId || "game";
+  const round = view.roundNumber != null ? view.roundNumber : (view.roundId || "round");
+  return [game, round, view.selfId, mateId].join("|");
+}
+
+function teammateCandidate(beliefs, mateId) {
+  const intent = intentionOf(beliefs, mateId);
+  const belief = beliefs && beliefs[mateId];
+  const voids = belief && belief.knownImpossibleNumbers || [];
+  if (!intent || intent.preferred == null || intent.confidence < 0.45) return null;
+  const info = intent.byPip[intent.preferred];
+  if (!info || voids.indexOf(intent.preferred) >= 0 || info.pAtLeastOne < 0.2 ||
+      (info.missed >= 0.75 && info.pAtLeastOne < 0.35)) return null;
+  const support = (info.inTile || 0) + (info.bridged || 0) + (info.continued || 0);
+  if (support < 1.5) return null;
+  return {
+    pip: intent.preferred,
+    confidence: intent.confidence,
+    score: intent.confidence * 6 + (info.pMultiple || 0) * 2,
+    info: info
+  };
+}
+
 function freshPlan(view, beliefs) {
   const inventory = beliefs && beliefs._inventory;
   const own = ownCandidate(inventory);
   const mateId = partnerId(view);
   const mateIntent = intentionOf(beliefs, mateId);
-  let mate = null;
-  if (mateIntent && mateIntent.preferred != null && mateIntent.confidence >= 0.45) {
-    const info = mateIntent.byPip[mateIntent.preferred];
-    const voids = (beliefs[mateId].knownImpossibleNumbers || []);
-    if (info && voids.indexOf(mateIntent.preferred) < 0 && info.pAtLeastOne >= 0.2 && !(info.missed >= 0.75 && info.pAtLeastOne < 0.35)) {
+  let mate = teammateCandidate(beliefs, mateId);
+  let teammateTarget = null;
+  let teammateConfidence = 0;
+  if (mateId) {
+    const key = teammateKey(view, mateId);
+    const previous = teammateMemory.get(key);
+    const currentBelief = beliefs && beliefs[mateId];
+    const voids = currentBelief && currentBelief.knownImpossibleNumbers || [];
+    const previousInfo = previous && mateIntent && mateIntent.byPip[previous.pip];
+    const support = previousInfo
+      ? (previousInfo.inTile || 0) + (previousInfo.bridged || 0) + (previousInfo.continued || 0)
+      : 0;
+    const previousStillSupported = previous && previousInfo &&
+      voids.indexOf(previous.pip) < 0 &&
+      previousInfo.pAtLeastOne >= 0.2 &&
+      !((previousInfo.missed || 0) >= 0.75 && previousInfo.pAtLeastOne < 0.35) &&
+      support >= 1.5;
+    // Retain a well-supported target through small confidence swings. Replace
+    // it only when a different target has materially stronger evidence.
+    if (previousStillSupported && (!mate ||
+        mate.pip === previous.pip ||
+        (mate.pip !== previous.pip && mate.score < previous.score + SWITCH_MARGIN))) {
       mate = {
-        pip: mateIntent.preferred,
-        score: mateIntent.confidence * 6 + (info.pMultiple || 0) * 2,
-        info: info
+        pip: previous.pip,
+        score: Math.max(previous.score, previousInfo.confidence * 6 + (previousInfo.pMultiple || 0) * 2),
+        confidence: previousInfo.confidence,
+        info: previousInfo
       };
     }
+    if (mate) {
+      teammateMemory.set(key, {
+        pip: mate.pip,
+        score: mate.score,
+        confidence: mate.confidence != null ? mate.confidence : mateIntent.confidence
+      });
+      teammateTarget = mate.pip;
+      teammateConfidence = mate.confidence != null ? mate.confidence : mateIntent.confidence;
+    } else if (previous && (!currentBelief || voids.indexOf(previous.pip) < 0)) {
+      // Keep the displayed objective while evidence is temporarily inconclusive,
+      // but never carry it through a known teammate void.
+      teammateTarget = previous.pip;
+      teammateConfidence = previous.confidence || 0;
+    } else {
+      teammateMemory.delete(key);
+    }
   }
+
   let opp = null;
   (view.players || []).forEach((player) => {
     if (!player || player.id === view.selfId || player.id === mateId) return;
@@ -136,8 +197,9 @@ function freshPlan(view, beliefs) {
   const selfScore = own && own.score >= 4 ? own.score : 0;
   const mateScore = mate ? mate.score : 0;
   const oppScore = opp ? opp.score : 0;
+  let plan;
   if (selfScore >= mateScore && selfScore >= oppScore && selfScore > 0) {
-    return {
+    plan = {
       mode: "self-control",
       target: own.pip,
       owner: "self",
@@ -149,23 +211,22 @@ function freshPlan(view, beliefs) {
       evidence: "This hand holds " + own.held + " tiles with " + own.pip +
         " and " + own.hidden + " such tiles are still unseen."
     };
-  }
-  if (mateScore >= oppScore && mateScore > 0) {
-    return {
+  } else if (mateScore >= oppScore && mateScore > 0) {
+    plan = {
       mode: "teammate-support",
       target: mate.pip,
       owner: "teammate",
       ownerId: mateId,
-      confidence: mateIntent.confidence,
+      confidence: mate.confidence != null ? mate.confidence : mateIntent.confidence,
       score: mateScore,
       held: false,
       switched: false,
-      evidence: "Teammate tiles contain " + mate.pip + " across " + round1(mate.info.inTile) +
-        " deliberate plays, with " + round1(mate.info.bridged) + " linking the previous tile."
+      evidence: "Public play history repeatedly supports " + mate.pip + " as the teammate's useful number: " +
+        round1(mate.info.inTile) + " tile observations and " + round1(mate.info.bridged) +
+        " links to previous plays."
     };
-  }
-  if (oppScore > 0) {
-    return {
+  } else if (oppScore > 0) {
+    plan = {
       mode: "opponent-denial",
       target: opp.pip,
       owner: "opponent",
@@ -177,8 +238,13 @@ function freshPlan(view, beliefs) {
       evidence: opp.id + " has been building around " + opp.pip +
         " (confidence " + round1(intentionOf(beliefs, opp.id).confidence) + ")."
     };
+  } else {
+    plan = emptyPlan();
   }
-  return emptyPlan();
+  plan.teammateTarget = teammateTarget;
+  plan.teammateConfidence = teammateConfidence;
+  plan.teammateVoidNumbers = (beliefs && beliefs[mateId] && beliefs[mateId].knownImpossibleNumbers || []).slice();
+  return plan;
 }
 
 function round1(value) {
@@ -224,12 +290,19 @@ function withLines(plan) {
     stance + " " + copy.mode + " on " + copy.target + " for " + whose +
       ". Confidence " + round1(copy.confidence) + ".",
     copy.evidence,
+    copy.teammateTarget != null && (copy.owner !== "teammate" || copy.target !== copy.teammateTarget)
+      ? "Separate teammate-support target: " + copy.teammateTarget + " (confidence " +
+        round1(copy.teammateConfidence) + "). Keep this objective visible even when this move follows another plan."
+      : null,
+    copy.teammateVoidNumbers && copy.teammateVoidNumbers.length
+      ? "Teammate numbers ruled out by public passes: " + copy.teammateVoidNumbers.join(", ") + "."
+      : null,
     copy.held
       ? "The previous plan still fits the public evidence."
       : copy.switched
         ? "The previous plan was dropped because it is no longer feasible or another plan scores at least " + SWITCH_MARGIN + " higher."
         : "This is the first committed plan for this deal."
-  ];
+  ].filter(Boolean);
   return copy;
 }
 
@@ -255,6 +328,9 @@ function resolvePlan(view, beliefs, options) {
   } else if (prev && prev.mode !== "none" && (fresh.mode !== prev.mode || fresh.target !== prev.target)) {
     next = Object.assign({}, fresh, { switched: true, held: false });
   }
+  next.teammateTarget = fresh.teammateTarget != null ? fresh.teammateTarget : (prev && prev.teammateTarget != null ? prev.teammateTarget : null);
+  next.teammateConfidence = fresh.teammateConfidence || (prev && prev.teammateConfidence) || 0;
+  next.teammateVoidNumbers = fresh.teammateVoidNumbers || (prev && prev.teammateVoidNumbers) || [];
   remember(key, next);
   const lined = withLines(next);
   note(lined);
