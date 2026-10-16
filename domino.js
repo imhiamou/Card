@@ -75,12 +75,14 @@
         '</div>' +
         '<button type="button" id="domInspectClose">Close</button>' +
       '</div>' +
+      '<div id="domInspectNav" class="domInspectNav" role="tablist" aria-label="Bot inspector pages"></div>' +
       '<div id="domInspectBody"></div>' +
     '</div>';
 
   let socket = null;
   let currentRoom = null;
   let inspectBotId = null;
+  let inspectPage = "overview";
   let inspectRequest = 0;
   let inspectPanelState = null;
   let diagnosticStore = {};
@@ -994,7 +996,8 @@
 
   function renderInspect(panel) {
     const body = document.getElementById("domInspectBody");
-    if (!body || !window.DominoInspect) return;
+    const nav = document.getElementById("domInspectNav");
+    if (!body || !nav || !window.DominoInspect) return;
     const wasOpen = !!(body.querySelector("details") && body.querySelector("details").open);
     const snapshot = panel && panel.snapshot;
     let model = null;
@@ -1008,22 +1011,55 @@
         sections: [{ heading: "Why this move", lines: ["The diagnostic snapshot could not be shown."] }]
       };
     }
+
+    const pages = [
+      { id: "overview", label: "Overview", headings: ["Bot's Plan", "What I am looking for", "Next move", "What happens next", "Why this move"] },
+      { id: "strategy", label: "Strategy", headings: ["Strategic plan", "Next turn prediction"] },
+      { id: "teammate", label: "Teammate", headings: ["Teammate", "Partnership beliefs"] },
+      { id: "opponents", label: "Opponents", headings: ["Opponents", "Opponent beliefs"] },
+      { id: "details", label: "Details", headings: ["Advanced details"] }
+    ];
+    if (!pages.some((page) => page.id === inspectPage)) inspectPage = "overview";
+    nav.textContent = "";
+    pages.forEach((page) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "domInspectTab" + (inspectPage === page.id ? " active" : "");
+      button.textContent = page.label;
+      button.setAttribute("role", "tab");
+      button.setAttribute("aria-selected", inspectPage === page.id ? "true" : "false");
+      button.onclick = () => {
+        if (inspectPage === page.id) return;
+        inspectPage = page.id;
+        body.scrollTop = 0;
+        renderInspect(panel);
+      };
+      nav.appendChild(button);
+    });
+
     body.textContent = "";
-    (model.sections || []).forEach((section) => {
+    const activePage = pages.find((page) => page.id === inspectPage);
+    (model.sections || []).filter((section) => activePage.headings.includes(section.heading)).forEach((section) => {
       if (!section.advanced) {
         appendPlanBlock(body, section);
         return;
       }
       const details = document.createElement("details");
       details.className = "domInspectAdvanced";
-      if (wasOpen) details.open = true;
+      details.open = wasOpen;
       const summary = document.createElement("summary");
-      summary.textContent = "Advanced details";
+      summary.textContent = "Expanded diagnostics";
       details.appendChild(summary);
       (section.sections || []).forEach((inner) => appendPlanBlock(details, inner));
       details.addEventListener("click", (event) => event.stopPropagation());
       body.appendChild(details);
     });
+    if (!body.childElementCount) {
+      const empty = document.createElement("p");
+      empty.className = "domInspectEmpty";
+      empty.textContent = "No information is available on this page yet.";
+      body.appendChild(empty);
+    }
   }
 
   function noteInspectActivity(eventName) {
