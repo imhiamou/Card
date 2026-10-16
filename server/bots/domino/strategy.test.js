@@ -380,3 +380,41 @@ test("self-control memory is released when only one tile still contains the targ
   const nextPlan = strategy.updateStrategicPlan(later, {});
   assert.notEqual(nextPlan.mode, "self-control");
 });
+
+
+test("opening center tiles do not create false intentional-number signals", () => {
+  strategy.clearMemory();
+  const log = [
+    { type: "play", playerId: "mate", tile: { id: "1-6", a: 1, b: 6 },
+      side: "center", leftEnd: 1, rightEnd: 6, legalAlternatives: 7 },
+    { type: "play", playerId: "mate", tile: { id: "2-6", a: 2, b: 6 },
+      side: "center", leftEnd: 2, rightEnd: 6, legalAlternatives: 6 },
+    { type: "play", playerId: "mate", tile: { id: "3-6", a: 3, b: 6 },
+      side: "center", leftEnd: 3, rightEnd: 6, legalAlternatives: 5 }
+  ];
+  const scores = strategy.inferIntentScores(baseView({ log }));
+  // Opening orientation is not a selected exposed end. Only weak tile-pip
+  // evidence should remain, not a teammate-support signal.
+  assert.ok(scores.mate[6] < 0.5, JSON.stringify(scores.mate));
+  assert.ok(scores.mate[1] < 0.5, JSON.stringify(scores.mate));
+});
+
+test("live-shaped public play records use legal alternatives to infer teammate intent", () => {
+  strategy.clearMemory();
+  const view = baseView({
+    log: [
+      { turnNumber: 4, type: "play", playerId: "mate",
+        tile: { id: "1-3", a: 1, b: 3 }, side: "right",
+        leftEndBefore: 2, rightEndBefore: 1, leftEnd: 2, rightEnd: 3,
+        legalAlternatives: 3, handSizeBefore: 5, handSizeAfter: 4 },
+      { turnNumber: 6, type: "play", playerId: "mate",
+        tile: { id: "3-4", a: 3, b: 4 }, side: "right",
+        leftEndBefore: 2, rightEndBefore: 3, leftEnd: 2, rightEnd: 4,
+        legalAlternatives: 2, handSizeBefore: 4, handSizeAfter: 3 }
+    ]
+  });
+  const plan = strategy.updateStrategicPlan(view, {});
+  assert.equal(plan.mode, "teammate-support");
+  assert.equal(plan.targetNumber, 3);
+  assert.equal(plan.targetPlayerId, "mate");
+});
