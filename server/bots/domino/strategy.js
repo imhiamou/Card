@@ -54,35 +54,18 @@ function inferIntentScores(view) {
     if (Number.isInteger(tile.a) && tile.a >= 0 && tile.a <= 6) row[tile.a] += 0.08 * recency;
     if (Number.isInteger(tile.b) && tile.b >= 0 && tile.b <= 6 && tile.b !== tile.a) row[tile.b] += 0.08 * recency;
 
-    const exposedPips = [];
-    if (event.side === "left") exposedPips.push(event.leftEnd);
-    else if (event.side === "right") exposedPips.push(event.rightEnd);
-    else if (event.side === "center") {
-      // An opening tile exposes both ends; neither pip should be silently
-      // discarded as intent evidence.
-      exposedPips.push(event.leftEnd);
-      if (event.rightEnd !== event.leftEnd) exposedPips.push(event.rightEnd);
-    }
-    const validExposed = exposedPips.filter((pip) => Number.isInteger(pip) && pip >= 0 && pip <= 6);
-    if (!validExposed.length) return;
+    let exposed = null;
+    if (event.side === "left") exposed = event.leftEnd;
+    else if (event.side === "right") exposed = event.rightEnd;
+    else if (event.side === "center") exposed = event.rightEnd != null ? event.rightEnd : event.leftEnd;
+    if (!Number.isInteger(exposed) || exposed < 0 || exposed > 6) return;
 
     // A play with one legal choice is weak intent evidence; a genuine choice
     // between several legal placements is stronger.
     const alternatives = Number.isFinite(event.legalAlternatives) ? event.legalAlternatives : null;
     const choiceFactor = alternatives == null ? 0.85 : alternatives > 1 ? 1.25 : 0.12;
-    const exposedWeight = event.side === "center" ? 0.6 : 1.0;
-    validExposed.forEach((exposed) => {
-      row[exposed] += exposedWeight * choiceFactor * recency;
-      if (lastExposed[event.playerId] === exposed) row[exposed] += 0.65 * exposedWeight * choiceFactor * recency;
-
-      const prior = events.slice(Math.max(0, index - 5), index).some((previous) =>
-        previous && previous.type === "play" && previous.playerId === event.playerId &&
-        ((previous.side === "left" && previous.leftEnd === exposed) ||
-         (previous.side === "right" && previous.rightEnd === exposed))
-      );
-      if (prior) row[exposed] += 0.45 * exposedWeight * choiceFactor * recency;
-      lastExposed[event.playerId] = exposed;
-    });
+    row[exposed] += 1.0 * choiceFactor * recency;
+    if (lastExposed[event.playerId] === exposed) row[exposed] += 0.65 * choiceFactor * recency;
 
     // Record the number the tile connected to separately from the new end.
     // Repeatedly spending a suit is evidence of holding/supporting that suit,
@@ -93,9 +76,17 @@ function inferIntentScores(view) {
     if (matched == null && event.side === "left" && Number.isInteger(event.leftEnd)) {
       matched = tile.a === event.leftEnd ? tile.a : tile.b === event.leftEnd ? tile.b : null;
     }
-    if (matched != null && !validExposed.includes(matched) && matched >= 0 && matched <= 6) {
+    if (matched != null && matched !== exposed && matched >= 0 && matched <= 6) {
       row[matched] += 0.28 * choiceFactor * recency;
     }
+
+    const prior = events.slice(Math.max(0, index - 5), index).some((previous) =>
+      previous && previous.type === "play" && previous.playerId === event.playerId &&
+      ((previous.side === "left" && previous.leftEnd === exposed) ||
+       (previous.side === "right" && previous.rightEnd === exposed))
+    );
+    if (prior) row[exposed] += 0.45 * choiceFactor * recency;
+    lastExposed[event.playerId] = exposed;
   });
   return scores;
 }
