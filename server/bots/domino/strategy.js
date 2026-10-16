@@ -43,12 +43,16 @@ function inferIntentScores(view) {
     scores[player.id] = [0, 0, 0, 0, 0, 0, 0];
   });
 
-  (view.log || []).forEach((event, index, events) => {
+  const events = view.log || [];
+  events.forEach((event, index) => {
     if (!event || event.type !== "play" || !event.tile || !scores[event.playerId]) return;
     const row = scores[event.playerId];
     const tile = event.tile;
-    if (Number.isInteger(tile.a) && tile.a >= 0 && tile.a <= 6) row[tile.a] += 0.12;
-    if (Number.isInteger(tile.b) && tile.b >= 0 && tile.b <= 6 && tile.b !== tile.a) row[tile.b] += 0.12;
+    // Old evidence decays by turn distance so a once-useful number cannot
+    // dominate the plan forever after the teammate's choices change.
+    const recency = Math.pow(0.88, events.length - 1 - index);
+    if (Number.isInteger(tile.a) && tile.a >= 0 && tile.a <= 6) row[tile.a] += 0.08 * recency;
+    if (Number.isInteger(tile.b) && tile.b >= 0 && tile.b <= 6 && tile.b !== tile.a) row[tile.b] += 0.08 * recency;
 
     let exposed = null;
     if (event.side === "left") exposed = event.leftEnd;
@@ -56,20 +60,32 @@ function inferIntentScores(view) {
     else if (event.side === "center") exposed = event.rightEnd != null ? event.rightEnd : event.leftEnd;
     if (!Number.isInteger(exposed) || exposed < 0 || exposed > 6) return;
 
-    // A deliberately selected play is stronger evidence than a forced move.
+    // A play with one legal choice is weak intent evidence; a genuine choice
+    // between several legal placements is stronger.
     const alternatives = Number.isFinite(event.legalAlternatives) ? event.legalAlternatives : null;
-    const choiceFactor = alternatives == null ? 0.85 : alternatives > 1 ? 1.25 : 0.55;
-    row[exposed] += 1.0 * choiceFactor;
-    if (lastExposed[event.playerId] === exposed) row[exposed] += 0.65 * choiceFactor;
+    const choiceFactor = alternatives == null ? 0.85 : alternatives > 1 ? 1.25 : 0.12;
+    row[exposed] += 1.0 * choiceFactor * recency;
+    if (lastExposed[event.playerId] === exposed) row[exposed] += 0.65 * choiceFactor * recency;
 
-    // A repeated preference is more meaningful when it recurs after another
-    // player has had a chance to change the ends.
+    // Record the number the tile connected to separately from the new end.
+    // Repeatedly spending a suit is evidence of holding/supporting that suit,
+    // but it is not the same signal as deliberately exposing its other pip.
+    let matched = Number.isInteger(event.connectPip) ? event.connectPip : null;
+    if (matched == null && event.side === "left" && Number.isInteger(event.leftEndBefore)) matched = event.leftEndBefore;
+    if (matched == null && event.side === "right" && Number.isInteger(event.rightEndBefore)) matched = event.rightEndBefore;
+    if (matched == null && event.side === "left" && Number.isInteger(event.leftEnd)) {
+      matched = tile.a === event.leftEnd ? tile.a : tile.b === event.leftEnd ? tile.b : null;
+    }
+    if (matched != null && matched !== exposed && matched >= 0 && matched <= 6) {
+      row[matched] += 0.28 * choiceFactor * recency;
+    }
+
     const prior = events.slice(Math.max(0, index - 5), index).some((previous) =>
       previous && previous.type === "play" && previous.playerId === event.playerId &&
       ((previous.side === "left" && previous.leftEnd === exposed) ||
        (previous.side === "right" && previous.rightEnd === exposed))
     );
-    if (prior) row[exposed] += 0.45 * choiceFactor;
+    if (prior) row[exposed] += 0.45 * choiceFactor * recency;
     lastExposed[event.playerId] = exposed;
   });
   return scores;
@@ -90,7 +106,7 @@ function targetScore(view, beliefs, mode, targetNumber, targetPlayerId, intentSc
       const belief = beliefs && beliefs[player.id];
       return belief && (belief.knownImpossibleNumbers || []).includes(targetNumber);
     }).length;
-    return own * 1.35 + Math.min(1, enemyVoids) * 0.35;
+    return own * 1.35 + (own >= 3 ? 1.25 : 0) + (own === (view.hand || []).length && own >= 2 ? 2.5 : 0) + Math.min(1, enemyVoids) * 0.35;
   }
   const playerScores = intentScores[targetPlayerId] || [];
   const intent = playerScores[targetNumber] || 0;
@@ -198,7 +214,7 @@ function updateStrategicPlan(view, beliefs) {
       previous.targetPlayerId, intents
     );
     const previousCandidate = Object.assign({}, previous, { score: previousCurrentScore });
-    const materiallyBetter = best.score > previousCurrentScore + 1.35;
+    const materiallyBetter = best.score > previousCurrentScore + 0.8;
     if (stillOwnsTarget && !materiallyBetter) chosen = previousCandidate;
   }
 
@@ -218,7 +234,7 @@ function updateStrategicPlan(view, beliefs) {
       ? previous.createdAtTurn
       : view.log.length,
     lastReviewedTurn: view.log.length,
-    switchThreshold: 1.35,
+    switchThreshold: 0.8,
     supportingEvidenceCount: chosen.targetPlayerId && intents[chosen.targetPlayerId]
       ? Number((intents[chosen.targetPlayerId][chosen.targetNumber] || 0).toFixed(2))
       : 0
