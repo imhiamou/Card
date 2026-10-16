@@ -1,0 +1,308 @@
+"use strict";
+
+const { api, matchesEither, violates } = require("./engine");
+const { unseenTiles } = require("./sample");
+const { buildInventory } = require("./inventory");
+
+/*
+ * Teammate intention is separate from "they once played this number."
+ * A play that was likely their only legal tile gets almost no signal.
+ * A repeated choice, when another tile could have fit, is the signal.
+ * This uses the public log and the bot's own hand. It never sees another
+ * player's tiles.
+ */
+
+function atLeastOne(pool, matches, handCount) {
+  if (handCount <= 0 || matches <= 0 || pool <= 0) return 0;
+  if (pool < handCount) return matches > 0 ? 1 : 0;
+  if (pool - matches < handCount) return 1;
+  let none = 1;
+  for (let i = 0; i < handCount; i++) {
+    none *= (pool - matches - i) / (pool - i);
+  }
+  const chance = 1 - none;
+  if (chance < 0) return 0;
+  if (chance > 1) return 1;
+  return chance;
+}
+
+function atLeastTwo(pool, matches, handCount) {
+  if (handCount < 2 || matches < 2 || pool < 2) return 0;
+  const none = 1 - atLeastOne(pool, matches, handCount);
+  let exactlyOne = 0;
+  if (pool - matches >= handCount - 1 && matches >= 1) {
+    let ways = matches / pool;
+    for (let i = 0; i < handCount - 1; i++) {
+      ways *= (pool - matches - i) / (pool - 1 - i);
+    }
+    exactlyOne = ways * handCount;
+  }
+  const chance = 1 - none - exactlyOne;
+  if (chance < 0) return 0;
+  if (chance > 1) return 1;
+  return chance;
+}
+
+function blankPip() {
+  return {
+    expectedTiles: 0,
+    pAtLeastOne: 0,
+    pMultiple: 0,
+    deliberate: 0,
+    forced: 0,
+    maintained: 0,
+    changedAway: 0,
+    confidence: 0,
+    last: ""
+  };
+}
+
+function emptyIntention() {
+  const byPip = [];
+  for (let pip = 0; pip <= 6; pip++) byPip.push(blankPip());
+  return {
+    byPip: byPip,
+    preferred: null,
+    confidence: 0,
+    lastMoveForced: false,
+    lastMoveForceChance: null,
+    drawsSeen: false
+  };
+}
+
+function hardSet(belief) {
+  if (!belief) return new Set();
+  if (belief._hard) return belief._hard;
+  return new Set(belief.knownImpossibleNumbers || []);
+}
+
+function voidsBefore(log, playerId, index) {
+  const voids = new Set();
+  for (let i = 0; i < index; i++) {
+    const event = log[i];
+    if (!event || event.playerId !== playerId) continue;
+    if (event.type === "draw") voids.clear();
+    if (event.type === "pass") {
+      [event.leftEnd, event.rightEnd].forEach((pip) => {
+        if (pip != null) voids.add(pip);
+      });
+    }
+  }
+  return voids;
+}
+
+function coveredPip(tile, exposed) {
+  if (!tile || exposed == null) return null;
+  if (tile.a === tile.b) return exposed;
+  if (tile.a === exposed) return tile.b;
+  if (tile.b === exposed) return tile.a;
+  return null;
+}
+
+function inferBefore(event) {
+  if (!event || !event.tile) return null;
+  if (event.leftEndBefore != null && event.rightEndBefore != null) {
+    return { left: event.leftEndBefore, right: event.rightEndBefore };
+  }
+  if (event.side === "left" && event.leftEnd != null) {
+    return { left: coveredPip(event.tile, event.leftEnd), right: event.rightEnd };
+  }
+  if (event.side === "right" && event.rightEnd != null) {
+    return { left: event.leftEnd, right: coveredPip(event.tile, event.rightEnd) };
+  }
+  return null;
+}
+
+function botTilesThen(view, index) {
+  const ids = new Set((view.hand || []).map((tile) => tile.id));
+  const log = view.log || [];
+  for (let i = index; i < log.length; i++) {
+    const event = log[i];
+    if (event && event.type === "play" && event.playerId === view.selfId && event.tile) ids.add(event.tile.id);
+  }
+  return ids;
+}
+
+function unseenThen(view, index, botIds) {
+  const gone = new Set(botIds);
+  const logged = new Set();
+  const log = view.log || [];
+  log.forEach((event) => {
+    if (event && event.type === "play" && event.tile) logged.add(event.tile.id);
+  });
+  // Tiles already on the board but missing from the log were played before
+  // this window. Tiles logged later were still unseen at this index.
+  (view.chain || []).forEach((tile) => {
+    if (tile && tile.id != null && !logged.has(tile.id)) gone.add(tile.id);
+  });
+  for (let i = 0; i < index; i++) {
+    const event = log[i];
+    if (event && event.type === "play" && event.tile) gone.add(event.tile.id);
+  }
+  return api().buildDoubleSixSet().filter((tile) => !gone.has(tile.id));
+}
+
+function handSizeThen(view, playerId, index) {
+  const player = (view.players || []).find((seat) => seat.id === playerId);
+  const now = player ? player.handCount || 0 : 0;
+  let later = 0;
+  const log = view.log || [];
+  for (let i = index; i < log.length; i++) {
+    const event = log[i];
+    if (!event || event.playerId !== playerId) continue;
+    if (event.type === "play") later += 1;
+    if (event.type === "draw") return null;
+  }
+  return now + later;
+}
+
+function signalWeight(forceChance) {
+  if (forceChance == null) return 0.35;
+  if (forceChance >= 0.65) return 0.15;
+  if (forceChance <= 0.35) return 1;
+  return 0.45;
+}
+
+function readPlays(view, playerId, row) {
+  const log = view.log || [];
+  log.forEach((event, index) => {
+    if (!event || event.playerId !== playerId || event.type !== "play" || !event.tile) return;
+    const before = inferBefore(event);
+    const handSize = handSizeThen(view, playerId, index);
+    let forceChance = null;
+    if (before && handSize != null && handSize > 0 && !(view.log || []).some((item) => item && item.type === "draw")) {
+      const botIds = botTilesThen(view, index);
+      const unseen = unseenThen(view, index, botIds).filter((tile) => tile.id !== event.tile.id);
+      const voids = voidsBefore(log, playerId, index);
+      const alternatives = unseen.filter((tile) => matchesEither(tile, before.left, before.right) && !violates(tile, voids));
+      forceChance = 1 - atLeastOne(unseen.length, alternatives.length, Math.max(0, handSize - 1));
+    }
+    const weight = signalWeight(forceChance);
+    const exposed = event.side === "left" ? event.leftEnd : event.side === "right" ? event.rightEnd : null;
+    if (weight >= 0.45) {
+      if (exposed != null) {
+        row.byPip[exposed].deliberate += weight;
+        row.byPip[exposed].last = "deliberate";
+      }
+      if (before && event.side === "right" && before.right != null && exposed !== before.right) {
+        row.byPip[before.right].changedAway += weight;
+        row.byPip[before.right].last = "changed";
+      }
+      if (before && event.side === "left" && before.left != null && exposed !== before.left) {
+        row.byPip[before.left].changedAway += weight;
+        row.byPip[before.left].last = "changed";
+      }
+      if (before && exposed != null && ((event.side === "right" && exposed === before.right) || (event.side === "left" && exposed === before.left))) {
+        row.byPip[exposed].maintained += weight;
+        row.byPip[exposed].last = "maintained";
+      }
+    } else if (exposed != null) {
+      row.byPip[exposed].forced += 1;
+      row.byPip[exposed].last = "forced";
+    }
+    row.lastMoveForceChance = forceChance;
+    row.lastMoveForced = forceChance != null && forceChance >= 0.65;
+  });
+}
+
+function fillCounts(view, beliefs, playerId, row, inventory) {
+  const belief = beliefs[playerId];
+  const voids = hardSet(belief);
+  const player = (view.players || []).find((seat) => seat.id === playerId);
+  const handCount = player ? player.handCount || 0 : 0;
+  const unseen = unseenTiles(view).filter((tile) => !violates(tile, voids));
+  for (let pip = 0; pip <= 6; pip++) {
+    const pipRow = row.byPip[pip];
+    const unseenPip = inventory.byPip[pip].unseen;
+    if (voids.has(pip) || handCount <= 0) {
+      pipRow.expectedTiles = 0;
+      pipRow.pAtLeastOne = 0;
+      pipRow.pMultiple = 0;
+    } else {
+      let capacity = handCount + (view.boneyardCount || 0);
+      (view.players || []).forEach((seat) => {
+        if (!seat || seat.id === view.selfId || seat.id === playerId || !(seat.handCount > 0)) return;
+        if (!hardSet(beliefs[seat.id]).has(pip)) capacity += seat.handCount;
+      });
+      pipRow.expectedTiles = capacity > 0 ? unseenPip * (handCount / capacity) : 0;
+      const matches = unseen.filter((tile) => tile.a === pip || tile.b === pip).length;
+      pipRow.pAtLeastOne = atLeastOne(unseen.length, matches, handCount);
+      pipRow.pMultiple = atLeastTwo(unseen.length, matches, handCount);
+    }
+    // One play is not a preference, even when it also kept the same end.
+    // A later deliberate change cuts the earlier number instead of freezing it.
+    const trials = pipRow.deliberate + pipRow.forced;
+    let net = pipRow.deliberate + pipRow.maintained * 0.5 - pipRow.changedAway * 1.25;
+    if (pipRow.last === "changed") net *= 0.35;
+    pipRow.confidence = pipRow.deliberate >= 1.6 && net >= 1.6 && trials > 0
+      ? Math.max(0, Math.min(1, (net / 2) * (pipRow.deliberate / trials)))
+      : 0;
+  }
+  let preferred = null;
+  row.byPip.forEach((pipRow, pip) => {
+    if (!preferred || pipRow.confidence > row.byPip[preferred].confidence) {
+      if (pipRow.confidence >= 0.45) preferred = pip;
+    }
+  });
+  row.preferred = preferred;
+  row.confidence = preferred == null ? 0 : row.byPip[preferred].confidence;
+}
+
+function annotateIntentions(view, beliefs) {
+  const inventory = buildInventory(view || {});
+  const drew = (view.log || []).some((event) => event && event.type === "draw");
+  Object.keys(beliefs || {}).forEach((id) => {
+    const row = emptyIntention();
+    row.drawsSeen = drew;
+    if (id !== view.selfId) readPlays(view, id, row);
+    fillCounts(view, beliefs, id, row, inventory);
+    beliefs[id].intention = row;
+  });
+  inventory.byPip.forEach((pipRow) => {
+    pipRow.holders = [];
+  });
+  (view.players || []).forEach((player) => {
+    if (!player || player.id === view.selfId) return;
+    const intention = beliefs[player.id] && beliefs[player.id].intention;
+    const voids = hardSet(beliefs[player.id]);
+    for (let pip = 0; pip <= 6; pip++) {
+      const info = intention && intention.byPip[pip];
+      inventory.byPip[pip].holders.push({
+        id: player.id,
+        expected: info ? info.expectedTiles : 0,
+        pAtLeastOne: info ? info.pAtLeastOne : 0,
+        void: voids.has(pip)
+      });
+    }
+  });
+  beliefs._inventory = inventory;
+  return beliefs;
+}
+
+function publicIntention(intention) {
+  if (!intention) return null;
+  return {
+    preferred: intention.preferred,
+    confidence: intention.confidence,
+    lastMoveForced: !!intention.lastMoveForced,
+    lastMoveForceChance: intention.lastMoveForceChance,
+    drawsSeen: !!intention.drawsSeen,
+    byPip: (intention.byPip || []).map((row) => ({
+      expectedTiles: Math.round(row.expectedTiles * 100) / 100,
+      pAtLeastOne: Math.round(row.pAtLeastOne * 100) / 100,
+      pMultiple: Math.round(row.pMultiple * 100) / 100,
+      deliberate: Math.round(row.deliberate * 100) / 100,
+      forced: row.forced,
+      maintained: Math.round(row.maintained * 100) / 100,
+      changedAway: Math.round(row.changedAway * 100) / 100,
+      confidence: Math.round(row.confidence * 100) / 100,
+      last: row.last
+    }))
+  };
+}
+
+module.exports = {
+  annotateIntentions,
+  publicIntention,
+  atLeastOne
+};

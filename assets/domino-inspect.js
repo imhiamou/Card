@@ -96,7 +96,8 @@
     "Blocking opponents": ["Blocking opponents", "I am trying to leave numbers my opponents probably cannot play."],
     "Controlling the board": ["Controlling the board", "I am trying to keep the open ends favorable for my team."],
     "Winning the block": ["Playing for a block", "I am trying to create a blocked round that favors my team."],
-    "Defensive recovery": ["Defending", "I am trying to reduce our chances of losing."]
+    "Defensive recovery": ["Defending", "I am trying to reduce our chances of losing."],
+    "Establishing a number": ["Controlling the board", "I am trying to keep the open ends favorable for my team."]
   };
 
   function text(value) {
@@ -360,7 +361,11 @@
       ["stuckDouble", "Keeps a double from getting stuck."],
       ["shedPips", "Gets a heavier tile out of my hand."],
       ["dumpDouble", "Gets a double out of my hand."],
-      ["blockEquity", "Moves a blocked round in our favor."]
+      ["blockEquity", "Moves a blocked round in our favor."],
+      ["intentKeep", "Keeps a number my teammate has been choosing."],
+      ["mateFinish", "Gives my teammate a chance to finish."],
+      ["oppVoidExploit", "Leaves a number an opponent has passed on."],
+      ["oppFeed", "Avoids handing an opponent their number."]
     ];
     let advantage = null;
     let best = 0;
@@ -403,6 +408,31 @@
     const candidates = Array.isArray(snap.candidateEvaluations) ? snap.candidateEvaluations : (snap.scores || []);
     const search = snap.searchStats || {};
     const sections = [];
+    if (snap.inventory && Array.isArray(snap.inventory.byPip)) {
+      sections.push({
+        heading: "Tile counts",
+        lines: snap.inventory.byPip.map((row) => {
+          return row.pip + ": in hand " + row.inHand + ", played " + row.played + ", unseen " + row.unseen;
+        })
+      });
+    }
+    if (snap.summary && snap.summary.teammateIntention) {
+      const intent = snap.summary.teammateIntention;
+      sections.push({
+        heading: "Teammate intention",
+        lines: [
+          "Preferred number: " + text(intent.preferred),
+          "Confidence: " + text(intent.confidence),
+          "Last move likely forced: " + (intent.lastMoveForced ? "yes" : "no")
+        ].concat((intent.byPip || []).reduce((lines, row, pip) => {
+          if (!(row.confidence || row.deliberate || row.forced || row.changedAway)) return lines;
+          lines.push("Number " + pip + ": chance " + text(row.pAtLeastOne) +
+            ", deliberate " + text(row.deliberate) + ", forced " + text(row.forced) +
+            ", changed away " + text(row.changedAway));
+          return lines;
+        }, []))
+      });
+    }
     sections.push({
       heading: "Candidate moves",
       lines: candidates.length
@@ -508,9 +538,17 @@
     const teammate = teammateBlock(snap, selected, mode);
     const opponents = opponentBlock(snap, selected, mode);
     const why = whyBlock(snap, selected, mode, teammate.help);
-    const objective = selected ? objectives(snap, selected, mode) : [
-      calculating ? "I am still evaluating the available moves." : "I do not have a recorded objective for this position yet."
-    ];
+    const summary = snap.summary || {};
+    if (summary.risk) why.risk = summary.risk;
+    const objective = [];
+    if (summary.noticed) objective.push(summary.noticed);
+    if (selected) objectives(snap, selected, mode).forEach((line) => objective.push(line));
+    else if (!objective.length) {
+      objective.push(calculating
+        ? "I am still evaluating the available moves."
+        : "I do not have a recorded objective for this position yet.");
+    }
+    const expectation = summary.expect ? [summary.expect] : [];
     const sections = [];
     sections.push({
       heading: "Bot's Plan",
@@ -524,7 +562,10 @@
     }
     sections.push({ heading: "What I am looking for", lines: objective });
     sections.push({ heading: "Next move", lines: [nextMoveLine(snap, selected, calculating, error)] });
-    sections.push({ heading: "What happens next", lines: continuationLines(snap, selected, calculating) });
+    sections.push({
+      heading: "What happens next",
+      lines: expectation.concat(continuationLines(snap, selected, calculating))
+    });
     sections.push({
       heading: "Teammate",
       lines: [

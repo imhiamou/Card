@@ -44,14 +44,15 @@ function unseenTiles(view) {
   return api().buildDoubleSixSet().filter((tile) => !gone.has(tile.id));
 }
 
-function groupsFor(view, beliefs) {
+function groupsFor(view, beliefs, options) {
+  const ignoreHands = !!(options && options.ignoreHands);
   const groups = [];
   (view.players || []).forEach((player) => {
     if (player.id === view.selfId) return;
     groups.push({
       id: player.id,
       count: player.handCount || 0,
-      voids: hardVoid(beliefs, player.id)
+      voids: ignoreHands ? new Set() : hardVoid(beliefs, player.id)
     });
   });
   groups.push({
@@ -84,12 +85,12 @@ function diagnose(unseen, groups) {
  * another shuffle usually frees the scarce tile. If every attempt fails,
  * the caller must not pretend the last partial deal was real.
  */
-function sampleAllocation(view, beliefs, rng) {
+function sampleAllocation(view, beliefs, rng, options) {
   const unseen = unseenTiles(view);
-  const groups = groupsFor(view, beliefs).filter((group) => group.count > 0);
+  const groups = groupsFor(view, beliefs, options).filter((group) => group.count > 0);
   const need = groups.reduce((sum, group) => sum + group.count, 0);
   if (need !== unseen.length) {
-    return { allocation: null, conflict: diagnose(unseen, groupsFor(view, beliefs)) };
+    return { allocation: null, conflict: diagnose(unseen, groupsFor(view, beliefs, options)) };
   }
   if (!groups.length) return { allocation: { boneyard: [] }, conflict: "" };
 
