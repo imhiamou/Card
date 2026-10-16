@@ -1026,6 +1026,13 @@ function resolveAutoPasses(room, io, roomCode) {
     notePublic(d, {
       type: "pass",
       playerId: d.currentTurn,
+      legalAlternatives: 0,
+      handSizeBefore: hand.length,
+      handSizeAfter: hand.length,
+      boardLeftBefore: d.leftEnd,
+      boardRightBefore: d.rightEnd,
+      boardLeftAfter: d.leftEnd,
+      boardRightAfter: d.rightEnd,
       leftEnd: d.leftEnd,
       rightEnd: d.rightEnd
     });
@@ -1348,6 +1355,9 @@ function registerSocket(socket, io, rooms) {
       return;
     }
 
+    const legalMovesBefore = validMovesFor(room, socket.id);
+    const legalAlternatives = Math.max(0, legalMovesBefore.length - 1);
+    const handSizeBefore = hand.length;
     const leftBefore = d.leftEnd;
     const rightBefore = d.rightEnd;
     const placed = placeTile(d, tile, side === "center" ? "center" : side);
@@ -1359,7 +1369,19 @@ function registerSocket(socket, io, rooms) {
       type: "play",
       playerId: socket.id,
       tile: { id: tile.id, a: tile.a, b: tile.b },
+      tileValues: [tile.a, tile.b],
       side: side === "center" ? "center" : side,
+      matchedEnd: side === "left" || side === "right" ? side : null,
+      matchedValue: side === "left" ? leftBefore : side === "right" ? rightBefore : null,
+      exposedEnd: side === "left" || side === "right" ? side : null,
+      exposedValue: side === "left" ? d.leftEnd : side === "right" ? d.rightEnd : null,
+      legalAlternatives: legalAlternatives,
+      handSizeBefore: handSizeBefore,
+      handSizeAfter: handSizeBefore - 1,
+      boardLeftBefore: leftBefore,
+      boardRightBefore: rightBefore,
+      boardLeftAfter: d.leftEnd,
+      boardRightAfter: d.rightEnd,
       leftEndBefore: leftBefore,
       rightEndBefore: rightBefore,
       leftEnd: d.leftEnd,
@@ -1447,6 +1469,13 @@ function registerSocket(socket, io, rooms) {
       notePublic(d, {
         type: "pass",
         playerId: socket.id,
+        legalAlternatives: 0,
+        handSizeBefore: d.hands[socket.id].length,
+        handSizeAfter: d.hands[socket.id].length,
+        boardLeftBefore: d.leftEnd,
+        boardRightBefore: d.rightEnd,
+        boardLeftAfter: d.leftEnd,
+        boardRightAfter: d.rightEnd,
         leftEnd: d.leftEnd,
         rightEnd: d.rightEnd
       });
