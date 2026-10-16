@@ -700,7 +700,8 @@ function publicBoard(room) {
 function notePublic(state, entry) {
   if (!state) return;
   if (!state.publicLog) state.publicLog = [];
-  state.publicLog.push(entry);
+  const record = Object.assign({ turnNumber: state.publicLog.length + 1 }, entry || {});
+  state.publicLog.push(record);
 }
 
 /**
@@ -1437,7 +1438,12 @@ function registerSocket(socket, io, rooms) {
 
     const drawn = d.boneyard.pop();
     d.hands[socket.id].push(drawn);
-    notePublic(d, { type: "draw", playerId: socket.id });
+    notePublic(d, {
+      type: "draw",
+      playerId: socket.id,
+      handSizeBefore: d.hands[socket.id].length - 1,
+      handSizeAfter: d.hands[socket.id].length
+    });
     const me = room.players.find((p) => p.id === socket.id);
 
     // "dominoDrawn" — Dominoes only. Public draw notice (tile hidden).
