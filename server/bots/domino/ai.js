@@ -6,6 +6,7 @@ const { rankMoves } = require("./eval");
 const { searchMoves } = require("./search");
 const { mergeWeights, mergeLimits } = require("./weights");
 const { buildDiagnostics } = require("./inspect");
+const { updateStrategicPlan } = require("./strategy");
 
 /*
  * Callers that only know how long the chain is (the older bot tests) never
@@ -44,6 +45,8 @@ function normalize(state) {
     players = [{ id: selfId, handCount: hand.length, team: null }];
   }
   return {
+    gameId: state && state.gameId ? state.gameId : "game",
+    roundId: state && state.roundId != null ? state.roundId : "round",
     selfId: selfId,
     hand: hand,
     validMoves: (state && state.validMoves ? state.validMoves : []).map((move) => ({
@@ -66,6 +69,8 @@ function normalize(state) {
 function seedFor(view, options) {
   if (options && options.seed != null) return options.seed >>> 0;
   const key = [
+    view.gameId,
+    view.roundId,
     view.selfId,
     view.leftEnd,
     view.rightEnd,
@@ -99,7 +104,9 @@ function getDominoMove(state, options) {
   const weights = mergeWeights(options && options.weights);
   const limits = mergeLimits(options && options.limits);
   const beliefs = buildBeliefs(view, options);
-  let ranked = rankMoves(view, beliefs, weights, options);
+  const strategicPlan = updateStrategicPlan(view, beliefs);
+  const decisionOptions = Object.assign({}, options || {}, { strategicPlan: strategicPlan });
+  let ranked = rankMoves(view, beliefs, weights, decisionOptions);
   if (!ranked.length) {
     return { tileId: view.validMoves[0].tileId, side: view.validMoves[0].side };
   }
@@ -107,7 +114,7 @@ function getDominoMove(state, options) {
   let report = null;
   const alreadyWinning = ranked[0].score >= weights.roundWin;
   if (!alreadyWinning && limits.samples > 0 && view.players.length > 1) {
-    report = searchMoves(view, beliefs, ranked, weights, options, rng, limits);
+    report = searchMoves(view, beliefs, ranked, weights, decisionOptions, rng, limits);
     ranked = report.ranked;
   }
   const vary = !!(options && options.vary);
@@ -123,7 +130,7 @@ function getDominoMove(state, options) {
         chosen: chosen,
         report: report,
         weights: weights,
-        options: options
+        options: decisionOptions
       })
     };
   }
