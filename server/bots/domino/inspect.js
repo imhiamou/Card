@@ -695,7 +695,21 @@ function clientSnapshot(diagnostics) {
   copy.lastUpdatedAt = Date.now();
   if (copy.status === "error" && !copy.error) copy.error = copy.reason || "The decision failed.";
   if (copy.status !== "error") copy.error = null;
-  return copy;
+
+  // Diagnostics are delivered to a client. Keep the strategy explanation,
+  // counts, probabilities, and scores, but never serialize a hidden hand or
+  // a tile identity/value that would reveal a bot's private tiles.
+  function redact(value) {
+    if (Array.isArray(value)) return value.map(redact);
+    if (!value || typeof value !== "object") return value;
+    const safe = {};
+    Object.keys(value).forEach((key) => {
+      if (/^(hand|hands|tiles|tile|tileId|tileIds|handTiles|unseenTileIds|positionKey)$/i.test(key)) return;
+      safe[key] = redact(value[key]);
+    });
+    return safe;
+  }
+  return redact(copy);
 }
 
 function buildDiagnostics(input) {
