@@ -181,8 +181,11 @@ function updateStrategicPlan(view, beliefs) {
   let chosen = best;
 
   if (previous && previous.targetNumber != null) {
-    const stillOwnsTarget = previous.mode !== "self-control" ||
-      countOnes(view.hand, previous.targetNumber) > 0;
+    const previousBelief = beliefs && beliefs[previous.targetPlayerId];
+    const previousTargetVoid = (previous.mode === "teammate-support" || previous.mode === "opponent-denial") &&
+      previousBelief && (previousBelief.knownImpossibleNumbers || []).includes(previous.targetNumber);
+    const stillOwnsTarget = !previousTargetVoid && (previous.mode !== "self-control" ||
+      countOnes(view.hand, previous.targetNumber) > 0);
     const previousCurrentScore = targetScore(
       view, beliefs || {}, previous.mode, previous.targetNumber,
       previous.targetPlayerId, intents
