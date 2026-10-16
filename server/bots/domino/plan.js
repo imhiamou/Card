@@ -244,6 +244,13 @@ function freshPlan(view, beliefs) {
   plan.teammateTarget = teammateTarget;
   plan.teammateConfidence = teammateConfidence;
   plan.teammateVoidNumbers = (beliefs && beliefs[mateId] && beliefs[mateId].knownImpossibleNumbers || []).slice();
+  const teammateIntent = intentionOf(beliefs, mateId);
+  plan.teammateSuspectedMissingNumbers = teammateIntent
+    ? teammateIntent.byPip.map((info, pip) => ({ info: info, pip: pip }))
+      .filter((item) => item.info.missed >= 1 && item.info.pAtLeastOne < 0.4 &&
+        plan.teammateVoidNumbers.indexOf(item.pip) < 0)
+      .map((item) => item.pip)
+    : [];
   return plan;
 }
 
@@ -297,6 +304,10 @@ function withLines(plan) {
     copy.teammateVoidNumbers && copy.teammateVoidNumbers.length
       ? "Teammate numbers ruled out by public passes: " + copy.teammateVoidNumbers.join(", ") + "."
       : null,
+    copy.teammateSuspectedMissingNumbers && copy.teammateSuspectedMissingNumbers.length
+      ? "Teammate may lack these numbers after repeatedly playing away from them: " +
+        copy.teammateSuspectedMissingNumbers.join(", ") + " (suspected, not confirmed)."
+      : null,
     copy.held
       ? "The previous plan still fits the public evidence."
       : copy.switched
@@ -331,6 +342,8 @@ function resolvePlan(view, beliefs, options) {
   next.teammateTarget = fresh.teammateTarget != null ? fresh.teammateTarget : (prev && prev.teammateTarget != null ? prev.teammateTarget : null);
   next.teammateConfidence = fresh.teammateConfidence || (prev && prev.teammateConfidence) || 0;
   next.teammateVoidNumbers = fresh.teammateVoidNumbers || (prev && prev.teammateVoidNumbers) || [];
+  next.teammateSuspectedMissingNumbers = fresh.teammateSuspectedMissingNumbers ||
+    (prev && prev.teammateSuspectedMissingNumbers) || [];
   remember(key, next);
   const lined = withLines(next);
   note(lined);
