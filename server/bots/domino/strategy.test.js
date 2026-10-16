@@ -3,6 +3,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const strategy = require("./strategy");
+const { api } = require("./engine");
 
 function baseView(overrides) {
   return Object.assign({
@@ -129,4 +130,14 @@ test("abandons a teammate-support action when the target becomes a known void", 
     mate: { knownImpossibleNumbers: [3] }
   });
   assert.notEqual(constrained.mode, "teammate-support");
+});
+
+
+test("Double-Six set has 28 unique tiles and seven tiles per number", () => {
+  const tiles = api().buildDoubleSixSet();
+  assert.equal(tiles.length, 28);
+  assert.equal(new Set(tiles.map((tile) => tile.id)).size, 28);
+  for (let pip = 0; pip <= 6; pip++) {
+    assert.equal(tiles.filter((tile) => tile.a === pip || tile.b === pip).length, 7);
+  }
 });
