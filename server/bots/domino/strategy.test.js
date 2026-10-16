@@ -111,3 +111,22 @@ test("self-control plan targets a number held by multiple own tiles", () => {
   assert.equal(plan.targetPlayerId, "bot-a");
   assert.equal(plan.targetNumber, 4);
 });
+
+
+test("abandons a teammate-support action when the target becomes a known void", () => {
+  strategy.clearMemory();
+  const view = baseView({
+    log: [
+      { type: "play", playerId: "mate", tile: { id: "1-3", a: 1, b: 3 }, side: "right", leftEnd: 2, rightEnd: 3, legalAlternatives: 3 },
+      { type: "play", playerId: "mate", tile: { id: "3-4", a: 3, b: 4 }, side: "right", leftEnd: 2, rightEnd: 3, legalAlternatives: 2 }
+    ]
+  });
+  const initial = strategy.updateStrategicPlan(view, {});
+  assert.equal(initial.mode, "teammate-support");
+  assert.equal(initial.targetNumber, 3);
+
+  const constrained = strategy.updateStrategicPlan(view, {
+    mate: { knownImpossibleNumbers: [3] }
+  });
+  assert.notEqual(constrained.mode, "teammate-support");
+});
