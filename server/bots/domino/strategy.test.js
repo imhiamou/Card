@@ -141,3 +141,62 @@ test("Double-Six set has 28 unique tiles and seven tiles per number", () => {
     assert.equal(tiles.filter((tile) => tile.a === pip || tile.b === pip).length, 7);
   }
 });
+
+
+test("recent teammate choices can replace a stale number preference", () => {
+  strategy.clearMemory();
+  const log = [];
+  [0, 1, 2].forEach((i) => log.push({
+    type: "play", playerId: "mate", tile: { id: "1-3", a: 1, b: 3 },
+    side: "right", leftEnd: 1, rightEnd: 3, legalAlternatives: 3
+  }));
+  [0, 1, 2, 3].forEach((i) => log.push({
+    type: "play", playerId: "mate", tile: { id: "2-6", a: 2, b: 6 },
+    side: "right", leftEnd: 2, rightEnd: 6, legalAlternatives: 3
+  }));
+  const scores = strategy.inferIntentScores(baseView({ log }));
+  assert.ok(scores.mate[6] > scores.mate[3], JSON.stringify(scores.mate));
+});
+
+test("forced teammate plays contribute much less intent evidence than real choices", () => {
+  strategy.clearMemory();
+  const log = [
+    { type: "play", playerId: "mate", tile: { id: "1-3", a: 1, b: 3 },
+      side: "right", leftEnd: 1, rightEnd: 3, legalAlternatives: 1 },
+    { type: "play", playerId: "mate", tile: { id: "2-6", a: 2, b: 6 },
+      side: "right", leftEnd: 2, rightEnd: 6, legalAlternatives: 4 }
+  ];
+  const scores = strategy.inferIntentScores(baseView({ log }));
+  assert.ok(scores.mate[6] > scores.mate[3], JSON.stringify(scores.mate));
+});
+
+test("the strategic target changes the actual move ranking", () => {
+  const { rankMoves } = require("./eval");
+  const view = baseView({
+    hand: [
+      { id: "2-6", a: 2, b: 6 },
+      { id: "3-4", a: 3, b: 4 }
+    ],
+    leftEnd: 2,
+    rightEnd: 3,
+    chain: [{ id: "2-3", a: 2, b: 3 }],
+    validMoves: [
+      { tileId: "2-6", side: "left" },
+      { tileId: "3-4", side: "right" }
+    ]
+  });
+  const neutralWeights = {
+    roundWin: 0, pointScale: 0, oppOutScale: 0, denyNext: 0,
+    forcePass: 0, mateCanReply: 0, mateSuit: 0, otherOpp: 0,
+    ownOuts: 0, stuckDoubleRelief: 0, shedPips: 0, dumpDouble: 0,
+    blockEquity: 0
+  };
+  const ranked = rankMoves(view, {}, neutralWeights, {
+    strategicPlan: {
+      mode: "teammate-support", targetNumber: 6, targetPlayerId: "mate"
+    }
+  });
+  assert.equal(ranked[0].move.tileId, "2-6");
+  assert.equal(ranked[0].move.side, "left");
+  assert.ok(ranked[0].score > ranked[1].score);
+});
