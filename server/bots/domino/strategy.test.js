@@ -353,3 +353,30 @@ test("search-enabled paired headless benchmark records AI-vs-legacy outcomes wit
     meanDecisionMs: Number(result.meanDecisionMs.toFixed(3))
   }));
 });
+
+
+test("self-control memory is released when only one tile still contains the target", () => {
+  strategy.clearMemory();
+  const first = baseView({
+    hand: [
+      { id: "4-4", a: 4, b: 4 },
+      { id: "4-5", a: 4, b: 5 },
+      { id: "4-6", a: 4, b: 6 },
+      { id: "0-1", a: 0, b: 1 },
+      { id: "2-3", a: 2, b: 3 }
+    ]
+  });
+  const initialPlan = strategy.updateStrategicPlan(first, {});
+  assert.equal(initialPlan.mode, "self-control");
+  assert.equal(initialPlan.targetNumber, 4);
+
+  const later = Object.assign({}, first, {
+    hand: [
+      { id: "4-6", a: 4, b: 6 },
+      { id: "0-1", a: 0, b: 1 },
+      { id: "2-3", a: 2, b: 3 }
+    ]
+  });
+  const nextPlan = strategy.updateStrategicPlan(later, {});
+  assert.notEqual(nextPlan.mode, "self-control");
+});
