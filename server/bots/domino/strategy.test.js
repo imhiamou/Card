@@ -267,3 +267,33 @@ test("simulation public views preserve deal identity for persistent strategy mem
   assert.equal(view.gameId, "memory-isolation");
   assert.equal(view.roundId, 9);
 });
+
+
+test("a persisted teammate target expires when later public evidence no longer supports it", () => {
+  strategy.clearMemory();
+  const initial = baseView({
+    log: [
+      { type: "play", playerId: "mate", tile: { id: "1-3", a: 1, b: 3 },
+        side: "right", leftEnd: 2, rightEnd: 3, legalAlternatives: 3 },
+      { type: "play", playerId: "mate", tile: { id: "2-3", a: 2, b: 3 },
+        side: "right", leftEnd: 2, rightEnd: 3, legalAlternatives: 3 },
+      { type: "play", playerId: "mate", tile: { id: "3-4", a: 3, b: 4 },
+        side: "right", leftEnd: 2, rightEnd: 3, legalAlternatives: 3 }
+    ]
+  });
+  const first = strategy.updateStrategicPlan(initial, {});
+  assert.equal(first.mode, "teammate-support");
+  assert.equal(first.targetNumber, 3);
+
+  const laterEvents = initial.log.slice();
+  for (let i = 0; i < 18; i++) {
+    laterEvents.push({
+      type: "play", playerId: i % 2 ? "opp-b" : "opp-c",
+      tile: { id: "1-5", a: 1, b: 5 },
+      side: "right", leftEnd: 1, rightEnd: 5, legalAlternatives: 3
+    });
+  }
+  const later = strategy.updateStrategicPlan(Object.assign({}, initial, { log: laterEvents }), {});
+  assert.ok(later.mode !== "teammate-support" || later.targetNumber !== 3,
+    JSON.stringify(later));
+});
