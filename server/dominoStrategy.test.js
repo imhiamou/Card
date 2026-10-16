@@ -576,6 +576,10 @@ test("client diagnostics redact all hidden tile identities and hand contents", (
   assert.equal(Object.prototype.hasOwnProperty.call(snapshot, "hand"), false);
   assert.equal(snapshot.selected.side, "left");
   assert.equal(snapshot.inventory.byPip[0].inHand, 1);
+  const view = client.planView(snapshot);
+  const nextMove = view.sections.find((section) => section.heading === "Next move");
+  assert.match(nextMove.lines[0], /left end/);
+  assert.equal(nextMove.lines[0].includes("HIDDEN_TILE_SECRET"), false);
 });
 
 
