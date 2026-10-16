@@ -650,3 +650,65 @@ test("the teammate target remains visible while another strategic plan is active
   assert.equal(move.diagnostics.strategy.teammateTarget, 3);
   assert.ok(move.diagnostics.strategy.lines.some((line) => /Separate teammate-support target: 3/.test(line)));
 });
+
+
+test("preferred-number ranking keeps pip zero when it has the strongest evidence", () => {
+  const { choosePreferred } = require("./bots/domino/intent");
+  const rows = Array.from({ length: 7 }, () => ({ confidence: 0 }));
+  rows[0].confidence = 0.91;
+  rows[3].confidence = 0.62;
+  rows[6].confidence = 0.45;
+  assert.equal(choosePreferred(rows), 0);
+});
+
+test("a draw elsewhere in the round does not erase repeated teammate-play evidence", () => {
+  clearPlans();
+  const state = base({
+    hand: [tile(0, 0), tile(1, 1), tile(2, 2), tile(3, 3)],
+    validMoves: [{ tileId: "0-0", side: "left" }],
+    leftEnd: 0,
+    rightEnd: 4,
+    players: seats([4, 4, 3, 5]),
+    log: [
+      play("mate", 1, 6, "right", 0, 1, 0, 6),
+      play("mate", 4, 6, "right", 0, 6, 0, 4),
+      { type: "draw", playerId: "far" }
+    ]
+  });
+  const intention = belief(state).mate.intention;
+  assert.equal(intention.preferred, 6);
+  assert.ok(intention.byPip[6].confidence >= 0.45);
+  assert.ok(intention.byPip[6].bridged > 0);
+});
+
+test("a teammate target stays visible across a later decision with incomplete intent evidence", () => {
+  clearPlans();
+  const firstState = base({
+    gameId: "stable-target-test",
+    roundNumber: 1,
+    hand: [tile(0, 1), tile(2, 6), tile(3, 5)],
+    validMoves: [
+      { tileId: "2-6", side: "left" },
+      { tileId: "3-5", side: "right" }
+    ],
+    leftEnd: 2,
+    rightEnd: 3,
+    chain: [tile(1, 3), tile(3, 4)],
+    log: [
+      play("mate", 1, 3, "right", 2, 1, 2, 3),
+      play("mate", 4, 3, "right", 2, 3, 2, 4)
+    ]
+  });
+  const first = decide(firstState);
+  assert.equal(first.diagnostics.strategy.teammateTarget, 3);
+
+  const nextState = Object.assign({}, firstState, {
+    players: seats([3, 4, 3, 4]),
+    log: firstState.log.concat([
+      play("opp", 2, 5, "right", 2, 4, 2, 5),
+      play("mate", 5, 1, "right", 2, 5, 2, 1)
+    ])
+  });
+  const next = decide(nextState);
+  assert.equal(next.diagnostics.strategy.teammateTarget, 3);
+});
