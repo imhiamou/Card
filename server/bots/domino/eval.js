@@ -132,7 +132,8 @@ function blankParts() {
     mateFinish: 0,
     oppVoidExploit: 0,
     oppFeed: 0,
-    otherFinish: 0
+    otherFinish: 0,
+    planFit: 0
   };
 }
 
@@ -212,6 +213,16 @@ function scoreMoveParts(view, beliefs, move, weights, options) {
     if (leftBlocked || rightBlocked) {
       parts.mateVoidHarm = -(weights.mateVoidHarm || 0) * (leftBlocked && rightBlocked ? 1 : 0.45);
       score += parts.mateVoidHarm;
+    } else if (!(options && options.ignoreIntent) && mateIntent && mateIntent.byPip) {
+      let soft = 0;
+      [left, right].forEach((pip) => {
+        const info = pip != null ? mateIntent.byPip[pip] : null;
+        if (info && info.missed >= 0.6 && info.pAtLeastOne < 0.35) soft += 0.5;
+      });
+      if (soft) {
+        parts.mateVoidHarm = -(weights.mateVoidHarm || 0) * soft;
+        score += parts.mateVoidHarm;
+      }
     }
     if (mate.handCount === 1 && pMate > 0) {
       const reach = mateNext || pNext === 0 ? 1 : (1 - pNext) * 0.35;
@@ -287,6 +298,15 @@ function scoreMoveParts(view, beliefs, move, weights, options) {
   }
   parts.blockEquity = weights.blockEquity * edge;
   score += parts.blockEquity;
+
+  const plan = beliefs && beliefs._plan;
+  if (plan && plan.target != null && plan.mode && plan.mode !== "none" && !(options && options.ignorePlan)) {
+    if (left === plan.target || right === plan.target) {
+      const scale = plan.mode === "self-control" ? 1 : plan.mode === "opponent-denial" ? 0.65 : 0.75;
+      parts.planFit = (weights.planFit || 0) * (plan.confidence || 0) * scale;
+      score += parts.planFit;
+    }
+  }
   return { score: score, parts: parts };
 }
 

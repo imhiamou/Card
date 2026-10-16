@@ -131,8 +131,17 @@ updateConfirmEnabled();
 // Lobby code inputs auto-convert to uppercase while typing.
 ["createCode","roomCode"].forEach((id)=>{
 const input=document.getElementById(id);
-input.addEventListener("input",()=>{input.value=input.value.toUpperCase();});
+input.addEventListener("input",()=>{
+input.value=input.value.toUpperCase();
+if(id==="createCode"&&lobbySetupOpen())setLobbySetupError("");
 });
+});
+const playerNameInput=document.getElementById("playerName");
+if(playerNameInput){
+playerNameInput.addEventListener("input",()=>{
+if(lobbySetupOpen())setLobbySetupError("");
+});
+}
 
 // Seat-count controls for multi-seat games (hidden for 2-player-only modes).
 const gameSelectEl=document.getElementById("gameSelect");
@@ -177,11 +186,7 @@ if(hhMapPick)hhMapPick.classList.toggle("hidden",game!=="hidden-hunter");
 if(hhEditorGate)hhEditorGate.classList.toggle("hidden",game!=="hidden-hunter");
 if(game==="hidden-hunter"&&window.HiddenHunterEditor)HiddenHunterEditor.refreshMaps();
 const cartsHint=document.getElementById("cartsHint");
-const cartsPlayWrap=document.getElementById("cartsPlayWrap");
-const lobbyMultiplayer=document.getElementById("lobbyMultiplayer");
 if(cartsHint)cartsHint.classList.toggle("hidden",game!=="carts");
-if(cartsPlayWrap)cartsPlayWrap.classList.toggle("hidden",game!=="carts");
-if(lobbyMultiplayer)lobbyMultiplayer.classList.toggle("hidden",game==="carts");
 // Team A / Team B only for Dominoes. Hidden Hunter uses map and difficulty.
 const showTeam=game==="dominoes";
 if(dominoTeamWrap)dominoTeamWrap.classList.toggle("hidden",!showTeam);
@@ -285,8 +290,34 @@ setLobbyButtonsDisabled(false);
 function setLobbyButtonsDisabled(disabled){
 const createBtn=document.getElementById("createBtn");
 const joinBtn=document.getElementById("joinBtn");
+const confirmBtn=document.getElementById("lobbySetupConfirm");
+const cancelBtn=document.getElementById("lobbySetupCancel");
 if(createBtn)createBtn.disabled=disabled;
 if(joinBtn)joinBtn.disabled=disabled;
+if(confirmBtn)confirmBtn.disabled=disabled;
+if(cancelBtn)cancelBtn.disabled=disabled;
+}
+function lobbySetupOpen(){
+const modal=document.getElementById("lobbySetup");
+return !!(modal&&!modal.classList.contains("hidden"));
+}
+function setLobbySetupError(msg){
+const el=document.getElementById("lobbySetupError");
+if(el)el.textContent=msg||"";
+}
+function closeLobbySetup(){
+const modal=document.getElementById("lobbySetup");
+if(modal)modal.classList.add("hidden");
+setLobbySetupError("");
+}
+function openLobbySetup(){
+const modal=document.getElementById("lobbySetup");
+if(!modal||lobbySetupOpen())return;
+setLobbySetupError("");
+modal.classList.remove("hidden");
+const confirmBtn=document.getElementById("lobbySetupConfirm");
+if(confirmBtn)confirmBtn.disabled=false;
+syncMaxPlayersVisibility();
 }
 function beginLobbyWait(){
 endLobbyWait();
@@ -297,7 +328,8 @@ const waiting=status&&(status.textContent==="Creating lobby..."||status.textCont
 if(!waiting)return;
 status.textContent="The server did not respond. Try again.";
 releaseWaitingControls();
-showAppNotice("The server did not respond. You can try again.",lastLobbyAction==="join"?"roomCode":"createCode");
+setLobbySetupError("The server did not respond. Try again.");
+if(!lobbySetupOpen())showAppNotice("The server did not respond. You can try again.",lastLobbyAction==="join"?"roomCode":"createCode");
 },20000);
 }
 function showAppNotice(msg,focusId){
@@ -351,23 +383,25 @@ if(window.CartsEditor)CartsEditor.open();
 }
 
 function submitCreateLobby(){
-const createBtn=document.getElementById("createBtn");
-if(createBtn&&createBtn.disabled)return;
+const confirmBtn=document.getElementById("lobbySetupConfirm");
+if(confirmBtn&&confirmBtn.disabled)return;
+setLobbySetupError("");
 const name=getPlayerName();
 lastLobbyAction="create";
 const gameSelect=document.getElementById("gameSelect");
 if(gameSelect&&gameSelect.value==="carts"){
 if(window.Carts)Carts.start();
+closeLobbySetup();
 return;
 }
 if(!isValidPlayerName(name)){
-showAppNotice("Enter a name (2-16 letters, numbers, spaces, - or _).","playerName");
+setLobbySetupError("Enter a name (2-16 letters, numbers, spaces, - or _).");
 return;
 }
 const roomEl=document.getElementById("createCode");
 const room=roomEl?roomEl.value.trim().toUpperCase():"";
 if(!ROOM_CODE_PATTERN.test(room)){
-showAppNotice("Lobby code must be 4-8 letters or numbers.","createCode");
+setLobbySetupError("Lobby code must be 4-8 letters or numbers.");
 return;
 }
 const selectedGame=gameSelect?gameSelect.value:"hidden-hunt";
@@ -393,15 +427,29 @@ if(game==="hidden-hunter"){
 if(window.HiddenHunterEditor)payload.mapId=HiddenHunterEditor.selectedMapId();
 payload.difficulty=selectedHhDifficulty;
 }
-if(createBtn)createBtn.disabled=true;
+if(confirmBtn)confirmBtn.disabled=true;
 socket.emit("createLobby",payload);
 status.textContent="Creating lobby...";
 beginLobbyWait();
 }
 
 document.getElementById("createBtn").onclick=()=>{
-submitCreateLobby();
+openLobbySetup();
 };
+const lobbySetupCancel=document.getElementById("lobbySetupCancel");
+if(lobbySetupCancel)lobbySetupCancel.onclick=()=>closeLobbySetup();
+const lobbySetupConfirm=document.getElementById("lobbySetupConfirm");
+if(lobbySetupConfirm)lobbySetupConfirm.onclick=()=>submitCreateLobby();
+const lobbySetupModal=document.getElementById("lobbySetup");
+if(lobbySetupModal){
+lobbySetupModal.addEventListener("click",(event)=>{
+if(event.target===lobbySetupModal){
+const confirmBtn=document.getElementById("lobbySetupConfirm");
+if(confirmBtn&&confirmBtn.disabled)return;
+closeLobbySetup();
+}
+});
+}
 
 document.getElementById("joinBtn").onclick=()=>{
 const name=getPlayerName();
@@ -451,6 +499,7 @@ showAppNotice("Could not reach the server. Check your connection and try again."
 
 socket.on("lobbyCreated",(data)=>{
 endLobbyWait();
+closeLobbySetup();
 currentRoom=data.room;
 code.textContent="Lobby Code: "+data.room;
 if(data.game==="dominoes"||data.game==="uno"){
@@ -526,6 +575,7 @@ if(dominoLobbyTeams)dominoLobbyTeams.classList.add("hidden");
 socket.on("errorMessage",(msg)=>{
 endLobbyWait();
 releaseWaitingControls();
+if(lobbySetupOpen())setLobbySetupError(msg);
 if(lobbyScreen&&!lobbyScreen.classList.contains("hidden")&&status&&
 (status.textContent==="Creating lobby..."||status.textContent==="Joining...")){
 status.textContent=msg;

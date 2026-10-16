@@ -139,7 +139,59 @@ function predictionProbe(options) {
   };
 }
 
-if (require.main === module) {
+function strategyJobs(options) {
+  const { clearPlans, planStats } = require("./plan");
+  const quiet = options.aiLimits || { samples: 0, maxMs: 0, maxPlies: 8, maxNodes: 200 };
+  const jobs = [
+    ["heuristic vs no-plan", ["heuristic", "heuristic"], ["no-plan", "no-plan"]],
+    ["heuristic vs baseline", ["heuristic", "heuristic"], ["baseline", "baseline"]],
+    ["heuristic vs greedy", ["heuristic", "heuristic"], ["greedy", "greedy"]],
+    ["heuristic vs passes", ["heuristic", "heuristic"], ["passes", "passes"]],
+    ["heuristic vs follow", ["heuristic", "heuristic"], ["follow", "follow"]]
+  ];
+  return jobs.map((job) => {
+    clearPlans();
+    const result = sim.compare({
+      left: job[1],
+      right: job[2],
+      matches: options.matches || 8,
+      rounds: options.rounds || 3,
+      seed: options.seed || 20261016,
+      aiLimits: quiet
+    });
+    const plans = planStats();
+    const decisions = plans.decisions || 1;
+    return {
+      name: job[0],
+      result: result,
+      plans: plans,
+      planSwitchRate: plans.switched / decisions,
+      planHoldRate: plans.held / decisions
+    };
+  });
+}
+
+if (require.main === module && process.env.DOMINO_BENCH_PLAN === "1") {
+  const matches = Number(process.env.DOMINO_BENCH_MATCHES || 8);
+  const rounds = Number(process.env.DOMINO_BENCH_ROUNDS || 3);
+  const seeds = String(process.env.DOMINO_BENCH_SEEDS || "42,99,20261016").split(",").map((item) => Number(item));
+  seeds.forEach((seed) => {
+    console.log("seed " + seed);
+    const report = strategyJobs({ matches: matches, rounds: rounds, seed: seed });
+    console.log(sim.formatReport(report));
+    report.forEach((row) => {
+      console.log(row.name + " plan " + JSON.stringify({
+        decisions: row.plans.decisions,
+        started: row.plans.started,
+        held: row.plans.held,
+        switched: row.plans.switched,
+        none: row.plans.none,
+        switchRate: Math.round(row.planSwitchRate * 1000) / 1000,
+        holdRate: Math.round(row.planHoldRate * 1000) / 1000
+      }));
+    });
+  });
+} else if (require.main === module) {
   const matches = Number(process.env.DOMINO_BENCH_MATCHES || 8);
   const rounds = Number(process.env.DOMINO_BENCH_ROUNDS || 3);
   if (process.env.DOMINO_BENCH_PREDICT === "1") {
@@ -161,5 +213,6 @@ if (require.main === module) {
 module.exports = {
   partnershipJobs,
   predictiveJobs,
-  predictionProbe
+  predictionProbe,
+  strategyJobs
 };

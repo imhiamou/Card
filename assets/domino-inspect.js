@@ -589,6 +589,11 @@
     const nextLines = (nextTurn.lines && nextTurn.lines.length)
       ? nextTurn.lines
       : ["No intervening turns were simulated for this decision."];
+    const committed = snap.strategy || {};
+    const planLines = committed.lines && committed.lines.length
+      ? committed.lines
+      : ["No committed number plan was recorded for this decision."];
+    sections.push({ heading: "Strategic plan", lines: planLines });
     sections.push({ heading: "Next turn prediction", lines: nextLines });
     const advanced = advancedSections(snap);
     sections.push({ heading: "Advanced details", advanced: true, sections: advanced, lines: [] });

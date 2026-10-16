@@ -738,6 +738,7 @@ function buildDiagnostics(input) {
     mode: mode,
     summary: plainSummary(view, beliefs, chosen, mode),
     nextTurn: nextTurn,
+    strategy: beliefs._plan || null,
     inventory: beliefs._inventory ? {
       byPip: beliefs._inventory.byPip,
       unseenCount: beliefs._inventory.unseenCount,
