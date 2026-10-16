@@ -14,7 +14,8 @@
  */
 
 const { api, cloneTile, touches } = require("./engine");
-const { rankMoves, previewEnds, partnerId, canPlayProbability, isOpponent } = require("./eval");
+const { rankMoves, previewEnds, partnerId, canPlayProbability, isOpponent, playerByOffset } = require("./eval");
+const { publicIntention } = require("./intent");
 
 const MODE_WIN = "Going for the win";
 const MODE_MATE = "Supporting teammate";
@@ -77,30 +78,33 @@ function deriveMode(parts, context) {
   if (context && context.recalculating) {
     return {
       label: MODE_RE,
+      code: "RECOVER_FROM_BAD_POSITION",
       reason: "New evidence or a new board changed the position, and the selected move is being updated."
     };
   }
   if (!parts) {
     return {
       label: null,
+      code: null,
       reason: "Evaluation components are unavailable, so a strategic mode was not assigned."
     };
   }
   if (parts.immediateWin > 0) {
     return {
       label: MODE_WIN,
+      code: "FINISH_OWN_HAND",
       reason: "The selected tile empties this hand."
     };
   }
   const groups = [
     {
       label: MODE_MATE,
-      value: (parts.mateReply || 0) + (parts.mateSuit || 0),
+      value: (parts.mateReply || 0) + (parts.mateSuit || 0) + Math.max(0, parts.intentKeep || 0) + Math.max(0, parts.mateFinish || 0),
       reason: "Teammate continuation is the largest positive component."
     },
     {
       label: MODE_BLOCK,
-      value: Math.max(0, parts.forcePass || 0) + Math.max(0, -(parts.denyNext || 0)) + Math.max(0, -(parts.otherOpp || 0)),
+      value: Math.max(0, parts.forcePass || 0) + Math.max(0, -(parts.denyNext || 0)) + Math.max(0, -(parts.otherOpp || 0)) + Math.max(0, parts.oppVoidExploit || 0) + Math.max(0, -(parts.oppFeed || 0)) + Math.max(0, -(parts.mateVoidHarm || 0)),
       reason: "Denying an opponent response is the largest component."
     },
     {
@@ -115,7 +119,7 @@ function deriveMode(parts, context) {
     },
     {
       label: MODE_DEFEND,
-      value: ((parts.oppOut || 0) < 0 ? -(parts.oppOut || 0) : 0) + ((parts.blockEquity || 0) < 0 ? -(parts.blockEquity || 0) : 0),
+      value: ((parts.oppOut || 0) < 0 ? -(parts.oppOut || 0) : 0) + ((parts.otherFinish || 0) < 0 ? -(parts.otherFinish || 0) : 0) + ((parts.blockEquity || 0) < 0 ? -(parts.blockEquity || 0) : 0),
       reason: "The move reduces the estimated chance of a team loss."
     }
   ];
@@ -133,10 +137,30 @@ function deriveMode(parts, context) {
   if (!best) {
     return {
       label: null,
+      code: null,
       reason: "No evaluation component is large enough to name a strategic mode. The selected move is the highest ranked legal play."
     };
   }
-  return { label: best.label, reason: best.reason };
+  return { label: best.label, code: modeCode(best.label, parts), reason: best.reason };
+}
+
+function modeCode(label, parts) {
+  if (label === MODE_WIN) return "FINISH_OWN_HAND";
+  if (label === MODE_MATE) return "SUPPORT_PARTNER";
+  if (label === MODE_BLOCKED) return "FORCE_FAVORABLE_BLOCK";
+  if (label === MODE_BOARD) return "ESTABLISH_OWN_STRENGTH";
+  if (label === MODE_BLOCK) {
+    return (parts && (parts.forcePass || 0) > 0 && (parts.blockEquity || 0) > 0)
+      ? "FORCE_FAVORABLE_BLOCK"
+      : "DENY_OPPONENT";
+  }
+  if (label === MODE_DEFEND) {
+    const finishRisk = -((parts && parts.oppOut) || 0) + -((parts && parts.otherFinish) || 0);
+    const recovery = (parts && parts.blockEquity) < 0 ? -(parts.blockEquity || 0) : 0;
+    return finishRisk >= recovery ? "DEFEND_AGAINST_FINISH" : "RECOVER_FROM_BAD_POSITION";
+  }
+  if (label === MODE_RE) return "RECOVER_FROM_BAD_POSITION";
+  return null;
 }
 
 function project(view, beliefs, weights, move, options, role) {
@@ -220,7 +244,13 @@ function componentReport(parts) {
     ["stuckDouble", "Double control"],
     ["shedPips", "Pip shedding"],
     ["dumpDouble", "Double shedding"],
-    ["pointBonus", "Point bonus"]
+    ["pointBonus", "Point bonus"],
+    ["intentKeep", "Teammate number kept"],
+    ["mateVoidHarm", "Teammate void harmed"],
+    ["mateFinish", "Teammate finish"],
+    ["oppVoidExploit", "Opponent void used"],
+    ["oppFeed", "Opponent number fed"],
+    ["otherFinish", "Later opponent finish"]
   ];
   if (!parts) {
     return names.map((entry) => ({
@@ -374,6 +404,67 @@ function opponentReport(view, beliefs, chosen) {
   };
 }
 
+function roundChance(value) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  return Math.round(value * 100) / 100;
+}
+
+function plainSummary(view, beliefs, chosen, mode) {
+  const mateId = partnerId(view);
+  const mateIntent = mateId && beliefs[mateId] ? publicIntention(beliefs[mateId].intention) : null;
+  const next = playerByOffset(view, 1);
+  const preview = chosen ? previewEnds(view, chosen.move) : null;
+  const pNext = preview && next ? canPlayProbability(view, beliefs, next, preview.leftEnd, preview.rightEnd) : null;
+  const mate = mateId ? (view.players || []).find((player) => player.id === mateId) : null;
+  const pMate = preview && mate ? canPlayProbability(view, beliefs, mate, preview.leftEnd, preview.rightEnd) : null;
+  const nextIsMate = !!(next && mateId && next.id === mateId);
+  let noticed = "I do not have a repeated teammate choice yet.";
+  if (mateIntent && mateIntent.lastMoveForced) {
+    noticed = "My teammate's last play was likely forced, so I am not treating it as a chosen number.";
+  } else if (mateIntent && mateIntent.preferred != null && mateIntent.confidence >= 0.45) {
+    noticed = "My teammate has kept " + mateIntent.preferred + " available on purpose. Confidence " +
+      roundChance(mateIntent.confidence) + ".";
+  }
+  const mateVoids = mateId && beliefs[mateId] ? beliefs[mateId].knownImpossibleNumbers || [] : [];
+  if (mateVoids.length) {
+    noticed += " My teammate has passed on " + mateVoids.join(" and ") + ".";
+  }
+  const oppVoids = [];
+  (view.players || []).forEach((player) => {
+    if (!player || player.id === view.selfId || player.id === mateId) return;
+    const voids = beliefs[player.id] ? beliefs[player.id].knownImpossibleNumbers || [] : [];
+    if (voids.length) oppVoids.push(player.id + " passed on " + voids.join(" and "));
+  });
+  if (oppVoids.length) noticed += " " + oppVoids.join(". ") + ".";
+  let expect = "I do not have a reply estimate yet.";
+  if (pNext != null || pMate != null) {
+    expect = (next ? "Next is " + next.id : "Next player") +
+      " and can answer with chance " + (roundChance(pNext) == null ? "unknown" : roundChance(pNext)) +
+      ". Teammate can answer with chance " + (roundChance(pMate) == null ? "unknown" : roundChance(pMate)) + ".";
+    if (!nextIsMate && pNext > 0) {
+      expect += " They play before my teammate, so a kept number may not survive.";
+    }
+  }
+  let risk = null;
+  if (next && next.handCount === 1 && isOpponent(view, next.id) && pNext > 0) {
+    risk = "The next opponent may finish.";
+  } else if (!nextIsMate && pNext >= 0.5 && mateIntent && mateIntent.preferred != null) {
+    risk = "The next opponent may change the end before my teammate plays.";
+  } else if (chosen && chosen.parts && chosen.parts.mateVoidHarm < 0) {
+    risk = "This leaves a number my teammate has already passed on.";
+  }
+  return {
+    plan: mode && mode.label ? mode.label : null,
+    noticed: noticed.trim(),
+    expect: expect,
+    risk: risk,
+    nextCanPlay: roundChance(pNext),
+    teammateCanPlay: roundChance(pMate),
+    nextIsTeammate: nextIsMate,
+    teammateIntention: mateIntent
+  };
+}
+
 function publicBelief(belief) {
   if (!belief) return null;
   return {
@@ -387,7 +478,8 @@ function publicBelief(belief) {
       invalidated: !!pass.invalidated
     })),
     remainingTileCount: belief.remainingTileCount,
-    recent: (belief.recent || []).map((event) => Object.assign({}, event))
+    recent: (belief.recent || []).map((event) => Object.assign({}, event)),
+    intention: publicIntention(belief.intention)
   };
 }
 
@@ -505,6 +597,13 @@ function buildDiagnostics(input) {
     hand: (view.hand || []).map(copyTile),
     selected: selected,
     mode: mode,
+    summary: plainSummary(view, beliefs, chosen, mode),
+    inventory: beliefs._inventory ? {
+      byPip: beliefs._inventory.byPip,
+      unseenCount: beliefs._inventory.unseenCount,
+      boneyardCount: beliefs._inventory.boneyardCount,
+      allDealt: beliefs._inventory.allDealt
+    } : null,
     confidence: confidence,
     plan: {
       selected: selected,

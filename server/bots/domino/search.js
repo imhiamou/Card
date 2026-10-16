@@ -225,7 +225,7 @@ function searchMoves(view, beliefs, ranked, weights, options, rng, limits) {
   for (let sample = 0; sample < target; sample++) {
     if (used > 0 && limits.maxMs > 0 && Date.now() - started > limits.maxMs) break;
     if (used > 0 && nodes >= nodeCap) break;
-    const dealt = sampleAllocation(view, beliefs, rng);
+    const dealt = sampleAllocation(view, beliefs, rng, options);
     if (!dealt.allocation) {
       conflicts += 1;
       conflictNote = dealt.conflict || conflictNote;
