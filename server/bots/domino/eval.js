@@ -3,6 +3,7 @@
 const { api, cloneTile, pips, touches, matchesEither, violates } = require("./engine");
 const { hardVoid, suitAffinity } = require("./beliefs");
 const { unseenTiles } = require("./sample");
+const { scoreStrategicMove } = require("./strategy");
 
 function seatIndex(view, playerId) {
   const players = view.players || [];
@@ -127,7 +128,8 @@ function blankParts() {
     stuckDouble: 0,
     shedPips: 0,
     dumpDouble: 0,
-    blockEquity: 0
+    blockEquity: 0,
+    strategicPlan: 0
   };
 }
 
@@ -221,10 +223,12 @@ function rankMoves(view, beliefs, weights, options) {
   const ranked = [];
   (view.validMoves || []).forEach((move, index) => {
     const detail = scoreMoveParts(view, beliefs, move, weights, options);
+    const strategicBonus = scoreStrategicMove(view, move, options && options.strategicPlan, beliefs);
+    if (detail.parts) detail.parts.strategicPlan = strategicBonus;
     ranked.push({
       move: { tileId: move.tileId, side: move.side },
       index: index,
-      score: detail.score,
+      score: detail.score + strategicBonus,
       parts: detail.parts
     });
   });
