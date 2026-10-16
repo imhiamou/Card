@@ -622,3 +622,31 @@ test("a contradictory play does not erase a historical no-draw pass constraint",
   assert.ok(beliefs.opp.knownImpossibleNumbers.includes(5));
   assert.ok(beliefs.opp.contradictions.some((item) => item.pip === 2));
 });
+
+
+test("the teammate target remains visible while another strategic plan is active", () => {
+  clearPlans();
+  const state = base({
+    gameId: "teammate-objective-visible",
+    roundNumber: 1,
+    hand: [tile(4, 4), tile(4, 0), tile(4, 1), tile(4, 2)],
+    validMoves: [
+      { tileId: "4-4", side: "left" },
+      { tileId: "0-4", side: "left" }
+    ],
+    leftEnd: 4,
+    rightEnd: 6,
+    players: seats([4, 3, 3, 3], ["me", "opp", "mate", "far"]),
+    teamA: ["me", "mate"],
+    teamB: ["opp", "far"],
+    log: [
+      play("mate", 1, 3, "right", 2, 1, 2, 3),
+      play("mate", 3, 4, "right", 2, 3, 2, 4)
+    ]
+  });
+  const move = decide(state);
+  assert.equal(move.diagnostics.strategy.mode, "self-control");
+  assert.equal(move.diagnostics.strategy.target, 4);
+  assert.equal(move.diagnostics.strategy.teammateTarget, 3);
+  assert.ok(move.diagnostics.strategy.lines.some((line) => /Separate teammate-support target: 3/.test(line)));
+});
