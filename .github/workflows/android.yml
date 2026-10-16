@@ -23,6 +23,8 @@ on:
       - "domino.js"
       - "domino.css"
       - "domino.html"
+      - "server/bots/domino/**"
+      - "server/domino.js"
       - "uno.js"
       - "uno.css"
       - "uno.html"
