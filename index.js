@@ -143,6 +143,9 @@ const dominoTeamSelect=document.getElementById("dominoTeamSelect");
 const dominoLobbyTeams=document.getElementById("dominoLobbyTeams");
 const dominoTeamAList=document.getElementById("dominoTeamAList");
 const dominoTeamBList=document.getElementById("dominoTeamBList");
+const dominoLobbyUpdateTestWrap=document.getElementById("dominoLobbyUpdateTestWrap");
+const dominoLobbyUpdateTest=document.getElementById("dominoLobbyUpdateTest");
+const dominoLobbyUpdateTestStatus=document.getElementById("dominoLobbyUpdateTestStatus");
 const dominoJoinTeamA=document.getElementById("dominoJoinTeamA");
 const dominoJoinTeamB=document.getElementById("dominoJoinTeamB");
 const unoMaxPlayersWrap=document.getElementById("unoMaxPlayersWrap");
@@ -239,16 +242,35 @@ selectedDominoTeam=option.dataset.team==="B"?"B":"A";
 };
 });
 }
+function syncDominoLobbyUpdateTestVisibility(){
+const visible=!!(currentRoom==="1111"&&gameSelectEl&&gameSelectEl.value==="dominoes"&&
+lobbyScreen&&!lobbyScreen.classList.contains("hidden"));
+if(dominoLobbyUpdateTestWrap)dominoLobbyUpdateTestWrap.classList.toggle("hidden",!visible);
+}
 function pickLobbyTeam(team){
 if(!currentRoom)return;
 socket.emit("dominoPickTeam",{roomCode:currentRoom,team});
 }
 if(dominoJoinTeamA)dominoJoinTeamA.onclick=()=>pickLobbyTeam("A");
 if(dominoJoinTeamB)dominoJoinTeamB.onclick=()=>pickLobbyTeam("B");
+if(dominoLobbyUpdateTest){
+dominoLobbyUpdateTest.onclick=()=>{
+if(currentRoom!=="1111"||!gameSelectEl||gameSelectEl.value!=="dominoes")return;
+if(dominoLobbyUpdateTestStatus){
+dominoLobbyUpdateTestStatus.hidden=false;
+dominoLobbyUpdateTestStatus.textContent="Requesting a test lobby update…";
+}
+socket.emit("dominoLobbyUpdateTest",{roomCode:currentRoom,requestId:Date.now()});
+};
+}
 
 if(gameSelectEl){
-gameSelectEl.addEventListener("change",syncMaxPlayersVisibility);
+gameSelectEl.addEventListener("change",()=>{
 syncMaxPlayersVisibility();
+syncDominoLobbyUpdateTestVisibility();
+});
+syncMaxPlayersVisibility();
+syncDominoLobbyUpdateTestVisibility();
 }
 if(dominoMaxPlayersEl){
 dominoMaxPlayersEl.addEventListener("change",syncMaxPlayersVisibility);
@@ -555,6 +577,7 @@ socket.on("dominoLobbyUpdate",(data)=>{
 endLobbyWait();
 if(!data)return;
 if(data.room)currentRoom=data.room;
+syncDominoLobbyUpdateTestVisibility();
 if(code&&data.room)code.textContent="Lobby Code: "+data.room;
 if(status&&data.players&&data.maxPlayers){
 status.textContent="Waiting for players ("+
@@ -562,6 +585,16 @@ data.players.length+"/"+data.maxPlayers+")...";
 }
 renderDominoLobbyTeams(data);
 });
+
+socket.on("dominoLobbyUpdateTestResult",(data)=>{
+if(!dominoLobbyUpdateTestStatus)return;
+dominoLobbyUpdateTestStatus.hidden=false;
+dominoLobbyUpdateTestStatus.textContent=data&&data.ok
+?"Lobby update test passed. The server returned the current roster."
+:(data&&data.error)||"Lobby update test failed.";
+});
+
+
 
 // Fired by the server when the second player joins the lobby.
 // Carries the public player list (id, name, character) used to
@@ -578,6 +611,7 @@ setTimeout(showPlacementScreen,1500);
 
 window.addEventListener("gameweb-left-room",()=>{
 currentRoom=null;
+syncDominoLobbyUpdateTestVisibility();
 });
 
 socket.on("playerLeft",()=>{
