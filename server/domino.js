@@ -707,7 +707,7 @@ function notePublic(state, entry) {
  * Facts the bot is allowed to use: its own hand plus public table history.
  * Other hands stay on the server and are not copied into this view.
  */
-function decisionView(room, botId) {
+function decisionView(room, botId, roomCode) {
   const d = room.domino;
   return {
     gameId: roomCode,
@@ -856,7 +856,7 @@ const INSPECT_ROOM = "1111";
  * Other rooms keep the normal decision and store nothing.
  */
 function decideBotMove(room, roomCode, botId) {
-  const view = decisionView(room, botId);
+  const view = decisionView(room, botId, roomCode);
   const code = typeof roomCode === "string" ? roomCode.trim().toUpperCase() : "";
   if (code !== INSPECT_ROOM) {
     return { move: dominoBot.getDominoMove(view), snapshot: null, restricted: true, key: null };
@@ -902,7 +902,7 @@ function inspectStateExtra(room, roomCode) {
       botDiagnostics[player.id] = decided && decided.snapshot
         ? decided.snapshot
         : dominoInspect.clientSnapshot(dominoInspect.unavailableSnapshot(
-          decisionView(room, player.id),
+          decisionView(room, player.id, code),
           "No decision was recorded."
         ));
     } catch (err) {
@@ -916,10 +916,10 @@ function inspectStateExtra(room, roomCode) {
   return { botDiagnostics: botDiagnostics };
 }
 
-function inspectPayload(stored, room, botId) {
+function inspectPayload(stored, room, botId, roomCode) {
   let snapshot = stored && stored.snapshot
     ? stored.snapshot
-    : dominoInspect.unavailableSnapshot(decisionView(room, botId));
+    : dominoInspect.unavailableSnapshot(decisionView(room, botId, roomCode));
   if (snapshot && snapshot.selected && room.domino.currentTurn !== botId) {
     const note = "It is not this bot's turn, so this preference can change before the bot plays.";
     const selected = Object.assign({}, snapshot.selected, { conditional: true, assumption: note });
@@ -962,7 +962,7 @@ function runBotTurn(room, io, roomCode, botId) {
     } catch (err) {
       console.warn("[bot] decision failed game=dominoes room=%s bot=%s", roomCode, botId);
       try {
-        choice = dominoBot.getDominoMove(decisionView(room, botId));
+        choice = dominoBot.getDominoMove(decisionView(room, botId, roomCode));
       } catch (ignored) {
         choice = null;
       }
@@ -1272,7 +1272,7 @@ function registerSocket(socket, io, rooms) {
     }
     let payload = null;
     try {
-      payload = inspectPayload(decideBotMove(room, roomCode, botId), room, botId);
+      payload = inspectPayload(decideBotMove(room, roomCode, botId), room, botId, roomCode);
     } catch (err) {
       payload = {
         ok: true,
