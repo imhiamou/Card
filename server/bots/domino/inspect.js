@@ -829,6 +829,7 @@ function buildDiagnostics(input) {
       }));
       result.contradictions.push.apply(result.contradictions, conflicts);
       result.contradictionCount += conflicts.length;
+      result.consistent = result.contradictionCount === 0;
       return result;
     }, { consistent: true, contradictionCount: 0, contradictions: [] }),
     beliefDetail: Object.keys(beliefs).reduce((copy, id) => {
