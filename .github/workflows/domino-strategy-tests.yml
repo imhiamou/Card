@@ -1,0 +1,30 @@
+name: Dominoes strategic AI tests
+
+on:
+  pull_request:
+    branches: [cursor/domino-predict-lobby-fda4]
+    paths:
+      - "server/dominoStrategy.test.js"
+      - "server/bots/domino/**"
+      - "server/domino.js"
+      - "package.json"
+      - ".github/workflows/domino-strategy-tests.yml"
+  push:
+    branches: [ai/domino-strategy-pr162-followup]
+    paths:
+      - "server/dominoStrategy.test.js"
+      - "server/bots/domino/**"
+      - "server/domino.js"
+      - "package.json"
+      - ".github/workflows/domino-strategy-tests.yml"
+
+jobs:
+  domino-strategy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run Dominoes strategy and prediction tests
+        run: npm run test:domino-strategy
