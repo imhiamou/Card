@@ -5,6 +5,7 @@ const assert = require("node:assert/strict");
 const domino = require("./domino");
 const { getDominoMove, normalize } = require("./bots/domino/ai");
 const { buildBeliefs } = require("./bots/domino/beliefs");
+const { clientSnapshot } = require("./bots/domino/inspect");
 const { resolvePlan, clearPlans, planStats } = require("./bots/domino/plan");
 const client = require("../assets/domino-inspect");
 
@@ -554,4 +555,25 @@ test("the inspector shows the recorded plan and the next-turn prediction", () =>
   assert.match(next.lines.join(" "), /4\|6|4-6/);
   assert.equal(move.diagnostics.strategy.mode, panel.sections ? move.diagnostics.strategy.mode : "");
   assert.equal(JSON.stringify(move.diagnostics).includes("3-6"), false);
+});
+
+
+test("client diagnostics redact all hidden tile identities and hand contents", () => {
+  const snapshot = clientSnapshot({
+    available: true,
+    status: "ready",
+    positionKey: "private-position-key",
+    hand: [{ id: "HIDDEN_TILE_SECRET", a: 2, b: 5 }],
+    selected: { tileId: "HIDDEN_TILE_SECRET", tile: { id: "HIDDEN_TILE_SECRET", a: 2, b: 5 }, side: "left" },
+    legalMoves: [{ tileId: "HIDDEN_TILE_SECRET", side: "left" }],
+    candidateEvaluations: [{ tileId: "HIDDEN_TILE_SECRET", side: "left", score: 2 }],
+    plan: { continuation: [{ tileId: "HIDDEN_TILE_SECRET", tile: { id: "HIDDEN_TILE_SECRET", a: 2, b: 5 } }] },
+    inventory: { byPip: [{ pip: 2, inHand: 1, unseen: 4 }] }
+  });
+  const encoded = JSON.stringify(snapshot);
+  assert.equal(encoded.includes("HIDDEN_TILE_SECRET"), false);
+  assert.equal(encoded.includes("private-position-key"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(snapshot, "hand"), false);
+  assert.equal(snapshot.selected.side, "left");
+  assert.equal(snapshot.inventory.byPip[0].inHand, 1);
 });
