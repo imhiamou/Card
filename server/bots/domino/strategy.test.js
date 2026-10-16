@@ -297,3 +297,34 @@ test("a persisted teammate target expires when later public evidence no longer s
   assert.ok(later.mode !== "teammate-support" || later.targetNumber !== 3,
     JSON.stringify(later));
 });
+
+
+test("the selected plan switches to a newly supported teammate number", () => {
+  strategy.clearMemory();
+  const initialLog = [
+    { type: "play", playerId: "mate", tile: { id: "1-3", a: 1, b: 3 },
+      side: "right", leftEnd: 1, rightEnd: 3, legalAlternatives: 3 },
+    { type: "play", playerId: "mate", tile: { id: "2-3", a: 2, b: 3 },
+      side: "right", leftEnd: 2, rightEnd: 3, legalAlternatives: 3 },
+    { type: "play", playerId: "mate", tile: { id: "3-4", a: 3, b: 4 },
+      side: "right", leftEnd: 3, rightEnd: 4, legalAlternatives: 3 }
+  ];
+  const first = strategy.updateStrategicPlan(baseView({ log: initialLog }), {});
+  assert.equal(first.mode, "teammate-support");
+  assert.equal(first.targetNumber, 3);
+
+  const changedLog = initialLog.concat([
+    { type: "play", playerId: "mate", tile: { id: "2-6", a: 2, b: 6 },
+      side: "right", leftEnd: 2, rightEnd: 6, legalAlternatives: 3 },
+    { type: "play", playerId: "mate", tile: { id: "1-6", a: 1, b: 6 },
+      side: "right", leftEnd: 1, rightEnd: 6, legalAlternatives: 3 },
+    { type: "play", playerId: "mate", tile: { id: "4-6", a: 4, b: 6 },
+      side: "right", leftEnd: 4, rightEnd: 6, legalAlternatives: 3 },
+    { type: "play", playerId: "mate", tile: { id: "0-6", a: 0, b: 6 },
+      side: "right", leftEnd: 0, rightEnd: 6, legalAlternatives: 3 }
+  ]);
+  const changed = strategy.updateStrategicPlan(baseView({ log: changedLog }), {});
+  assert.equal(changed.mode, "teammate-support");
+  assert.equal(changed.targetNumber, 6);
+  assert.ok(changed.createdAtTurn > first.createdAtTurn);
+});
