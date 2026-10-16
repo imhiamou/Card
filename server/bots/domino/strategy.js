@@ -219,7 +219,7 @@ function updateStrategicPlan(view, beliefs) {
       : 0;
     const stillOwnsTarget = !previousTargetVoid &&
       previousCurrentScore >= evidenceFloor &&
-      (previous.mode !== "self-control" || countOnes(view.hand, previous.targetNumber) > 0);
+      (previous.mode !== "self-control" || countOnes(view.hand, previous.targetNumber) >= 2);
     const previousCandidate = Object.assign({}, previous, { score: previousCurrentScore });
     const materiallyBetter = best.score > previousCurrentScore + 0.8;
     if (stillOwnsTarget && !materiallyBetter) chosen = previousCandidate;
