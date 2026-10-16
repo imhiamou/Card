@@ -249,15 +249,21 @@
       lines.push("I am playing " + tileFace + " to get closer to emptying my hand.");
     }
     if (!lines.length && tileFace) lines.push("I am playing " + tileFace + " because it is the highest ranked legal move.");
+    if (!lines.length && selected && selected.side) {
+      lines.push("I selected a move on the " + selected.side + " end using the strategic plan and public probabilities.");
+    }
     if (!lines.length) lines.push("I do not have a recorded objective for this position yet.");
     return lines.slice(0, 2);
   }
 
   function nextMoveLine(snap, selected, calculating, error) {
-    if (!selected || !selected.tile) {
+    if (!selected || (!selected.tile && !selected.side)) {
       if (calculating) return "Calculating next move...";
       if (error) return error;
       return "No move has been selected.";
+    }
+    if (!selected.tile) {
+      return "Selected action: play on the " + selected.side + " end. Tile identity is withheld from client diagnostics.";
     }
     const label = face(selected.tile);
     let line = "Next move: \"" + label + "\"";
