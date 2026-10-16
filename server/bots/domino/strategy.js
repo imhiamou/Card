@@ -207,12 +207,19 @@ function updateStrategicPlan(view, beliefs) {
     const previousBelief = beliefs && beliefs[previous.targetPlayerId];
     const previousTargetVoid = (previous.mode === "teammate-support" || previous.mode === "opponent-denial") &&
       previousBelief && (previousBelief.knownImpossibleNumbers || []).includes(previous.targetNumber);
-    const stillOwnsTarget = !previousTargetVoid && (previous.mode !== "self-control" ||
-      countOnes(view.hand, previous.targetNumber) > 0);
     const previousCurrentScore = targetScore(
       view, beliefs || {}, previous.mode, previous.targetNumber,
       previous.targetPlayerId, intents
     );
+    // Persistence is not permission to keep a dead objective forever. A
+    // teammate/opponent target must still clear the same evidence threshold
+    // used for a fresh plan; self-control only needs the bot to retain that pip.
+    const evidenceFloor = previous.mode === "teammate-support" ? 1.7
+      : previous.mode === "opponent-denial" ? 1.8
+      : 0;
+    const stillOwnsTarget = !previousTargetVoid &&
+      previousCurrentScore >= evidenceFloor &&
+      (previous.mode !== "self-control" || countOnes(view.hand, previous.targetNumber) > 0);
     const previousCandidate = Object.assign({}, previous, { score: previousCurrentScore });
     const materiallyBetter = best.score > previousCurrentScore + 0.8;
     if (stillOwnsTarget && !materiallyBetter) chosen = previousCandidate;
