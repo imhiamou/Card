@@ -600,3 +600,21 @@ test("strategic plans do not carry across rounds with the same hand signature", 
   assert.equal(nextPlan.mode, "self-control");
   assert.equal(nextPlan.held, false);
 });
+
+
+test("a contradictory play does not erase a historical no-draw pass constraint", () => {
+  const state = normalize(base({
+    hand: [tile(0, 0), tile(1, 1)],
+    leftEnd: 2,
+    rightEnd: 5,
+    players: seats([2, 3, 2, 3]),
+    log: [
+      pass("opp", 2, 5),
+      play("opp", 2, 3, "left", 2, 5, 3, 5)
+    ]
+  }));
+  const beliefs = buildBeliefs(state);
+  assert.ok(beliefs.opp.knownImpossibleNumbers.includes(2));
+  assert.ok(beliefs.opp.knownImpossibleNumbers.includes(5));
+  assert.ok(beliefs.opp.contradictions.some((item) => item.pip === 2));
+});
