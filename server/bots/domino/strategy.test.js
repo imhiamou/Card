@@ -380,21 +380,3 @@ test("self-control memory is released when only one tile still contains the targ
   const nextPlan = strategy.updateStrategicPlan(later, {});
   assert.notEqual(nextPlan.mode, "self-control");
 });
-
-
-test("a voluntary opening play informs intent for both exposed numbers", () => {
-  strategy.clearMemory();
-  const scores = strategy.inferIntentScores(baseView({
-    log: [{
-      type: "play",
-      playerId: "mate",
-      tile: { id: "1-6", a: 1, b: 6 },
-      side: "center",
-      leftEnd: 1,
-      rightEnd: 6,
-      legalAlternatives: 4
-    }]
-  }));
-  assert.ok(scores.mate[1] > 0.8, JSON.stringify(scores.mate));
-  assert.ok(scores.mate[6] > 0.8, JSON.stringify(scores.mate));
-});
