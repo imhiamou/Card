@@ -38,7 +38,11 @@ function dealKey(view) {
   (view.log || []).forEach((event) => {
     if (event && event.type === "play" && event.playerId === view.selfId && event.tile) ids.add(event.tile.id);
   });
-  return view.selfId + "|" + Array.from(ids).sort().join(",");
+  // A repeated hand in a later round must not inherit the previous round's
+  // objective. The authoritative adapter supplies game/round identity.
+  const game = view.gameId || view.roomId || "game";
+  const round = view.roundNumber != null ? view.roundNumber : (view.roundId || "round");
+  return [game, round, view.selfId, Array.from(ids).sort().join(",")].join("|");
 }
 
 function clearPlans() {
