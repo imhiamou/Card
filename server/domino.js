@@ -711,7 +711,7 @@ function decisionView(room, botId) {
   return {
     selfId: botId,
     gameId: room.id || room.roomId || room.code || room.roomCode || null,
-    roundNumber: d.roundNumber != null ? d.roundNumber : (d.roundId != null ? d.roundId : (d.roundIndex != null ? d.roundIndex : null)),
+    roundNumber: (room.dominoMatch && room.dominoMatch.roundsCompleted || 0) + 1,
     hand: (d.hands[botId] || []).map((tile) => ({ id: tile.id, a: tile.a, b: tile.b })),
     validMoves: validMovesFor(room, botId).map((move) => ({ tileId: move.tileId, side: move.side })),
     leftEnd: d.leftEnd,
