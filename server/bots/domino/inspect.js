@@ -821,6 +821,16 @@ function buildDiagnostics(input) {
       strong: beliefs[id].suspectedStrongNumbers,
       remaining: beliefs[id].remainingTileCount
     })),
+    historyConsistency: Object.keys(beliefs).reduce((result, id) => {
+      const conflicts = (beliefs[id].contradictions || []).map((item) => ({
+        playerId: id,
+        number: item.pip,
+        moveIndex: item.index
+      }));
+      result.contradictions.push.apply(result.contradictions, conflicts);
+      result.contradictionCount += conflicts.length;
+      return result;
+    }, { consistent: true, contradictionCount: 0, contradictions: [] }),
     beliefDetail: Object.keys(beliefs).reduce((copy, id) => {
       if (id === view.selfId) return copy;
       copy[id] = publicBelief(beliefs[id]);
