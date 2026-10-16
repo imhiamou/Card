@@ -585,6 +585,11 @@
     const whyLines = ["Advantage: " + why.advantage];
     if (why.risk) whyLines.push("Risk: " + why.risk);
     sections.push({ heading: "Why this move", lines: whyLines });
+    const nextTurn = snap.nextTurn || {};
+    const nextLines = (nextTurn.lines && nextTurn.lines.length)
+      ? nextTurn.lines
+      : ["No intervening turns were simulated for this decision."];
+    sections.push({ heading: "Next turn prediction", lines: nextLines });
     const advanced = advancedSections(snap);
     sections.push({ heading: "Advanced details", advanced: true, sections: advanced, lines: [] });
     const header = error
