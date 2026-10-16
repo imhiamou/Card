@@ -94,8 +94,10 @@ function targetScore(view, beliefs, mode, targetNumber, targetPlayerId, intentSc
   }
   const playerScores = intentScores[targetPlayerId] || [];
   const intent = playerScores[targetNumber] || 0;
-  if (mode === "teammate-support") return intent * 1.1;
-  if (mode === "opponent-denial") return intent * 0.75;
+  const belief = beliefs && beliefs[targetPlayerId];
+  const knownVoid = !!(belief && (belief.knownImpossibleNumbers || []).includes(targetNumber));
+  if (mode === "teammate-support") return intent * 1.1 - (knownVoid ? 2.8 : 0);
+  if (mode === "opponent-denial") return intent * 0.75 - (knownVoid ? 2.2 : 0);
   return 0;
 }
 
