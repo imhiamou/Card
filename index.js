@@ -547,6 +547,7 @@ socket.on("lobbyCreated",(data)=>{
 endLobbyWait();
 closeLobbySetup();
 currentRoom=data.room;
+syncDominoLobbyUpdateTestVisibility();
 code.textContent="Lobby Code: "+data.room;
 if(data.game==="dominoes"||data.game==="uno"){
 const max=data.maxPlayers||2;
