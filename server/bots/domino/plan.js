@@ -8,7 +8,7 @@
 
 const memory = new Map();
 const teammateMemory = new Map();
-const SWITCH_MARGIN = 2;
+const SWITCH_MARGIN = 1;
 const MEMORY_LIMIT = 256;
 const stats = { decisions: 0, held: 0, switched: 0, started: 0, none: 0 };
 
@@ -104,6 +104,28 @@ function ownCandidate(inventory) {
 function intentionOf(beliefs, id) {
   const belief = beliefs && id ? beliefs[id] : null;
   return belief && belief.intention ? belief.intention : null;
+}
+
+function completedSelfTurns(view) {
+  return (view.log || []).filter((event) =>
+    event && event.playerId === view.selfId &&
+    (event.type === "play" || event.type === "pass")
+  ).length;
+}
+
+function ownFallbackCandidate(inventory) {
+  if (!inventory) return null;
+  let best = null;
+  (inventory.byPip || []).forEach((info) => {
+    const held = info.inHand || 0;
+    if (held < 2) return;
+    const unseen = info.unseen || 0;
+    const score = held * 1.5 - unseen * 0.25;
+    if (!best || score > best.score) {
+      best = { pip: info.pip, held: held, unseen: unseen, score: score };
+    }
+  });
+  return best;
 }
 
 function teammateKey(view, mateId) {
@@ -241,6 +263,28 @@ function freshPlan(view, beliefs) {
   } else {
     plan = emptyPlan();
   }
+
+  // By the bot's second completed turn, establish a concrete hand-management
+  // objective even if public evidence is still too weak to infer another
+  // player's preferred number. This is a fallback, not a claim of certainty.
+  if (plan.mode === "none" && completedSelfTurns(view) >= 2) {
+    const fallback = ownFallbackCandidate(inventory);
+    if (fallback) {
+      plan = {
+        mode: "self-control",
+        target: fallback.pip,
+        owner: "self",
+        ownerId: view.selfId,
+        confidence: 0.3,
+        score: 0.5,
+        held: false,
+        switched: false,
+        evidence: "After two completed turns, I am prioritizing " + fallback.pip +
+          " because it connects " + fallback.held + " tiles in my hand. " +
+          fallback.unseen + " tiles containing this number remain unseen; this is a provisional objective, not a certainty."
+      };
+    }
+  }
   plan.teammateTarget = teammateTarget;
   plan.teammateConfidence = teammateConfidence;
   plan.teammateVoidNumbers = (beliefs && beliefs[mateId] && beliefs[mateId].knownImpossibleNumbers || []).slice();
@@ -337,7 +381,13 @@ function resolvePlan(view, beliefs, options) {
   if (prev && stillFeasible(prev, view, beliefs)) {
     const freshScore = fresh && fresh.mode !== "none" ? fresh.score : 0;
     const different = !fresh || fresh.mode !== prev.mode || fresh.target !== prev.target;
-    if (!different || freshScore < prev.score + SWITCH_MARGIN) {
+    const urgentFreshObjective = fresh && fresh.mode !== "none" && (
+      (fresh.mode === "teammate-support" &&
+        (view.players || []).some((player) => player.id === fresh.ownerId && player.handCount <= 1)) ||
+      (fresh.mode === "opponent-denial" &&
+        (view.players || []).some((player) => player.id === fresh.ownerId && player.handCount <= 1))
+    );
+    if (!different || (!urgentFreshObjective && freshScore < prev.score + SWITCH_MARGIN)) {
       next = Object.assign({}, prev, {
         held: true,
         switched: false,
