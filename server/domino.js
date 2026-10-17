@@ -504,6 +504,7 @@ function initRound(room) {
   const playerIds = room.players.map((p) => p.id);
   ensureMatch(room);
   const firstRound = !room.dominoMatch.roundsCompleted;
+  if (room.dominoAiReview) room.dominoAiReview.roundStartIndex = (room.dominoAiReview.decisions || []).length;
   const dealt = dealHands(playerIds, firstRound ? { requireTileId: "6-6" } : null);
   const plan = planOpening(playerIds, dealt.hands, room.dominoMatch);
   const starterId = plan.starterId || playerIds[0];
@@ -854,6 +855,90 @@ const INSPECT_ROOM = "1111";
  * with that move so the inspector describes the decision that executes.
  * Other rooms keep the normal decision and store nothing.
  */
+function rememberDominoReview(room, botId, view, stored) {
+  if (!room || !stored || !stored.snapshot) return;
+  if (!room.dominoAiReview) room.dominoAiReview = { startedAt: Date.now(), decisions: [] };
+  const snapshot = stored.snapshot;
+  const selected = snapshot.selected || snapshot.selectedMove || null;
+  const evaluations = snapshot.candidateEvaluations || [];
+  const best = evaluations.reduce((current, row) =>
+    !current || (typeof row.score === "number" && row.score > current.score) ? row : current, null);
+  const selectedScore = selected && typeof selected.score === "number" ? selected.score : null;
+  const alternative = evaluations.find((row) => selectedScore == null || row.score !== selectedScore) || null;
+  const candidateGap = selectedScore != null && best && typeof best.score === "number"
+    ? Math.round((selectedScore - best.score) * 1000) / 1000 : null;
+  room.dominoAiReview.decisions.push({
+    at: Date.now(),
+    botId: botId,
+    turn: (view.log || []).filter((event) => event && event.playerId === botId &&
+      (event.type === "play" || event.type === "pass")).length,
+    action: snapshot.passAnalysis ? "pass" : selected ? "play" : "unknown",
+    objective: snapshot.passAnalysis && snapshot.passAnalysis.objective || snapshot.plan && snapshot.plan.committed || null,
+    mode: snapshot.strategicMode && (snapshot.strategicMode.code || snapshot.strategicMode.label) || null,
+    target: snapshot.passAnalysis && snapshot.passAnalysis.objective
+      ? snapshot.passAnalysis.objective.target : snapshot.plan && snapshot.plan.committed
+        ? snapshot.plan.committed.target : null,
+    chosenScore: selectedScore != null ? selectedScore : null,
+    alternativeScore: alternative && typeof alternative.score === "number" ? alternative.score : null,
+    bestCandidateScore: best && typeof best.score === "number" ? best.score : null,
+    candidateGap: candidateGap,
+    passReason: snapshot.passAnalysis && snapshot.passAnalysis.reason || null,
+    publicLogLength: (view.log || []).length
+  });
+  // Keep the in-room history bounded. Full round logs are summarized at match end.
+  if (room.dominoAiReview.decisions.length > 2000) {
+    room.dominoAiReview.decisions.splice(0, room.dominoAiReview.decisions.length - 2000);
+  }
+}
+
+function buildDominoMatchReview(room) {
+  const review = room && room.dominoAiReview;
+  const d = room && room.domino;
+  if (!review || !d) return null;
+  if (!Array.isArray(review.roundReviews)) review.roundReviews = [];
+  if (!d.over) return review.roundReviews.length ? review.roundReviews[review.roundReviews.length - 1] : null;
+  const roundNumber = room.dominoMatch && room.dominoMatch.roundsCompleted || 1;
+  const existing = review.roundReviews.find((item) => item.round === roundNumber);
+  if (existing) return existing;
+  const startIndex = review.roundStartIndex || 0;
+  const decisions = (review.decisions || []).slice(startIndex);
+  const passes = decisions.filter((item) => item.action === "pass");
+  const modes = {};
+  decisions.forEach((item) => {
+    const key = item.mode || "unlabelled";
+    modes[key] = (modes[key] || 0) + 1;
+  });
+  const scored = decisions.filter((item) => typeof item.candidateGap === "number");
+  const missedGaps = scored.filter((item) => item.candidateGap < 0);
+  const result = {
+    schemaVersion: 1,
+    status: "round-complete",
+    generatedAt: Date.now(),
+    note: "Candidate gaps are heuristic score differences, not proof another move would have won. The trace is recorded only in inspector room 1111 and does not infer hidden hands.",
+    round: roundNumber,
+    winnerId: d.winnerId || null,
+    winnerTeam: d.winnerTeam || null,
+    winReason: d.winReason || null,
+    scoreboard: publicMatchScoreboard(room),
+    totals: {
+      decisions: decisions.length,
+      passes: passes.length,
+      decisionsWithAlternatives: scored.length,
+      selectedBelowTopCandidate: missedGaps.length
+    },
+    strategyCounts: modes,
+    passEvents: passes.map((item) => ({ botId: item.botId, turn: item.turn, objective: item.objective, reason: item.passReason })),
+    decisionRecords: decisions.slice(),
+    publicActions: (d.publicLog || []).map((event) => ({
+      type: event.type, playerId: event.playerId,
+      tile: event.tile ? { a: event.tile.a, b: event.tile.b } : null,
+      leftEnd: event.leftEnd, rightEnd: event.rightEnd, legalAlternatives: event.legalAlternatives
+    }))
+  };
+  review.roundReviews.push(result);
+  return result;
+}
+
 function decideBotMove(room, roomCode, botId) {
   const view = decisionView(room, botId);
   const code = typeof roomCode === "string" ? roomCode.trim().toUpperCase() : "";
@@ -881,12 +966,14 @@ function decideBotMove(room, roomCode, botId) {
     room.dominoDecisions[botId] = stored;
     return stored;
   }
-  const move = explained ? { tileId: explained.tileId, side: explained.side } : null;
+  const move = explained && !explained.pass && explained.tileId != null
+    ? { tileId: explained.tileId, side: explained.side } : null;
   const snapshot = explained && explained.diagnostics
     ? dominoInspect.clientSnapshot(explained.diagnostics)
     : dominoInspect.clientSnapshot(dominoInspect.unavailableSnapshot(view, "No legal move is available."));
   const stored = { key: key, move: move, snapshot: snapshot, restricted: false };
   room.dominoDecisions[botId] = stored;
+  rememberDominoReview(room, botId, view, stored);
   return stored;
 }
 
@@ -912,13 +999,40 @@ function inspectStateExtra(room, roomCode) {
       botDiagnostics[player.id].botId = player.id;
     }
   });
-  return { botDiagnostics: botDiagnostics };
+  const matchReview = buildDominoMatchReview(room);
+  Object.keys(botDiagnostics).forEach((id) => {
+    botDiagnostics[id] = Object.assign({}, botDiagnostics[id], {
+      matchReview: matchReview,
+      matchHistory: room.dominoAiReview && room.dominoAiReview.roundReviews
+        ? room.dominoAiReview.roundReviews.slice() : [],
+      trainingData: {
+        schemaVersion: 1,
+        roomCode: INSPECT_ROOM,
+        note: "Inspector-room decision trace with the bot's own hand and public history; no reconstructed hidden hands.",
+        recordedPositions: room.dominoAiReview && room.dominoAiReview.decisions ? room.dominoAiReview.decisions.length : 0,
+        decisions: room.dominoAiReview && room.dominoAiReview.decisions ? room.dominoAiReview.decisions.slice() : []
+      }
+    });
+  });
+  return { botDiagnostics: botDiagnostics, matchReview: matchReview };
 }
 
 function inspectPayload(stored, room, botId) {
   let snapshot = stored && stored.snapshot
     ? stored.snapshot
     : dominoInspect.unavailableSnapshot(decisionView(room, botId));
+  const matchReview = buildDominoMatchReview(room);
+  snapshot = Object.assign({}, snapshot, {
+    matchReview: matchReview,
+    matchHistory: room.dominoAiReview && room.dominoAiReview.roundReviews ? room.dominoAiReview.roundReviews.slice() : [],
+    trainingData: {
+      schemaVersion: 1,
+      roomCode: INSPECT_ROOM,
+      note: "Exported inspector-room data only. It contains the bot's own hand at decision time and public action history, not reconstructed hidden hands.",
+      recordedPositions: room.dominoAiReview && room.dominoAiReview.decisions ? room.dominoAiReview.decisions.length : 0,
+      decisions: room.dominoAiReview && room.dominoAiReview.decisions ? room.dominoAiReview.decisions.slice() : []
+    }
+  });
   if (snapshot && snapshot.selected && room.domino.currentTurn !== botId) {
     const note = "It is not this bot's turn, so this preference can change before the bot plays.";
     const selected = Object.assign({}, snapshot.selected, { conditional: true, assumption: note });
@@ -954,6 +1068,11 @@ function runBotTurn(room, io, roomCode, botId) {
   if (!botSocket) return;
 
   const moves = validMovesFor(room, botId);
+  // Explain a forced pass before resolving it so the inspector retains the
+  // round objective and records why this position had no legal action.
+  if (moves.length === 0 && roomCode.trim().toUpperCase() === INSPECT_ROOM) {
+    try { decideBotMove(room, roomCode, botId); } catch (ignored) {}
+  }
   if (moves.length > 0) {
     let choice = null;
     try {

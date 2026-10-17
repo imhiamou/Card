@@ -1017,7 +1017,8 @@
       { id: "strategy", label: "Strategy", headings: ["Strategic plan", "Next turn prediction"] },
       { id: "teammate", label: "Teammate", headings: ["Teammate", "Partnership beliefs"] },
       { id: "opponents", label: "Opponents", headings: ["Opponents", "Opponent beliefs"] },
-      { id: "details", label: "Details", headings: ["Advanced details"] }
+      { id: "details", label: "Details", headings: ["Advanced details"] },
+      { id: "review", label: "Review & Export", headings: ["End-of-round review", "Training data"] }
     ];
     if (!pages.some((page) => page.id === inspectPage)) inspectPage = "overview";
     nav.textContent = "";
@@ -1054,6 +1055,33 @@
       details.addEventListener("click", (event) => event.stopPropagation());
       body.appendChild(details);
     });
+    if (activePage && activePage.id === "review") {
+      const exportButton = document.createElement("button");
+      exportButton.type = "button";
+      exportButton.className = "domInspectTab active";
+      exportButton.textContent = "Export training JSON";
+      exportButton.addEventListener("click", () => {
+        const latest = inspectPanelState && inspectPanelState.snapshot || snapshot || {};
+        const payload = {
+          schemaVersion: 1,
+          exportedAt: new Date().toISOString(),
+          source: "Gameweb Dominoes inspector room 1111",
+          matchHistory: latest.matchHistory || [],
+          latestRoundReview: latest.matchReview || null,
+          trainingData: latest.trainingData || { schemaVersion: 1, decisions: [] }
+        };
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "domino-ai-training-review.json";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+      });
+      body.appendChild(exportButton);
+    }
     if (!body.childElementCount) {
       const empty = document.createElement("p");
       empty.className = "domInspectEmpty";
