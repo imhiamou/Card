@@ -343,7 +343,7 @@ function preservesPip(view, move, pip) {
   return rest.some((tile) => touches(tile, pip));
 }
 
-function partnershipReport(view, beliefs, chosen) {
+function partnershipReport(view, beliefs, chosen, ranked) {
   const mateId = partnerId(view);
   if (!mateId) {
     return { available: false, reason: "This table has no teammate." };
@@ -354,19 +354,52 @@ function partnershipReport(view, beliefs, chosen) {
   const reply = preview && mate ? canPlayProbability(view, beliefs, mate, preview.leftEnd, preview.rightEnd) : null;
   const strong = numberNotes(belief, "strong");
   const kept = strong.filter((note) => chosen && preservesPip(view, chosen.move, note.pip)).map((note) => note.pip);
+  const plan = beliefs._plan || null;
+  const committedTarget = plan && plan.mode === "teammate-support"
+    ? plan.target : plan && plan.teammateTarget != null ? plan.teammateTarget : null;
+  const intention = belief && belief.intention;
+  const byPip = intention && intention.byPip || [];
+  const provenPips = belief && belief.knownImpossibleNumbers || [];
+  const numberBeliefs = byPip.map((info, pip) => {
+    const probability = info.pAtLeastOne == null ? null : round3(info.pAtLeastOne);
+    let status = "uncertain";
+    if (provenPips.indexOf(pip) >= 0) status = "proven-absent";
+    else if (probability != null && probability >= 0.65) status = "likely-has";
+    else if (probability != null && probability < 0.35) status = "possibly-weak";
+    return { pip: pip, probability: probability, expectedTiles: round3(info.expectedTiles || 0), status: status };
+  });
+  const resultingEnds = chosen ? previewEnds(view, chosen.move) : null;
+  const preservesObjective = committedTarget != null && resultingEnds
+    ? resultingEnds.leftEnd === committedTarget || resultingEnds.rightEnd === committedTarget : null;
+  const preservingCandidates = committedTarget == null ? [] : (ranked || []).filter((row) => {
+    if (!row || !row.move) return false;
+    const ends = previewEnds(view, row.move);
+    return ends && (ends.leftEnd === committedTarget || ends.rightEnd === committedTarget);
+  }).sort((a, b) => (b.score || 0) - (a.score || 0));
+  const recommended = preservingCandidates[0] || null;
+  let recommendation = "No teammate number has enough evidence to commit to yet.";
+  if (committedTarget != null && recommended) {
+    const sameAsChosen = chosen && recommended.move.tileId === chosen.move.tileId && recommended.move.side === chosen.move.side;
+    recommendation = sameAsChosen
+      ? "Best support move: the selected " + recommended.move.side + "-end play keeps " + committedTarget +
+        " open and is the highest-scoring legal move among those that preserve it."
+      : "Best support move: prefer a legal " + recommended.move.side + "-end play that leaves " + committedTarget +
+        " open (highest-scoring candidate that preserves the target). The currently selected move does not do this.";
+  } else if (committedTarget != null) {
+    recommendation = "No legal move leaves " + committedTarget +
+      " open. Keep the teammate-support strategy, then choose the highest team-advantage legal move without conceding an immediate win.";
+  }
   return {
-    available: true,
-    playerId: mateId,
-    handCount: mate ? mate.handCount : null,
-    strong: strong,
-    provenVoids: numberNotes(belief, "proven"),
-    suspectedWeak: numberNotes(belief, "weak"),
-    replyProbability: round3(reply),
-    replyCertain: false,
-    preserves: kept,
+    available: true, playerId: mateId, handCount: mate ? mate.handCount : null,
+    strong: strong, provenVoids: numberNotes(belief, "proven"), suspectedWeak: numberNotes(belief, "weak"),
+    numberBeliefs: numberBeliefs,
+    inferredPreferredNumber: intention && intention.preferred != null ? intention.preferred : null,
+    preferenceConfidence: intention ? round3(intention.confidence) : 0,
+    committedMode: plan ? plan.mode : "none", committedTarget: committedTarget,
+    preservesObjective: preservesObjective, recommendation: recommendation,
+    replyProbability: round3(reply), replyCertain: false, preserves: kept,
     helpsEmpty: reply != null && mate && mate.handCount > 0 && reply >= 0.5,
-    helpNote: reply == null
-      ? "A teammate reply estimate is unavailable."
+    helpNote: reply == null ? "A teammate reply estimate is unavailable."
       : "Estimated chance the teammate can match the resulting ends: " + round3(reply) + ". This is not knowledge of the teammate's hand."
   };
 }
@@ -770,7 +803,7 @@ function buildDiagnostics(input) {
       }] : [],
       note: projected && projected.note ? projected.note : null
     },
-    partnership: partnershipReport(view, beliefs, chosen),
+    partnership: partnershipReport(view, beliefs, chosen, ranked),
     opponents: opponentReport(view, beliefs, chosen),
     components: componentReport(chosen && chosen.parts),
     comparison: overrideText(chosen, alternative, samples),
@@ -800,7 +833,7 @@ function buildDiagnostics(input) {
     plannedContinuation: projected ? projected.steps : [],
     strategicMode: mode,
     reasoning: overrideText(chosen, alternative, samples).text,
-    teammateAnalysis: partnershipReport(view, beliefs, chosen),
+    teammateAnalysis: partnershipReport(view, beliefs, chosen, ranked),
     opponentAnalysis: opponentReport(view, beliefs, chosen),
     searchStats: {
       stage: report && report.forecast ? "forecast" : report && report.samples ? "searched" : "heuristic",
