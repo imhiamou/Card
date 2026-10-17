@@ -856,3 +856,51 @@ test("the teammate panel shows number-by-number beliefs and the committed suppor
   assert.match(lines, /Recommended play/);
   assert.match(lines, /proven absent|likely has|uncertain|possibly weak/);
 });
+
+
+test("a forced pass preserves the round objective and explains why no move is legal", () => {
+  clearPlans();
+  const state = base({
+    gameId: "forced-pass-objective",
+    selfId: "pass-bot",
+    hand: [tile(0, 1), tile(2, 3), tile(4, 5)],
+    validMoves: [],
+    leftEnd: 6,
+    rightEnd: 6,
+    players: seats([3, 4, 4, 4], ["pass-bot", "opp", "mate", "far"]),
+    teamA: ["pass-bot", "mate"],
+    log: []
+  });
+  const result = require("./bots/domino/ai").getDominoMove(state, { explain: true });
+  assert.equal(result.pass, true);
+  assert.equal(result.diagnostics.passAnalysis.forced, true);
+  assert.match(result.diagnostics.passAnalysis.reason, /No legal tile/);
+  assert.ok(result.diagnostics.passAnalysis.objective.mode);
+  const model = client.renderModel(result.diagnostics);
+  const nextMove = model.sections.find((section) => section.heading === "Next move");
+  assert.match(nextMove.lines.join(" "), /Forced pass/);
+  assert.ok(model.sections.some((section) => section.heading === "Training data"));
+});
+
+test("the inspector renders round review and exposes a structured training dataset", () => {
+  const model = client.renderModel({
+    available: true,
+    status: "ready",
+    selected: null,
+    mode: { label: "Supporting teammate", reason: "Committed objective." },
+    passAnalysis: { forced: true, leftEnd: 2, rightEnd: 5, objective: { mode: "teammate-support", target: 5 } },
+    matchReview: {
+      round: 3, winReason: "blocked", winnerTeam: "A",
+      totals: { decisions: 8, passes: 1, decisionsWithAlternatives: 6 },
+      strategyCounts: { "SUPPORT_PARTNER": 4, "DENY_OPPONENT": 2 },
+      passEvents: [{ botId: "bot-a", turn: 2, reason: "No legal tile matches the ends." }],
+      note: "Heuristic comparison only."
+    },
+    matchHistory: [{ round: 2 }],
+    trainingData: { schemaVersion: 1, recordedPositions: 8, decisions: [{ action: "pass" }] }
+  });
+  assert.ok(model.sections.some((section) => section.heading === "End-of-round review"));
+  assert.ok(model.sections.some((section) => section.heading === "Training data"));
+  assert.equal(model.trainingData.recordedPositions, 8);
+  assert.equal(model.matchHistory.length, 1);
+});
