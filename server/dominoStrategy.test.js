@@ -416,12 +416,14 @@ test("a plan is dropped when the hand no longer has that count advantage", () =>
   }));
   const second = resolvePlan(later, buildBeliefs(later), {});
   assert.equal(buildBeliefs(later)._inventory.byPip[4].inHand, 1);
-  assert.equal(second.mode, "none");
-  assert.equal(second.switched, true);
-  assert.equal(second.held, false);
-  assert.match(second.lines.join(" "), /dropped/);
+  assert.equal(second.mode, "self-control");
+  assert.equal(second.target, 4);
+  assert.equal(second.switched, false);
+  assert.equal(second.held, true);
+  assert.match(second.lines.join(" "), /overall strategy remains self-control/);
   const stats = planStats();
-  assert.ok(stats.switched >= 1);
+  assert.equal(stats.switched, 0);
+  assert.ok(stats.held >= 1);
   assert.ok(stats.started >= 1);
 });
 
@@ -483,11 +485,13 @@ test("a known teammate void invalidates a committed support plan", () => {
   assert.equal(first.mode, "teammate-support");
   assert.equal(first.target, 3);
 
-  // Public proof of a void must override the teammate's historical pattern.
+  // Public proof may force a target reassignment, but it must not change
+  // the round-level teammate-support strategy.
   beliefs.mate.knownImpossibleNumbers = [3];
   const next = resolvePlan(view, beliefs, {});
-  assert.notEqual(next.mode, "teammate-support");
-  assert.notEqual(next.target, 3);
+  assert.equal(next.mode, "teammate-support");
+  assert.equal(next.switched, false);
+  assert.match(next.evidence, /overall strategy remains teammate support/);
 });
 
 test("the inspector shows the recorded plan and the next-turn prediction", () => {
@@ -791,4 +795,66 @@ test("a teammate with one tile acting next can replace a stronger self-control o
   assert.equal(plan.target, 3);
   assert.equal(plan.ownerId, "mate");
   assert.match(plan.evidence, /acts next/);
+});
+
+
+test("a committed teammate-support strategy does not change when fresh evidence favors another mode", () => {
+  clearPlans();
+  const state = base({
+    gameId: "lock-round-strategy",
+    selfId: "me",
+    hand: [tile(0, 1), tile(2, 3), tile(3, 4), tile(3, 5)],
+    validMoves: [{ tileId: "3-4", side: "left" }, { tileId: "3-5", side: "right" }],
+    leftEnd: 3,
+    rightEnd: 4,
+    players: seats([4, 3, 4, 4], ["me", "mate", "opp", "far"]),
+    teamA: ["me", "mate"],
+    log: [
+      play("mate", 1, 3, "right", 2, 1, 2, 3),
+      play("mate", 4, 3, "right", 2, 3, 2, 4)
+    ]
+  });
+  const view = normalize(state);
+  const beliefs = buildBeliefs(view);
+  const first = resolvePlan(view, beliefs, {});
+  assert.equal(first.mode, "teammate-support");
+  const lockedMode = first.mode;
+  const lockedTarget = first.target;
+  // New evidence can change the freshly evaluated best mode, but not the
+  // committed round objective unless its number is proven impossible.
+  beliefs._inventory.byPip[0].inHand = 5;
+  beliefs._inventory.byPip[0].unseen = 0;
+  const next = resolvePlan(view, beliefs, {});
+  assert.equal(next.mode, lockedMode);
+  assert.equal(next.target, lockedTarget);
+  assert.equal(next.switched, false);
+  assert.equal(next.held, true);
+});
+
+test("the teammate panel shows number-by-number beliefs and the committed support recommendation", () => {
+  clearPlans();
+  const move = decide(base({
+    gameId: "teammate-belief-panel",
+    hand: [tile(0, 1), tile(2, 6), tile(3, 5)],
+    validMoves: [
+      { tileId: "2-6", side: "left" },
+      { tileId: "3-5", side: "right" }
+    ],
+    leftEnd: 2,
+    rightEnd: 3,
+    chain: [tile(1, 3), tile(3, 4)],
+    players: seats([3, 4, 4, 4]),
+    log: [
+      play("mate", 1, 3, "right", 2, 1, 2, 3),
+      play("mate", 3, 4, "right", 2, 3, 2, 4)
+    ]
+  }));
+  const panel = client.planView(move.diagnostics);
+  const teammate = panel.sections.find((section) => section.heading === "Teammate");
+  assert.ok(teammate);
+  const lines = teammate.lines.join(" ");
+  assert.match(lines, /Round commitment/);
+  assert.match(lines, /Number-by-number hand estimate/);
+  assert.match(lines, /Recommended play/);
+  assert.match(lines, /proven absent|likely has|uncertain|possibly weak/);
 });
