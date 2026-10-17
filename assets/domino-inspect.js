@@ -257,6 +257,12 @@
   }
 
   function nextMoveLine(snap, selected, calculating, error) {
+    if (snap && snap.passAnalysis && snap.passAnalysis.forced) {
+      const pass = snap.passAnalysis;
+      return "Forced pass: no tile matches " + pass.leftEnd + " or " + pass.rightEnd +
+        ". The round objective remains " + (pass.objective && pass.objective.mode || "uncommitted") +
+        (pass.objective && pass.objective.target != null ? " on number " + pass.objective.target : "") + ".";
+    }
     if (!selected || (!selected.tile && !selected.side)) {
       if (calculating) return "Calculating next move...";
       if (error) return error;
