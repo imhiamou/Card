@@ -952,7 +952,8 @@ function decideBotMove(room, roomCode, botId) {
     room.dominoDecisions[botId] = stored;
     return stored;
   }
-  const move = explained ? { tileId: explained.tileId, side: explained.side } : null;
+  const move = explained && !explained.pass && explained.tileId != null
+    ? { tileId: explained.tileId, side: explained.side } : null;
   const snapshot = explained && explained.diagnostics
     ? dominoInspect.clientSnapshot(explained.diagnostics)
     : dominoInspect.clientSnapshot(dominoInspect.unavailableSnapshot(view, "No legal move is available."));
@@ -997,6 +998,17 @@ function inspectPayload(stored, room, botId) {
   let snapshot = stored && stored.snapshot
     ? stored.snapshot
     : dominoInspect.unavailableSnapshot(decisionView(room, botId));
+  const matchReview = buildDominoMatchReview(room);
+  snapshot = Object.assign({}, snapshot, {
+    matchReview: matchReview,
+    trainingData: {
+      schemaVersion: 1,
+      roomCode: INSPECT_ROOM,
+      note: "Exported inspector-room data only. It contains the bot's own hand at decision time and public action history, not reconstructed hidden hands.",
+      recordedPositions: room.dominoAiReview && room.dominoAiReview.decisions ? room.dominoAiReview.decisions.length : 0,
+      decisions: room.dominoAiReview && room.dominoAiReview.decisions ? room.dominoAiReview.decisions.slice() : []
+    }
+  });
   if (snapshot && snapshot.selected && room.domino.currentTurn !== botId) {
     const note = "It is not this bot's turn, so this preference can change before the bot plays.";
     const selected = Object.assign({}, snapshot.selected, { conditional: true, assumption: note });
@@ -1032,6 +1044,11 @@ function runBotTurn(room, io, roomCode, botId) {
   if (!botSocket) return;
 
   const moves = validMovesFor(room, botId);
+  // Explain a forced pass before resolving it so the inspector retains the
+  // round objective and records why this position had no legal action.
+  if (moves.length === 0 && roomCode.trim().toUpperCase() === INSPECT_ROOM) {
+    try { decideBotMove(room, roomCode, botId); } catch (ignored) {}
+  }
   if (moves.length > 0) {
     let choice = null;
     try {
