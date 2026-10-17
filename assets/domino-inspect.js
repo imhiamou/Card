@@ -181,6 +181,16 @@
     }
     const known = mode && STRATEGIES[mode.label];
     if (known) return { label: known[0], aim: known[1] };
+    const rawMode = mode && (mode.code || mode.label);
+    const byCode = {
+      "self-control": STRATEGIES["Controlling the board"],
+      "teammate-support": STRATEGIES["Supporting teammate"],
+      "opponent-denial": STRATEGIES["Blocking opponents"],
+      "defensive-recovery": STRATEGIES["Defensive recovery"],
+      "go-for-win": STRATEGIES["Going for the win"],
+      "winning-block": STRATEGIES["Winning the block"]
+    };
+    if (rawMode && byCode[rawMode]) return { label: byCode[rawMode][0], aim: byCode[rawMode][1] };
     if (calculating) return { label: "Thinking", aim: "I am still evaluating the available moves." };
     return { label: "Best legal move", aim: "I am choosing the highest ranked legal play." };
   }
@@ -563,7 +573,13 @@
     const error = opts.error || (failed ? (snap.error || snap.reason || "The decision failed.") : null);
     const selected = selectedMove(snap);
     const mode = snap.mode || snap.strategicMode || {};
-    const recorded = strategyFor(selected ? mode : null, false);
+    // A forced pass has no selected tile, but it still has a committed plan.
+    // Do not let the inspector silently fall back to "Best legal move" on that turn.
+    const passObjective = snap.passAnalysis && snap.passAnalysis.forced
+      ? snap.passAnalysis.objective : null;
+    const passMode = passObjective && passObjective.mode
+      ? { code: passObjective.mode, label: passObjective.mode } : null;
+    const recorded = strategyFor(selected ? mode : (passMode || mode), false);
     const strategy = calculating
       ? { label: "Thinking", aim: "I am still evaluating the available moves." }
       : recorded;
