@@ -996,11 +996,20 @@ function inspectStateExtra(room, roomCode) {
     }
   });
   const matchReview = buildDominoMatchReview(room);
-  if (matchReview) {
-    Object.keys(botDiagnostics).forEach((id) => {
-      botDiagnostics[id].matchReview = matchReview;
+  Object.keys(botDiagnostics).forEach((id) => {
+    botDiagnostics[id] = Object.assign({}, botDiagnostics[id], {
+      matchReview: matchReview,
+      matchHistory: room.dominoAiReview && room.dominoAiReview.roundReviews
+        ? room.dominoAiReview.roundReviews.slice() : [],
+      trainingData: {
+        schemaVersion: 1,
+        roomCode: INSPECT_ROOM,
+        note: "Inspector-room decision trace with the bot's own hand and public history; no reconstructed hidden hands.",
+        recordedPositions: room.dominoAiReview && room.dominoAiReview.decisions ? room.dominoAiReview.decisions.length : 0,
+        decisions: room.dominoAiReview && room.dominoAiReview.decisions ? room.dominoAiReview.decisions.slice() : []
+      }
     });
-  }
+  });
   return { botDiagnostics: botDiagnostics, matchReview: matchReview };
 }
 
