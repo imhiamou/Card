@@ -863,7 +863,7 @@ test("a forced pass preserves the round objective and explains why no move is le
   const state = base({
     gameId: "forced-pass-objective",
     selfId: "pass-bot",
-    hand: [tile(0, 1), tile(2, 3), tile(4, 5)],
+    hand: [tile(4, 4), tile(4, 1), tile(4, 2)],
     validMoves: [],
     leftEnd: 6,
     rightEnd: 6,
@@ -879,6 +879,13 @@ test("a forced pass preserves the round objective and explains why no move is le
   const model = client.renderModel(result.diagnostics);
   const nextMove = model.sections.find((section) => section.heading === "Next move");
   assert.match(nextMove.lines.join(" "), /Forced pass/);
+  const committedPass = Object.assign({}, result.diagnostics, {
+    passAnalysis: Object.assign({}, result.diagnostics.passAnalysis, {
+      objective: { mode: "self-control", target: 4 }
+    })
+  });
+  const passModel = client.renderModel(committedPass);
+  assert.equal(passModel.strategy.label, "Controlling the board");
   assert.ok(model.sections.some((section) => section.heading === "Training data"));
 });
 
