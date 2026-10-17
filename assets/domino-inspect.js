@@ -310,31 +310,37 @@
   }
 
   function teammateBlock(snap, selected, mode) {
-    const partnership = snap.partnership || {};
+    const partnership = snap.partnership || snap.teammateAnalysis || {};
+    const strategy = snap.strategy || {};
     if (!selected && partnership.available !== true && partnership.available !== false) {
-      return { help: "No", number: "None", reason: "No teammate information yet." };
+      return { help: "No", number: "None", reason: "No teammate information yet.", beliefs: "Unavailable.", recommendation: "No recommendation yet.", preference: "No preferred number inferred yet." };
     }
-    const help = helpLevel(snap, mode);
+    const committedSupport = strategy.mode === "teammate-support" || partnership.committedMode === "teammate-support";
+    const help = committedSupport ? "Yes — committed for this round" : helpLevel(snap, mode);
     const open = openPip(snap, selected);
     const kept = partnership.preserves || [];
-    let number = "None";
-    if ((help === "Yes" || help === "Partly") && kept.length) number = String(kept[0]);
-    else if (help === "Yes" && open != null) number = String(open);
-    let reason = "This move is not mainly for my teammate.";
+    const target = partnership.committedTarget != null ? partnership.committedTarget
+      : committedSupport ? strategy.target : null;
+    let number = target == null ? "None inferred yet" : String(target);
+    if (target == null && (help === "Yes" || help === "Partly") && kept.length) number = String(kept[0]);
+    else if (target == null && help === "Yes" && open != null) number = String(open);
+    let reason = "The committed round strategy is not teammate support; the current move is still evaluated for team advantage.";
     if (partnership.available === false) reason = partnership.reason || "This table has no teammate.";
-    else if (help === "No" && (snap.comparison && snap.comparison.kind) === "own-finish") {
-      reason = "I am prioritizing my own finish over a move that would help my teammate more.";
-    } else if (help === "No" && mode && mode.label === "Going for the win") {
-      reason = "Emptying my hand comes first.";
-    } else if (help === "Yes") {
-      reason = teammateSentence(snap, selected, open, selected && selected.tile ? face(selected.tile) : null);
-    } else if (help === "Partly") {
-      reason = "The move helps my teammate some, but that is not the main reason I chose it.";
-    }
+    else if (committedSupport) reason = "Teammate support is the committed strategy for this entire round. Individual moves may change, but the objective remains stable unless public evidence proves the target impossible.";
+    else if (help === "Yes") reason = teammateSentence(snap, selected, open, selected && selected.tile ? face(selected.tile) : null);
+    else if (help === "Partly") reason = "The move helps my teammate some, but teammate support is not the committed round strategy.";
+    const beliefs = (partnership.numberBeliefs || []).map((item) => {
+      if (item.status === "proven-absent") return item.pip + ": proven absent";
+      if (item.status === "likely-has") return item.pip + ": likely has (P=" + text(item.probability) + ")";
+      if (item.status === "possibly-weak") return item.pip + ": possibly weak (P=" + text(item.probability) + ")";
+      return item.pip + ": uncertain (P=" + text(item.probability) + ")";
+    }).join("; ") || "No number-by-number estimate available yet.";
     return {
-      help: help,
-      number: number,
-      reason: reason
+      help: help, number: number, reason: reason, beliefs: beliefs,
+      recommendation: partnership.recommendation || "No committed teammate number; choose the move with the best team outcome.",
+      preference: partnership.inferredPreferredNumber == null ? "No preferred number inferred yet."
+        : "Inferred preferred number: " + partnership.inferredPreferredNumber +
+          " (confidence " + text(partnership.preferenceConfidence) + ")."
     };
   }
 
@@ -589,9 +595,12 @@
     sections.push({
       heading: "Teammate",
       lines: [
-        "Helping teammate: " + teammate.help + ".",
-        "Useful number: " + teammate.number + ".",
-        teammate.reason
+        "Round commitment: " + teammate.help + ".",
+        "Support number: " + teammate.number + ".",
+        teammate.reason,
+        teammate.preference,
+        "Number-by-number hand estimate: " + teammate.beliefs,
+        "Recommended play: " + teammate.recommendation
       ]
     });
     const inferredPlayers = Array.isArray(snap.playerInferences) ? snap.playerInferences : [];
