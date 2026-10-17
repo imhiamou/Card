@@ -1011,6 +1011,7 @@ function inspectPayload(stored, room, botId) {
   const matchReview = buildDominoMatchReview(room);
   snapshot = Object.assign({}, snapshot, {
     matchReview: matchReview,
+    matchHistory: room.dominoAiReview && room.dominoAiReview.roundReviews ? room.dominoAiReview.roundReviews.slice() : [],
     trainingData: {
       schemaVersion: 1,
       roomCode: INSPECT_ROOM,
