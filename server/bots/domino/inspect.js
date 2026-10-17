@@ -836,7 +836,27 @@ function buildDiagnostics(input) {
       if (id === view.selfId) return copy;
       copy[id] = publicBelief(beliefs[id]);
       return copy;
-    }, {})
+    }, {}),
+    // Public-history inference only; never expose reconstructed hidden hands.
+    playerInferences: (view.players || []).filter((player) => player.id !== view.selfId).map((player) => {
+      const belief = beliefs[player.id] || {};
+      const intention = publicIntention(belief.intention);
+      const byPip = intention && intention.byPip || [];
+      const provenVoids = (belief.knownImpossibleNumbers || []).slice();
+      const suspectedMissing = byPip.map((info, pip) => ({ info: info, pip: pip }))
+        .filter((item) => provenVoids.indexOf(item.pip) < 0 &&
+          item.info.missed >= 1 && item.info.pAtLeastOne < 0.4)
+        .map((item) => item.pip);
+      return {
+        playerId: player.id,
+        handCount: player.handCount,
+        preferredNumber: intention && intention.preferred != null ? intention.preferred : null,
+        preferenceConfidence: intention ? intention.confidence : 0,
+        lastMoveForced: !!(intention && intention.lastMoveForced),
+        provenVoids: provenVoids,
+        suspectedMissing: suspectedMissing
+      };
+    })
   };
 }
 
