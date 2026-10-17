@@ -2,7 +2,7 @@ name: Dominoes strategic AI tests
 
 on:
   pull_request:
-    branches: [cursor/domino-predict-lobby-fda4]
+    branches: [main]
     paths:
       - "server/dominoStrategy.test.js"
       - "server/bots/domino/**"
@@ -10,7 +10,7 @@ on:
       - "package.json"
       - ".github/workflows/domino-strategy-tests.yml"
   push:
-    branches: [ai/domino-strategy-pr162-followup]
+    branches: [main]
     paths:
       - "server/dominoStrategy.test.js"
       - "server/bots/domino/**"
