@@ -257,6 +257,12 @@
   }
 
   function nextMoveLine(snap, selected, calculating, error) {
+    if (snap && snap.passAnalysis && snap.passAnalysis.forced) {
+      const pass = snap.passAnalysis;
+      return "Forced pass: no tile matches " + pass.leftEnd + " or " + pass.rightEnd +
+        ". The round objective remains " + (pass.objective && pass.objective.mode || "uncommitted") +
+        (pass.objective && pass.objective.target != null ? " on number " + pass.objective.target : "") + ".";
+    }
     if (!selected || (!selected.tile && !selected.side)) {
       if (calculating) return "Calculating next move...";
       if (error) return error;
@@ -646,6 +652,36 @@
     sections.push({ heading: "Next turn prediction", lines: nextLines });
     const advanced = advancedSections(snap);
     sections.push({ heading: "Advanced details", advanced: true, sections: advanced, lines: [] });
+    const review = snap.matchReview || null;
+    if (review) {
+      const totals = review.totals || {};
+      sections.push({
+        heading: "End-of-round review",
+        lines: [
+          "Round " + text(review.round) + " result: " + (review.winReason || "unknown") +
+            "; winner " + (review.winnerTeam ? "Team " + review.winnerTeam : review.winnerId || "unknown") + ".",
+          "Recorded decisions: " + text(totals.decisions || 0) + "; forced passes: " + text(totals.passes || 0) +
+            "; positions with alternatives scored: " + text(totals.decisionsWithAlternatives || 0) + ".",
+          "Strategy usage: " + Object.keys(review.strategyCounts || {}).map((key) => key + " (" + review.strategyCounts[key] + ")").join(", "),
+          "Pass analysis: " + ((review.passEvents || []).map((item) => "bot " + item.botId + " — " + (item.reason || "reason unavailable")).join(" | ") || "No forced pass was recorded."),
+          review.note || "Review data is based on logged decisions and heuristic comparisons."
+        ]
+      });
+    } else {
+      sections.push({
+        heading: "End-of-round review",
+        lines: ["A round review will appear here after a round finishes in inspector room 1111."]
+      });
+    }
+    const trainingData = snap.trainingData || null;
+    sections.push({
+      heading: "Training data",
+      lines: [
+        trainingData
+          ? "Dataset available: " + text(trainingData.recordedPositions || 0) + " recorded bot positions. Use Export training JSON to save the full decision trace for future algorithm analysis."
+          : "No training trace has been recorded yet."
+      ]
+    });
     const header = error
       ? error
       : (calculating ? "Thinking" : strategy.label);
@@ -655,7 +691,9 @@
       error: error,
       strategy: strategy,
       sections: sections,
-      advanced: advanced
+      advanced: advanced,
+      trainingData: trainingData,
+      matchHistory: snap.matchHistory || []
     };
   }
 

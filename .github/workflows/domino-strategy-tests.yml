@@ -7,6 +7,8 @@ on:
       - "server/dominoStrategy.test.js"
       - "server/bots/domino/**"
       - "server/domino.js"
+      - "assets/domino-inspect.js"
+      - "domino.js"
       - "package.json"
       - ".github/workflows/domino-strategy-tests.yml"
   push:

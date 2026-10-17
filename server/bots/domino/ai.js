@@ -98,11 +98,42 @@ function getDominoMove(state, options) {
     const forced = view.validMoves.filter((move) => move.tileId === view.mustPlayId);
     if (forced.length) view.validMoves = forced;
   }
-  if (!view.validMoves.length) return null;
   const weights = mergeWeights(options && options.weights);
   const limits = mergeLimits(options && options.limits);
   const beliefs = buildBeliefs(view, options);
+  // Resolve/refresh the round plan even on a pass. A forced pass is a game
+  // event, not a reason to forget the objective; its public cause becomes
+  // evidence for the next decision.
   beliefs._plan = resolvePlan(view, beliefs, options);
+  if (!view.validMoves.length) {
+    if (!(options && options.explain)) return null;
+    const plan = beliefs._plan || {};
+    const { unavailableSnapshot } = require("./inspect");
+    const diagnostics = unavailableSnapshot(view, "No legal tile matches either open end.");
+    diagnostics.available = true;
+    diagnostics.status = "ready";
+    diagnostics.error = null;
+    diagnostics.reason = "I must pass because no tile in my hand matches either open end. I keep my round objective and use this pass as evidence about the board and hidden hands.";
+    diagnostics.reasoning = diagnostics.reason;
+    diagnostics.passAnalysis = {
+      forced: true,
+      reason: "No legal tile matches the current left or right end.",
+      leftEnd: view.leftEnd,
+      rightEnd: view.rightEnd,
+      handCount: view.hand.length,
+      objective: { mode: plan.mode || "none", target: plan.target == null ? null : plan.target,
+        owner: plan.owner || null, confidence: plan.confidence || 0, evidence: plan.evidence || null },
+      futureAdjustment: "After the pass, update number-absence beliefs from the public pass record; retain the strategy unless public evidence invalidates its target."
+    };
+    diagnostics.strategicMode = { label: plan.mode || "No committed objective", reason: plan.evidence || diagnostics.reason };
+    diagnostics.mode = diagnostics.strategicMode;
+    diagnostics.plan = { selected: null, continuation: [], alternatives: [], note: diagnostics.reason,
+      committed: diagnostics.passAnalysis.objective };
+    diagnostics.selected = null;
+    diagnostics.selectedMove = null;
+    diagnostics.legalMoves = [];
+    return { pass: true, diagnostics: diagnostics };
+  }
   let ranked = rankMoves(view, beliefs, weights, options);
   if (!ranked.length) {
     return { tileId: view.validMoves[0].tileId, side: view.validMoves[0].side };
