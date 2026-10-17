@@ -174,17 +174,30 @@ function freshPlan(view, beliefs) {
       previousInfo.pAtLeastOne >= 0.2 &&
       !((previousInfo.missed || 0) >= 0.75 && previousInfo.pAtLeastOne < 0.35) &&
       support >= 1.5;
-    // Retain a well-supported target through small confidence swings. Replace
-    // it only when a different target has materially stronger evidence.
-    if (previousStillSupported && (!mate ||
-        mate.pip === previous.pip ||
-        (mate.pip !== previous.pip && mate.score < previous.score + SWITCH_MARGIN))) {
+    // Lock the teammate-support number for the round. Ordinary changes in
+    // confidence do not cause the target to jump from number to number.
+    // Reassign only after public evidence proves the committed number impossible.
+    if (previous && voids.indexOf(previous.pip) < 0) {
+      const info = previousInfo || {};
       mate = {
         pip: previous.pip,
-        score: Math.max(previous.score, previousInfo.confidence * 6 + (previousInfo.pMultiple || 0) * 2),
-        confidence: previousInfo.confidence,
-        info: previousInfo
+        score: previous.score || 0,
+        confidence: previous.confidence != null ? previous.confidence : (mateIntent ? mateIntent.confidence : 0),
+        info: info
       };
+    } else if (previous && voids.indexOf(previous.pip) >= 0) {
+      const rows = mateIntent && mateIntent.byPip || [];
+      let alternative = null;
+      rows.forEach((info, pip) => {
+        if (voids.indexOf(pip) >= 0) return;
+        const score = (info.pAtLeastOne || 0) * 4 + (info.expectedTiles || 0) +
+          (info.inTile || 0) + (info.bridged || 0);
+        if (!alternative || score > alternative.score) alternative = { pip: pip, score: score, info: info };
+      });
+      if (alternative) {
+        mate = { pip: alternative.pip, score: alternative.score,
+          confidence: mateIntent ? mateIntent.confidence : 0, info: alternative.info };
+      } else mate = null;
     }
     if (mate) {
       teammateMemory.set(key, {
@@ -410,28 +423,64 @@ function resolvePlan(view, beliefs, options) {
   const key = dealKey(view);
   const prev = memory.get(key);
   let next = fresh;
-  if (prev && stillFeasible(prev, view, beliefs)) {
-    const freshScore = fresh && fresh.mode !== "none" ? fresh.score : 0;
-    const different = !fresh || fresh.mode !== prev.mode || fresh.target !== prev.target;
-    const urgentFreshObjective = fresh && fresh.mode !== "none" && (
-      (fresh.mode === "teammate-support" &&
-        (view.players || []).some((player) => player.id === fresh.ownerId && player.handCount <= 1)) ||
-      (fresh.mode === "opponent-denial" &&
-        (view.players || []).some((player) => player.id === fresh.ownerId && player.handCount <= 1))
-    );
-    if (!different || (!urgentFreshObjective && freshScore < prev.score + SWITCH_MARGIN)) {
-      next = Object.assign({}, prev, {
-        held: true,
-        switched: false,
-        confidence: different ? prev.confidence : (fresh.confidence || prev.confidence)
-      });
-      if (!different && fresh && fresh.evidence) next.evidence = fresh.evidence;
-    } else {
-      next = Object.assign({}, fresh, { switched: true, held: false });
+
+  if (prev && prev.mode !== "none") {
+    // Commit the high-level strategy for the entire deal. Individual moves
+    // are still ranked afresh each turn; only the strategic objective persists.
+    next = Object.assign({}, prev, { held: true, switched: false });
+    if (prev.mode === "self-control") {
+      const inventory = beliefs && beliefs._inventory;
+      const info = inventory && inventory.byPip && inventory.byPip[prev.target];
+      if (!info || info.inHand < 2) {
+        if (fresh.mode === "self-control" && fresh.target != null) {
+          next.target = fresh.target;
+          next.owner = "self";
+          next.ownerId = view.selfId;
+          next.confidence = fresh.confidence;
+          next.score = fresh.score;
+          next.evidence = "The overall strategy remains self-control. I changed the target only because the previous number is no longer supported by my remaining hand. " + fresh.evidence;
+        } else {
+          next.evidence = "The overall strategy remains self-control, but its original target " + prev.target +
+            " is no longer supported by my remaining hand. The per-move evaluator still chooses the best legal move.";
+        }
+      }
+    } else if (prev.mode === "teammate-support") {
+      const mateId = partnerId(view);
+      const belief = beliefs && beliefs[mateId];
+      const voids = belief && belief.knownImpossibleNumbers || [];
+      if (voids.indexOf(prev.target) >= 0) {
+        const alternative = fresh.teammateTarget != null && voids.indexOf(fresh.teammateTarget) < 0
+          ? fresh.teammateTarget : null;
+        if (alternative != null) {
+          next.target = alternative;
+          next.ownerId = mateId;
+          next.confidence = fresh.teammateConfidence || prev.confidence;
+          next.evidence = "The overall strategy remains teammate support. Public pass evidence ruled out " + prev.target +
+            ", so I reassigned the support target to " + alternative + ".";
+        } else {
+          next.evidence = "The overall strategy remains teammate support, but public pass evidence rules out the committed target " + prev.target +
+            ". No supported replacement is available yet; the move evaluator continues to seek the best team-advantage move.";
+        }
+      }
+    } else if (prev.mode === "opponent-denial") {
+      const belief = beliefs && beliefs[prev.ownerId];
+      const voids = belief && belief.knownImpossibleNumbers || [];
+      if (voids.indexOf(prev.target) >= 0 && fresh.mode === "opponent-denial" && fresh.target != null) {
+        next.target = fresh.target;
+        next.ownerId = fresh.ownerId;
+        next.confidence = fresh.confidence;
+        next.score = fresh.score;
+        next.evidence = "The overall strategy remains opponent denial. Public evidence ruled out the old target, so the denial number was reassigned to " + fresh.target + ".";
+      }
     }
-  } else if (prev && prev.mode !== "none" && (fresh.mode !== prev.mode || fresh.target !== prev.target)) {
-    next = Object.assign({}, fresh, { switched: true, held: false });
+    next.held = true;
+    next.switched = false;
+  } else if (prev && prev.mode === "none" && fresh.mode === "none") {
+    next = Object.assign({}, prev, fresh, { held: true, switched: false });
+  } else if (prev && prev.mode === "none" && fresh.mode !== "none") {
+    next = Object.assign({}, fresh, { held: false, switched: false });
   }
+
   next.teammateTarget = fresh.teammateTarget != null ? fresh.teammateTarget : (prev && prev.teammateTarget != null ? prev.teammateTarget : null);
   next.teammateConfidence = fresh.teammateConfidence || (prev && prev.teammateConfidence) || 0;
   next.teammateVoidNumbers = fresh.teammateVoidNumbers || (prev && prev.teammateVoidNumbers) || [];
@@ -442,7 +491,6 @@ function resolvePlan(view, beliefs, options) {
   note(lined);
   return lined;
 }
-
 module.exports = {
   resolvePlan,
   clearPlans,
