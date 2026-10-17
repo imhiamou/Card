@@ -594,6 +594,26 @@
         teammate.reason
       ]
     });
+    const inferredPlayers = Array.isArray(snap.playerInferences) ? snap.playerInferences : [];
+    if (inferredPlayers.length) {
+      sections.push({
+        heading: "What I think each player prefers or lacks",
+        lines: inferredPlayers.map((player) => {
+          const preference = player.preferredNumber == null
+            ? "no preferred number inferred yet"
+            : "may prefer " + player.preferredNumber + " (confidence " + text(player.preferenceConfidence) + ")";
+          const proven = player.provenVoids && player.provenVoids.length
+            ? "proven unable to play " + joinPips(player.provenVoids)
+            : "no numbers proven missing";
+          const suspected = player.suspectedMissing && player.suspectedMissing.length
+            ? "; may be weak on " + joinPips(player.suspectedMissing) + " (uncertain)"
+            : "";
+          const forced = player.lastMoveForced ? "; last play likely forced" : "";
+          return player.playerId + " (" + text(player.handCount) + " tiles): " +
+            preference + "; " + proven + suspected + forced + ".";
+        })
+      });
+    }
     sections.push({
       heading: "Opponents",
       lines: [
