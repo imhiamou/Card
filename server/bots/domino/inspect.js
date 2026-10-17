@@ -343,7 +343,7 @@ function preservesPip(view, move, pip) {
   return rest.some((tile) => touches(tile, pip));
 }
 
-function partnershipReport(view, beliefs, chosen) {
+function partnershipReport(view, beliefs, chosen, ranked) {
   const mateId = partnerId(view);
   if (!mateId) {
     return { available: false, reason: "This table has no teammate." };
@@ -373,11 +373,24 @@ function partnershipReport(view, beliefs, chosen) {
   const preservesObjective = committedTarget != null && resultingEnds
     ? resultingEnds.leftEnd === committedTarget || resultingEnds.rightEnd === committedTarget
     : null;
+  const preservingCandidates = committedTarget == null ? [] : (ranked || []).filter((row) => {
+    if (!row || !row.move) return false;
+    const ends = previewEnds(view, row.move);
+    return ends && (ends.leftEnd === committedTarget || ends.rightEnd === committedTarget);
+  }).sort((a, b) => (b.score || 0) - (a.score || 0));
+  const recommended = preservingCandidates[0] || null;
   let recommendation = "No teammate number has enough evidence to commit to yet.";
-  if (committedTarget != null) {
-    recommendation = preservesObjective
-      ? "Round objective: keep " + committedTarget + " available. The selected move preserves that number; continue preferring legal moves that keep it playable while maximizing team advantage."
-      : "Round objective: keep " + committedTarget + " available. The selected move does not preserve it; prefer a legal move that leaves " + committedTarget + " open when that does not concede an immediate win.";
+  if (committedTarget != null && recommended) {
+    const sameAsChosen = chosen && recommended.move.tileId === chosen.move.tileId &&
+      recommended.move.side === chosen.move.side;
+    recommendation = sameAsChosen
+      ? "Best support move: the selected " + recommended.move.side + "-end play keeps " + committedTarget +
+        " open and is the highest-scoring legal move among those that preserve it."
+      : "Best support move: prefer a legal " + recommended.move.side + "-end play that leaves " + committedTarget +
+        " open (highest-scoring candidate that preserves the target). The currently selected move does not do this.";
+  } else if (committedTarget != null) {
+    recommendation = "No legal move leaves " + committedTarget +
+      " open. Keep the teammate-support strategy, then choose the highest team-advantage legal move without conceding an immediate win.";
   }
   return {
     available: true, playerId: mateId, handCount: mate ? mate.handCount : null,
@@ -793,7 +806,7 @@ function buildDiagnostics(input) {
       }] : [],
       note: projected && projected.note ? projected.note : null
     },
-    partnership: partnershipReport(view, beliefs, chosen),
+    partnership: partnershipReport(view, beliefs, chosen, ranked),
     opponents: opponentReport(view, beliefs, chosen),
     components: componentReport(chosen && chosen.parts),
     comparison: overrideText(chosen, alternative, samples),
