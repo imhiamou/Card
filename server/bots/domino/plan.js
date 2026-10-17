@@ -219,8 +219,40 @@ function freshPlan(view, beliefs) {
   const selfScore = own && own.score >= 4 ? own.score : 0;
   const mateScore = mate ? mate.score : 0;
   const oppScore = opp ? opp.score : 0;
+  const selfIndex = (view.players || []).findIndex((player) => player.id === view.selfId);
+  const nextPlayer = selfIndex >= 0 && (view.players || []).length
+    ? view.players[(selfIndex + 1) % view.players.length]
+    : null;
+  const urgentMate = !!(mate && mateId && nextPlayer && nextPlayer.id === mateId && nextPlayer.handCount <= 1);
+  const urgentOpponent = !!(opp && nextPlayer && nextPlayer.id === opp.id && nextPlayer.handCount <= 1);
   let plan;
-  if (selfScore >= mateScore && selfScore >= oppScore && selfScore > 0) {
+  if (urgentMate) {
+    plan = {
+      mode: "teammate-support",
+      target: mate.pip,
+      owner: "teammate",
+      ownerId: mateId,
+      confidence: mate.confidence,
+      score: mateScore + 100,
+      held: false,
+      switched: false,
+      evidence: "My teammate has " + nextPlayer.handCount + " tile remaining and acts next. Public play history supports " +
+        mate.pip + " as their preferred number, so enabling their finish takes priority."
+    };
+  } else if (urgentOpponent) {
+    plan = {
+      mode: "opponent-denial",
+      target: opp.pip,
+      owner: "opponent",
+      ownerId: opp.id,
+      confidence: intentionOf(beliefs, opp.id).confidence,
+      score: oppScore + 100,
+      held: false,
+      switched: false,
+      evidence: opp.id + " has " + nextPlayer.handCount + " tile remaining and acts next. I am prioritizing denial on " +
+        opp.pip + " to reduce the immediate risk of an opponent finish."
+    };
+  } else if (selfScore >= mateScore && selfScore >= oppScore && selfScore > 0) {
     plan = {
       mode: "self-control",
       target: own.pip,
