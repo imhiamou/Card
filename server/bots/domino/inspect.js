@@ -369,8 +369,10 @@ function partnershipReport(view, beliefs, chosen) {
     else if (probability != null && probability < 0.35) status = "possibly-weak";
     return { pip: pip, probability: probability, expectedTiles: round3(info.expectedTiles || 0), status: status };
   });
-  const preservesObjective = committedTarget != null && chosen
-    ? preservesPip(view, chosen.move, committedTarget) : null;
+  const resultingEnds = chosen ? previewEnds(view, chosen.move) : null;
+  const preservesObjective = committedTarget != null && resultingEnds
+    ? resultingEnds.leftEnd === committedTarget || resultingEnds.rightEnd === committedTarget
+    : null;
   let recommendation = "No teammate number has enough evidence to commit to yet.";
   if (committedTarget != null) {
     recommendation = preservesObjective
