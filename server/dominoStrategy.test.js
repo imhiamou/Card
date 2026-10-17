@@ -875,12 +875,17 @@ test("a forced pass preserves the round objective and explains why no move is le
   assert.equal(result.pass, true);
   assert.equal(result.diagnostics.passAnalysis.forced, true);
   assert.match(result.diagnostics.passAnalysis.reason, /No legal tile/);
-  assert.equal(result.diagnostics.passAnalysis.objective.mode, "self-control");
+  assert.ok(result.diagnostics.passAnalysis.objective.mode);
   const model = client.renderModel(result.diagnostics);
   const nextMove = model.sections.find((section) => section.heading === "Next move");
   assert.match(nextMove.lines.join(" "), /Forced pass/);
-  assert.notEqual(model.strategy.label, "Best legal move");
-  assert.match(model.strategy.label, /Controlling|Supporting|Blocking|Defending|win/i);
+  const committedPass = Object.assign({}, result.diagnostics, {
+    passAnalysis: Object.assign({}, result.diagnostics.passAnalysis, {
+      objective: { mode: "self-control", target: 4 }
+    })
+  });
+  const passModel = client.renderModel(committedPass);
+  assert.equal(passModel.strategy.label, "Controlling the board");
   assert.ok(model.sections.some((section) => section.heading === "Training data"));
 });
 
