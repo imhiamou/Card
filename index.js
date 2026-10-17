@@ -131,8 +131,17 @@ updateConfirmEnabled();
 // Lobby code inputs auto-convert to uppercase while typing.
 ["createCode","roomCode"].forEach((id)=>{
 const input=document.getElementById(id);
-input.addEventListener("input",()=>{input.value=input.value.toUpperCase();});
+input.addEventListener("input",()=>{
+input.value=input.value.toUpperCase();
+if(id==="createCode"&&lobbySetupOpen())setLobbySetupError("");
 });
+});
+const playerNameInput=document.getElementById("playerName");
+if(playerNameInput){
+playerNameInput.addEventListener("input",()=>{
+if(lobbySetupOpen())setLobbySetupError("");
+});
+}
 
 // Seat-count controls for multi-seat games (hidden for 2-player-only modes).
 const gameSelectEl=document.getElementById("gameSelect");
@@ -143,9 +152,6 @@ const dominoTeamSelect=document.getElementById("dominoTeamSelect");
 const dominoLobbyTeams=document.getElementById("dominoLobbyTeams");
 const dominoTeamAList=document.getElementById("dominoTeamAList");
 const dominoTeamBList=document.getElementById("dominoTeamBList");
-const dominoLobbyUpdateTestWrap=document.getElementById("dominoLobbyUpdateTestWrap");
-const dominoLobbyUpdateTest=document.getElementById("dominoLobbyUpdateTest");
-const dominoLobbyUpdateTestStatus=document.getElementById("dominoLobbyUpdateTestStatus");
 const dominoJoinTeamA=document.getElementById("dominoJoinTeamA");
 const dominoJoinTeamB=document.getElementById("dominoJoinTeamB");
 const unoMaxPlayersWrap=document.getElementById("unoMaxPlayersWrap");
@@ -180,11 +186,7 @@ if(hhMapPick)hhMapPick.classList.toggle("hidden",game!=="hidden-hunter");
 if(hhEditorGate)hhEditorGate.classList.toggle("hidden",game!=="hidden-hunter");
 if(game==="hidden-hunter"&&window.HiddenHunterEditor)HiddenHunterEditor.refreshMaps();
 const cartsHint=document.getElementById("cartsHint");
-const cartsPlayWrap=document.getElementById("cartsPlayWrap");
-const lobbyMultiplayer=document.getElementById("lobbyMultiplayer");
 if(cartsHint)cartsHint.classList.toggle("hidden",game!=="carts");
-if(cartsPlayWrap)cartsPlayWrap.classList.toggle("hidden",game!=="carts");
-if(lobbyMultiplayer)lobbyMultiplayer.classList.toggle("hidden",game==="carts");
 // Team A / Team B only for Dominoes. Hidden Hunter uses map and difficulty.
 const showTeam=game==="dominoes";
 if(dominoTeamWrap)dominoTeamWrap.classList.toggle("hidden",!showTeam);
@@ -242,35 +244,16 @@ selectedDominoTeam=option.dataset.team==="B"?"B":"A";
 };
 });
 }
-function syncDominoLobbyUpdateTestVisibility(){
-const visible=!!(currentRoom==="1111"&&gameSelectEl&&gameSelectEl.value==="dominoes"&&
-lobbyScreen&&!lobbyScreen.classList.contains("hidden"));
-if(dominoLobbyUpdateTestWrap)dominoLobbyUpdateTestWrap.classList.toggle("hidden",!visible);
-}
 function pickLobbyTeam(team){
 if(!currentRoom)return;
 socket.emit("dominoPickTeam",{roomCode:currentRoom,team});
 }
 if(dominoJoinTeamA)dominoJoinTeamA.onclick=()=>pickLobbyTeam("A");
 if(dominoJoinTeamB)dominoJoinTeamB.onclick=()=>pickLobbyTeam("B");
-if(dominoLobbyUpdateTest){
-dominoLobbyUpdateTest.onclick=()=>{
-if(currentRoom!=="1111"||!gameSelectEl||gameSelectEl.value!=="dominoes")return;
-if(dominoLobbyUpdateTestStatus){
-dominoLobbyUpdateTestStatus.hidden=false;
-dominoLobbyUpdateTestStatus.textContent="Requesting a test lobby update…";
-}
-socket.emit("dominoLobbyUpdateTest",{roomCode:currentRoom,requestId:Date.now()});
-};
-}
 
 if(gameSelectEl){
-gameSelectEl.addEventListener("change",()=>{
+gameSelectEl.addEventListener("change",syncMaxPlayersVisibility);
 syncMaxPlayersVisibility();
-syncDominoLobbyUpdateTestVisibility();
-});
-syncMaxPlayersVisibility();
-syncDominoLobbyUpdateTestVisibility();
 }
 if(dominoMaxPlayersEl){
 dominoMaxPlayersEl.addEventListener("change",syncMaxPlayersVisibility);
@@ -313,6 +296,28 @@ if(createBtn)createBtn.disabled=disabled;
 if(joinBtn)joinBtn.disabled=disabled;
 if(confirmBtn)confirmBtn.disabled=disabled;
 if(cancelBtn)cancelBtn.disabled=disabled;
+}
+function lobbySetupOpen(){
+const modal=document.getElementById("lobbySetup");
+return !!(modal&&!modal.classList.contains("hidden"));
+}
+function setLobbySetupError(msg){
+const el=document.getElementById("lobbySetupError");
+if(el)el.textContent=msg||"";
+}
+function closeLobbySetup(){
+const modal=document.getElementById("lobbySetup");
+if(modal)modal.classList.add("hidden");
+setLobbySetupError("");
+}
+function openLobbySetup(){
+const modal=document.getElementById("lobbySetup");
+if(!modal||lobbySetupOpen())return;
+setLobbySetupError("");
+modal.classList.remove("hidden");
+const confirmBtn=document.getElementById("lobbySetupConfirm");
+if(confirmBtn)confirmBtn.disabled=false;
+syncMaxPlayersVisibility();
 }
 function beginLobbyWait(){
 endLobbyWait();
@@ -377,54 +382,10 @@ if(window.CartsEditor)CartsEditor.open();
 };
 }
 
-const lobbySetupHomes=[];
-function restoreLobbySetupFields(){
-while(lobbySetupHomes.length){
-const item=lobbySetupHomes.pop();
-if(item.marker.parentNode)item.marker.parentNode.insertBefore(item.node,item.marker);
-if(item.marker.parentNode)item.marker.remove();
-}
-}
-function parkLobbyField(node,host){
-if(!node||!node.parentNode||!host)return;
-const marker=document.createComment("lobby-setup");
-node.parentNode.insertBefore(marker,node);
-lobbySetupHomes.push({node:node,marker:marker});
-host.appendChild(node);
-}
-function lobbySetupOpen(){
-const modal=document.getElementById("lobbySetup");
-return !!(modal&&!modal.classList.contains("hidden"));
-}
-function setLobbySetupError(msg){
-const el=document.getElementById("lobbySetupError");
-if(el)el.textContent=msg||"";
-}
-function closeLobbySetup(){
-restoreLobbySetupFields();
-const modal=document.getElementById("lobbySetup");
-if(modal)modal.classList.add("hidden");
-setLobbySetupError("");
-}
-function openLobbySetup(){
-if(lobbySetupOpen())return;
-const modal=document.getElementById("lobbySetup");
-const body=document.getElementById("lobbySetupBody");
-if(!modal||!body)return;
-restoreLobbySetupFields();
-setLobbySetupError("");
-parkLobbyField(document.getElementById("playerName"),body);
-parkLobbyField(document.getElementById("gameSelect"),body);
-parkLobbyField(document.querySelector("#lobbyScreen .appGameGrid"),body);
-parkLobbyField(document.querySelector("#lobbyScreen .lobbyConfig"),body);
-parkLobbyField(document.getElementById("createCode"),body);
-modal.classList.remove("hidden");
-const confirmBtn=document.getElementById("lobbySetupConfirm");
-if(confirmBtn)confirmBtn.disabled=false;
-}
 function submitCreateLobby(){
 const confirmBtn=document.getElementById("lobbySetupConfirm");
 if(confirmBtn&&confirmBtn.disabled)return;
+setLobbySetupError("");
 const name=getPlayerName();
 lastLobbyAction="create";
 const gameSelect=document.getElementById("gameSelect");
@@ -473,12 +434,6 @@ beginLobbyWait();
 }
 
 document.getElementById("createBtn").onclick=()=>{
-const selectedGame=document.getElementById("gameSelect").value;
-lastLobbyAction="create";
-if(selectedGame==="carts"){
-if(window.Carts)Carts.start();
-return;
-}
 openLobbySetup();
 };
 const lobbySetupCancel=document.getElementById("lobbySetupCancel");
@@ -539,15 +494,13 @@ connectNoticeShown=true;
 endLobbyWait();
 releaseWaitingControls();
 if(status)status.textContent="Could not reach the server.";
-if(lobbySetupOpen())setLobbySetupError("Could not reach the server. Check your connection and try again.");
-else showAppNotice("Could not reach the server. Check your connection and try again.",lastLobbyAction==="join"?"roomCode":"createCode");
+showAppNotice("Could not reach the server. Check your connection and try again.",lastLobbyAction==="join"?"roomCode":"createCode");
 });
 
 socket.on("lobbyCreated",(data)=>{
 endLobbyWait();
 closeLobbySetup();
 currentRoom=data.room;
-syncDominoLobbyUpdateTestVisibility();
 code.textContent="Lobby Code: "+data.room;
 if(data.game==="dominoes"||data.game==="uno"){
 const max=data.maxPlayers||2;
@@ -570,15 +523,12 @@ renderDominoLobbyTeams(data);
 }else if(dominoLobbyTeams){
 dominoLobbyTeams.classList.add("hidden");
 }
-const roomTab=document.querySelector('.appTabBar button[data-app-tab="room"]');
-if(roomTab)roomTab.click();
 });
 
 socket.on("dominoLobbyUpdate",(data)=>{
 endLobbyWait();
 if(!data)return;
 if(data.room)currentRoom=data.room;
-syncDominoLobbyUpdateTestVisibility();
 if(code&&data.room)code.textContent="Lobby Code: "+data.room;
 if(status&&data.players&&data.maxPlayers){
 status.textContent="Waiting for players ("+
@@ -586,16 +536,6 @@ data.players.length+"/"+data.maxPlayers+")...";
 }
 renderDominoLobbyTeams(data);
 });
-
-socket.on("dominoLobbyUpdateTestResult",(data)=>{
-if(!dominoLobbyUpdateTestStatus)return;
-dominoLobbyUpdateTestStatus.hidden=false;
-dominoLobbyUpdateTestStatus.textContent=data&&data.ok
-?"Lobby update test passed. The server returned the current roster."
-:(data&&data.error)||"Lobby update test failed.";
-});
-
-
 
 // Fired by the server when the second player joins the lobby.
 // Carries the public player list (id, name, character) used to
@@ -612,7 +552,6 @@ setTimeout(showPlacementScreen,1500);
 
 window.addEventListener("gameweb-left-room",()=>{
 currentRoom=null;
-syncDominoLobbyUpdateTestVisibility();
 });
 
 socket.on("playerLeft",()=>{
@@ -660,7 +599,6 @@ renderHand();
 renderAbility();
 return;
 }
-if(lobbySetupOpen())return;
 showAppNotice(msg,lobbyFocusFor(msg));
 });
 

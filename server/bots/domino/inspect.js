@@ -14,7 +14,8 @@
  */
 
 const { api, cloneTile, touches } = require("./engine");
-const { rankMoves, previewEnds, partnerId, canPlayProbability, isOpponent } = require("./eval");
+const { rankMoves, previewEnds, partnerId, canPlayProbability, isOpponent, playerByOffset } = require("./eval");
+const { publicIntention } = require("./intent");
 
 const MODE_WIN = "Going for the win";
 const MODE_MATE = "Supporting teammate";
@@ -77,30 +78,33 @@ function deriveMode(parts, context) {
   if (context && context.recalculating) {
     return {
       label: MODE_RE,
+      code: "RECOVER_FROM_BAD_POSITION",
       reason: "New evidence or a new board changed the position, and the selected move is being updated."
     };
   }
   if (!parts) {
     return {
       label: null,
+      code: null,
       reason: "Evaluation components are unavailable, so a strategic mode was not assigned."
     };
   }
   if (parts.immediateWin > 0) {
     return {
       label: MODE_WIN,
+      code: "FINISH_OWN_HAND",
       reason: "The selected tile empties this hand."
     };
   }
   const groups = [
     {
       label: MODE_MATE,
-      value: (parts.mateReply || 0) + (parts.mateSuit || 0),
+      value: (parts.mateReply || 0) + (parts.mateSuit || 0) + Math.max(0, parts.intentKeep || 0) + Math.max(0, parts.mateFinish || 0),
       reason: "Teammate continuation is the largest positive component."
     },
     {
       label: MODE_BLOCK,
-      value: Math.max(0, parts.forcePass || 0) + Math.max(0, -(parts.denyNext || 0)) + Math.max(0, -(parts.otherOpp || 0)),
+      value: Math.max(0, parts.forcePass || 0) + Math.max(0, -(parts.denyNext || 0)) + Math.max(0, -(parts.otherOpp || 0)) + Math.max(0, parts.oppVoidExploit || 0) + Math.max(0, -(parts.oppFeed || 0)) + Math.max(0, -(parts.mateVoidHarm || 0)),
       reason: "Denying an opponent response is the largest component."
     },
     {
@@ -115,7 +119,7 @@ function deriveMode(parts, context) {
     },
     {
       label: MODE_DEFEND,
-      value: ((parts.oppOut || 0) < 0 ? -(parts.oppOut || 0) : 0) + ((parts.blockEquity || 0) < 0 ? -(parts.blockEquity || 0) : 0),
+      value: ((parts.oppOut || 0) < 0 ? -(parts.oppOut || 0) : 0) + ((parts.otherFinish || 0) < 0 ? -(parts.otherFinish || 0) : 0) + ((parts.blockEquity || 0) < 0 ? -(parts.blockEquity || 0) : 0),
       reason: "The move reduces the estimated chance of a team loss."
     }
   ];
@@ -133,10 +137,30 @@ function deriveMode(parts, context) {
   if (!best) {
     return {
       label: null,
+      code: null,
       reason: "No evaluation component is large enough to name a strategic mode. The selected move is the highest ranked legal play."
     };
   }
-  return { label: best.label, reason: best.reason };
+  return { label: best.label, code: modeCode(best.label, parts), reason: best.reason };
+}
+
+function modeCode(label, parts) {
+  if (label === MODE_WIN) return "FINISH_OWN_HAND";
+  if (label === MODE_MATE) return "SUPPORT_PARTNER";
+  if (label === MODE_BLOCKED) return "FORCE_FAVORABLE_BLOCK";
+  if (label === MODE_BOARD) return "ESTABLISH_OWN_STRENGTH";
+  if (label === MODE_BLOCK) {
+    return (parts && (parts.forcePass || 0) > 0 && (parts.blockEquity || 0) > 0)
+      ? "FORCE_FAVORABLE_BLOCK"
+      : "DENY_OPPONENT";
+  }
+  if (label === MODE_DEFEND) {
+    const finishRisk = -((parts && parts.oppOut) || 0) + -((parts && parts.otherFinish) || 0);
+    const recovery = (parts && parts.blockEquity) < 0 ? -(parts.blockEquity || 0) : 0;
+    return finishRisk >= recovery ? "DEFEND_AGAINST_FINISH" : "RECOVER_FROM_BAD_POSITION";
+  }
+  if (label === MODE_RE) return "RECOVER_FROM_BAD_POSITION";
+  return null;
 }
 
 function project(view, beliefs, weights, move, options, role) {
@@ -220,7 +244,13 @@ function componentReport(parts) {
     ["stuckDouble", "Double control"],
     ["shedPips", "Pip shedding"],
     ["dumpDouble", "Double shedding"],
-    ["pointBonus", "Point bonus"]
+    ["pointBonus", "Point bonus"],
+    ["intentKeep", "Teammate number kept"],
+    ["mateVoidHarm", "Teammate void harmed"],
+    ["mateFinish", "Teammate finish"],
+    ["oppVoidExploit", "Opponent void used"],
+    ["oppFeed", "Opponent number fed"],
+    ["otherFinish", "Later opponent finish"]
   ];
   if (!parts) {
     return names.map((entry) => ({
@@ -374,6 +404,67 @@ function opponentReport(view, beliefs, chosen) {
   };
 }
 
+function roundChance(value) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  return Math.round(value * 100) / 100;
+}
+
+function plainSummary(view, beliefs, chosen, mode) {
+  const mateId = partnerId(view);
+  const mateIntent = mateId && beliefs[mateId] ? publicIntention(beliefs[mateId].intention) : null;
+  const next = playerByOffset(view, 1);
+  const preview = chosen ? previewEnds(view, chosen.move) : null;
+  const pNext = preview && next ? canPlayProbability(view, beliefs, next, preview.leftEnd, preview.rightEnd) : null;
+  const mate = mateId ? (view.players || []).find((player) => player.id === mateId) : null;
+  const pMate = preview && mate ? canPlayProbability(view, beliefs, mate, preview.leftEnd, preview.rightEnd) : null;
+  const nextIsMate = !!(next && mateId && next.id === mateId);
+  let noticed = "I do not have a repeated teammate choice yet.";
+  if (mateIntent && mateIntent.lastMoveForced) {
+    noticed = "My teammate's last play was likely forced, so I am not treating it as a chosen number.";
+  } else if (mateIntent && mateIntent.preferred != null && mateIntent.confidence >= 0.45) {
+    noticed = "My teammate has kept " + mateIntent.preferred + " available on purpose. Confidence " +
+      roundChance(mateIntent.confidence) + ".";
+  }
+  const mateVoids = mateId && beliefs[mateId] ? beliefs[mateId].knownImpossibleNumbers || [] : [];
+  if (mateVoids.length) {
+    noticed += " My teammate has passed on " + mateVoids.join(" and ") + ".";
+  }
+  const oppVoids = [];
+  (view.players || []).forEach((player) => {
+    if (!player || player.id === view.selfId || player.id === mateId) return;
+    const voids = beliefs[player.id] ? beliefs[player.id].knownImpossibleNumbers || [] : [];
+    if (voids.length) oppVoids.push(player.id + " passed on " + voids.join(" and "));
+  });
+  if (oppVoids.length) noticed += " " + oppVoids.join(". ") + ".";
+  let expect = "I do not have a reply estimate yet.";
+  if (pNext != null || pMate != null) {
+    expect = (next ? "Next is " + next.id : "Next player") +
+      " and can answer with chance " + (roundChance(pNext) == null ? "unknown" : roundChance(pNext)) +
+      ". Teammate can answer with chance " + (roundChance(pMate) == null ? "unknown" : roundChance(pMate)) + ".";
+    if (!nextIsMate && pNext > 0) {
+      expect += " They play before my teammate, so a kept number may not survive.";
+    }
+  }
+  let risk = null;
+  if (next && next.handCount === 1 && isOpponent(view, next.id) && pNext > 0) {
+    risk = "The next opponent may finish.";
+  } else if (!nextIsMate && pNext >= 0.5 && mateIntent && mateIntent.preferred != null) {
+    risk = "The next opponent may change the end before my teammate plays.";
+  } else if (chosen && chosen.parts && chosen.parts.mateVoidHarm < 0) {
+    risk = "This leaves a number my teammate has already passed on.";
+  }
+  return {
+    plan: mode && mode.label ? mode.label : null,
+    noticed: noticed.trim(),
+    expect: expect,
+    risk: risk,
+    nextCanPlay: roundChance(pNext),
+    teammateCanPlay: roundChance(pMate),
+    nextIsTeammate: nextIsMate,
+    teammateIntention: mateIntent
+  };
+}
+
 function publicBelief(belief) {
   if (!belief) return null;
   return {
@@ -387,7 +478,146 @@ function publicBelief(belief) {
       invalidated: !!pass.invalidated
     })),
     remainingTileCount: belief.remainingTileCount,
-    recent: (belief.recent || []).map((event) => Object.assign({}, event))
+    recent: (belief.recent || []).map((event) => Object.assign({}, event)),
+    intention: publicIntention(belief.intention)
+  };
+}
+
+function planSentence(pred, label) {
+  const samples = pred.samples;
+  const counts = pred.counts || {};
+  if (!pred.trusted) {
+    return "My plan: " + samples + " deals do not agree on the next board, so " + label + " stays the highest immediate evaluation.";
+  }
+  if (pred.pBotFinishNext >= 0.5 && pred.pBotFinishNext >= (pred.pTeammateFinish || 0)) {
+    return "My plan: Empty this hand. " + label + " leads to a finish in " + counts.botFinish + " of " + samples + " deals.";
+  }
+  if (pred.pTeammateFinish >= 0.5 && pred.pTeammateFinish > (pred.pBotFinishNext || 0)) {
+    return "My plan: Let my teammate finish. They empty their hand in " + counts.mateFinished + " of " + samples + " deals.";
+  }
+  if ((pred.pMaintain || 0) >= 0.5 && (pred.pMaintain || 0) >= (pred.pForcedAbandon || 0)) {
+    return "My plan: Keep my teammate's number available. They continue it in " + counts.maintained + " of " + samples + " deals.";
+  }
+  if ((pred.pForcedAbandon || 0) >= 0.5) {
+    return "My plan: " + label + " still leaves my teammate forced off their number in " + counts.forcedAbandon + " of " + samples + " deals.";
+  }
+  if ((pred.pRoundEnds || 0) >= 0.5 && pred.mean > 0) {
+    return "My plan: The round ends before my next turn in " + counts.endedBefore + " of " + samples + " deals, and the sampled result favors this team.";
+  }
+  if ((pred.pRoundEnds || 0) >= 0.5 && pred.mean < 0) {
+    return "My plan: The sampled deals lose before my next turn in " + counts.endedBefore + " of " + samples + ".";
+  }
+  return "My plan: " + label + " has the best sampled team result (" + round3(pred.mean) + ").";
+}
+
+function riskSentence(pred) {
+  const counts = pred.counts || {};
+  const samples = pred.samples;
+  if (counts.removed > 0) {
+    return "Main risk: An opponent removes my teammate's number before they act in " + counts.removed + " of " + samples + " deals.";
+  }
+  if (counts.forcedAbandon > 0) {
+    return "Main risk: My teammate is forced to give up their number in " + counts.forcedAbandon + " of " + samples + " deals.";
+  }
+  if (counts.matePassed > 0 && counts.matePlayed === 0) {
+    return "Main risk: My teammate passes in every sampled deal (" + counts.matePassed + " of " + samples + ").";
+  }
+  if (counts.endedBefore > 0 && pred.mean < 0) {
+    return "Main risk: The round ends against this team before my next turn in " + counts.endedBefore + " of " + samples + " deals.";
+  }
+  return "Main risk: The sampled deals did not show an opponent taking my teammate's number away.";
+}
+
+function responseSentence(pred, alternative, label) {
+  if (!alternative || !alternative.move) {
+    return "My response: " + label + " is the only simulated line.";
+  }
+  const altMean = alternative.prediction && alternative.prediction.samples
+    ? alternative.prediction.mean
+    : alternative.prior != null ? alternative.prior : alternative.score;
+  return "My response: Prefer " + label + " over " + alternative.move.tileId +
+    " on the " + alternative.move.side + " because the simulated means are " +
+    round3(pred.mean) + " and " + round3(altMean) + ".";
+}
+
+function describeNextTurn(view, chosen, alternative) {
+  const pred = chosen && chosen.prediction;
+  if (!pred || !pred.samples) {
+    return {
+      available: false,
+      samples: 0,
+      plan: null,
+      risk: null,
+      response: null,
+      lines: ["No intervening turns were simulated for this decision."],
+      expectedEnds: null,
+      actions: [],
+      rates: null
+    };
+  }
+  const tile = handTile(view, chosen.move.tileId);
+  const label = tileLabel(tile);
+  const plan = planSentence(pred, label);
+  const risk = riskSentence(pred);
+  const response = responseSentence(pred, alternative, label);
+  const samples = pred.samples;
+  const counts = pred.counts || {};
+  const lines = [plan, risk, response];
+  if (pred.modalEnds) {
+    lines.push(
+      "Expected ends when the turn returns: " + pred.modalEnds.left + " and " + pred.modalEnds.right +
+      " in " + pred.modalEnds.n + " of " + samples + " deals."
+    );
+  } else {
+    lines.push("The sampled deals did not agree on open ends for the next turn.");
+  }
+  (pred.actions || []).forEach((action) => {
+    if (!action || action.n == null) return;
+    if (action.type === "pass") {
+      lines.push(action.playerId + " passes in " + action.n + " of " + samples + " deals.");
+    } else {
+      const forced = action.forced ? " That play was the only legal tile in the sampled hand." : "";
+      lines.push(
+        action.playerId + " most often plays the " + action.side + " end and leaves " + action.exposed +
+        " (" + action.n + " of " + samples + ")." + forced
+      );
+    }
+  });
+  lines.push(
+    "Teammate plays in " + (counts.matePlayed || 0) + " of " + samples +
+    " and passes in " + (counts.matePassed || 0) + " of " + samples + "."
+  );
+  lines.push(
+    "Teammate keeps the preferred number in " + (counts.maintained || 0) +
+    " of " + samples + ", an opponent removes it in " + (counts.removed || 0) +
+    " of " + samples + ", and the teammate is forced to give it up in " + (counts.forcedAbandon || 0) +
+    " of " + samples + "."
+  );
+  return {
+    available: true,
+    samples: samples,
+    plan: plan,
+    risk: risk,
+    response: response,
+    lines: lines,
+    expectedEnds: pred.modalEnds || null,
+    actions: pred.actions || [],
+    rates: {
+      teammatePlay: pred.pTeammatePlay,
+      teammatePass: pred.pTeammatePass,
+      maintain: pred.pMaintain,
+      abandon: pred.pAbandon,
+      forcedAbandon: pred.pForcedAbandon,
+      preferredRemoved: pred.pPreferredRemoved,
+      preferredSurvives: pred.pPreferredSurvives,
+      teammateFinish: pred.pTeammateFinish,
+      opponentDanger: pred.pOpponentDanger,
+      botUseful: pred.pBotUseful,
+      botFinishNext: pred.pBotFinishNext,
+      roundEnds: pred.pRoundEnds
+    },
+    partnerContinuation: pred.partnerContinuation,
+    mean: round3(pred.mean)
   };
 }
 
@@ -465,7 +695,21 @@ function clientSnapshot(diagnostics) {
   copy.lastUpdatedAt = Date.now();
   if (copy.status === "error" && !copy.error) copy.error = copy.reason || "The decision failed.";
   if (copy.status !== "error") copy.error = null;
-  return copy;
+
+  // Diagnostics are delivered to a client. Keep the strategy explanation,
+  // counts, probabilities, and scores, but never serialize a hidden hand or
+  // a tile identity/value that would reveal a bot's private tiles.
+  function redact(value) {
+    if (Array.isArray(value)) return value.map(redact);
+    if (!value || typeof value !== "object") return value;
+    const safe = {};
+    Object.keys(value).forEach((key) => {
+      if (/^(hand|hands|tiles|tile|tileId|tileIds|handTiles|unseenTileIds|positionKey)$/i.test(key)) return;
+      safe[key] = redact(value[key]);
+    });
+    return safe;
+  }
+  return redact(copy);
 }
 
 function buildDiagnostics(input) {
@@ -486,6 +730,7 @@ function buildDiagnostics(input) {
   const mode = deriveMode(chosen && chosen.parts, {
     canEmpty: !!(projected && projected.steps && handCount > 0 && projected.steps.length + 1 >= handCount)
   });
+  const nextTurn = describeNextTurn(view, chosen, alternative);
   const confidence = selected && samples > 0 && selected.samplesUsed
     ? { kind: "sample-win-fraction", value: round3(selected.wins / selected.samplesUsed), samples: selected.samplesUsed }
     : { kind: "unavailable", value: null, samples: samples || 0 };
@@ -505,7 +750,15 @@ function buildDiagnostics(input) {
     hand: (view.hand || []).map(copyTile),
     selected: selected,
     mode: mode,
-    strategicObjective: options && options.strategicPlan ? Object.assign({}, options.strategicPlan) : null,
+    summary: plainSummary(view, beliefs, chosen, mode),
+    nextTurn: nextTurn,
+    strategy: beliefs._plan || null,
+    inventory: beliefs._inventory ? {
+      byPip: beliefs._inventory.byPip,
+      unseenCount: beliefs._inventory.unseenCount,
+      boneyardCount: beliefs._inventory.boneyardCount,
+      allDealt: beliefs._inventory.allDealt
+    } : null,
     confidence: confidence,
     plan: {
       selected: selected,
@@ -522,7 +775,7 @@ function buildDiagnostics(input) {
     components: componentReport(chosen && chosen.parts),
     comparison: overrideText(chosen, alternative, samples),
     alternative: alternative ? moveRow(view, alternative, "alternative", true) : null,
-    stage: report && report.samples ? "searched" : "heuristic",
+    stage: report && report.forecast ? "forecast" : report && report.samples ? "searched" : "heuristic",
     samples: samples,
     conflicts: report ? report.conflicts : 0,
     conflict: report ? report.conflict : "",
@@ -541,7 +794,8 @@ function buildDiagnostics(input) {
       score: round3(row.score),
       parts: row.parts || null,
       wins: row.wins == null ? null : row.wins,
-      samplesUsed: row.samplesUsed == null ? null : row.samplesUsed
+      samplesUsed: row.samplesUsed == null ? null : row.samplesUsed,
+      prediction: row.prediction || null
     })),
     plannedContinuation: projected ? projected.steps : [],
     strategicMode: mode,
@@ -549,7 +803,7 @@ function buildDiagnostics(input) {
     teammateAnalysis: partnershipReport(view, beliefs, chosen),
     opponentAnalysis: opponentReport(view, beliefs, chosen),
     searchStats: {
-      stage: report && report.samples ? "searched" : "heuristic",
+      stage: report && report.forecast ? "forecast" : report && report.samples ? "searched" : "heuristic",
       samples: samples,
       conflicts: report ? report.conflicts : 0,
       nodes: report ? report.nodes : 0,
@@ -567,6 +821,17 @@ function buildDiagnostics(input) {
       strong: beliefs[id].suspectedStrongNumbers,
       remaining: beliefs[id].remainingTileCount
     })),
+    historyConsistency: Object.keys(beliefs).reduce((result, id) => {
+      const conflicts = (beliefs[id].contradictions || []).map((item) => ({
+        playerId: id,
+        number: item.pip,
+        moveIndex: item.index
+      }));
+      result.contradictions.push.apply(result.contradictions, conflicts);
+      result.contradictionCount += conflicts.length;
+      result.consistent = result.contradictionCount === 0;
+      return result;
+    }, { consistent: true, contradictionCount: 0, contradictions: [] }),
     beliefDetail: Object.keys(beliefs).reduce((copy, id) => {
       if (id === view.selfId) return copy;
       copy[id] = publicBelief(beliefs[id]);

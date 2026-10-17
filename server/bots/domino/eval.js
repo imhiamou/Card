@@ -3,7 +3,6 @@
 const { api, cloneTile, pips, touches, matchesEither, violates } = require("./engine");
 const { hardVoid, suitAffinity } = require("./beliefs");
 const { unseenTiles } = require("./sample");
-const { scoreStrategicMove } = require("./strategy");
 
 function seatIndex(view, playerId) {
   const players = view.players || [];
@@ -76,21 +75,20 @@ function canPlayProbability(view, beliefs, player, left, right) {
   if (!player || player.handCount <= 0) return 0;
   const unseen = unseenTiles(view);
   const voids = hardVoid(beliefs, player.id);
-  let pool = unseen.filter((tile) => !violates(tile, voids));
-  if (pool.length < player.handCount) pool = unseen;
+  const pool = unseen.filter((tile) => !violates(tile, voids));
+  if (!pool.length) return 0;
   const matches = pool.filter((tile) => matchesEither(tile, left, right)).length;
-  return probabilityAtLeastOne(pool.length, matches, player.handCount);
+  return probabilityAtLeastOne(pool.length, matches, Math.min(player.handCount, pool.length));
 }
 
 function expectedPips(view, beliefs, player) {
   if (!player || player.handCount <= 0) return 0;
   const unseen = unseenTiles(view);
   const voids = hardVoid(beliefs, player.id);
-  let pool = unseen.filter((tile) => !violates(tile, voids));
-  if (!pool.length) pool = unseen;
+  const pool = unseen.filter((tile) => !violates(tile, voids));
   if (!pool.length) return 0;
   const average = pool.reduce((sum, tile) => sum + pips(tile), 0) / pool.length;
-  return average * player.handCount;
+  return average * Math.min(player.handCount, pool.length);
 }
 
 function blockEdge(view, beliefs, tile) {
@@ -129,8 +127,19 @@ function blankParts() {
     shedPips: 0,
     dumpDouble: 0,
     blockEquity: 0,
-    strategicPlan: 0
+    intentKeep: 0,
+    mateVoidHarm: 0,
+    mateFinish: 0,
+    oppVoidExploit: 0,
+    oppFeed: 0,
+    otherFinish: 0,
+    planFit: 0
   };
+}
+
+function intentionRow(beliefs, playerId) {
+  const belief = beliefs && beliefs[playerId];
+  return belief && belief.intention ? belief.intention : null;
 }
 
 function scoreMoveParts(view, beliefs, move, weights, options) {
@@ -163,6 +172,10 @@ function scoreMoveParts(view, beliefs, move, weights, options) {
   if (next && next.handCount === 1 && isOpponent(view, next.id)) {
     parts.oppOut = -(weights.roundWin * weights.oppOutScale * pNext);
     score += parts.oppOut;
+    if (pNext === 0 && next.handCount > 0) {
+      parts.forcePass = weights.forcePass;
+      score += parts.forcePass;
+    }
   } else if (next && isOpponent(view, next.id)) {
     parts.denyNext = -(weights.denyNext * pNext);
     score += parts.denyNext;
@@ -175,6 +188,17 @@ function scoreMoveParts(view, beliefs, move, weights, options) {
     }
   }
 
+  const mateIntent = mate ? intentionRow(beliefs, mate.id) : null;
+  const nextIsOpp = !!(next && isOpponent(view, next.id));
+  const preferred = mateIntent && mateIntent.preferred != null ? mateIntent.preferred : null;
+  const oppWantsPreferred = nextIsOpp && preferred != null && intentionRow(beliefs, next.id) &&
+    intentionRow(beliefs, next.id).byPip[preferred] &&
+    intentionRow(beliefs, next.id).byPip[preferred].confidence >= 0.45;
+  const interrupt = next && next.handCount === 1 ? 1 : oppWantsPreferred ? 1 : 0.85;
+  // A kept number has to survive until the teammate acts. When an opponent
+  // plays first, that chance falls with their probability of answering.
+  const safety = !nextIsOpp ? 1 : Math.max(0, 1 - pNext * interrupt);
+  const partnerScale = rest.length <= 1 ? 0.2 : rest.length === 2 ? 0.55 : 1;
   if (mate) {
     const pMate = canPlayProbability(view, beliefs, mate, left, right);
     const mateNext = next && mate.id === next.id;
@@ -183,11 +207,73 @@ function scoreMoveParts(view, beliefs, move, weights, options) {
     parts.mateSuit = weights.mateSuit * suitAffinity(beliefs, mate.id, left, right) * replyWeight;
     score += parts.mateReply;
     score += parts.mateSuit;
+    const mateVoids = hardVoid(beliefs, mate.id);
+    const leftBlocked = left != null && mateVoids.has(left);
+    const rightBlocked = right != null && mateVoids.has(right);
+    if (leftBlocked || rightBlocked) {
+      parts.mateVoidHarm = -(weights.mateVoidHarm || 0) * (leftBlocked && rightBlocked ? 1 : 0.45);
+      score += parts.mateVoidHarm;
+    } else if (!(options && options.ignoreIntent) && mateIntent && mateIntent.byPip) {
+      let soft = 0;
+      [left, right].forEach((pip) => {
+        const info = pip != null ? mateIntent.byPip[pip] : null;
+        if (info && info.missed >= 0.6 && info.pAtLeastOne < 0.35) soft += 0.5;
+      });
+      if (soft) {
+        parts.mateVoidHarm = -(weights.mateVoidHarm || 0) * soft;
+        score += parts.mateVoidHarm;
+      }
+    }
+    if (mate.handCount === 1 && pMate > 0) {
+      const reach = mateNext || pNext === 0 ? 1 : (1 - pNext) * 0.35;
+      parts.mateFinish = weights.roundWin * (weights.mateFinish || 0) * pMate * reach;
+      score += parts.mateFinish;
+    }
+    if (!(options && options.ignoreIntent) && mateIntent && mateIntent.byPip) {
+      let keep = 0;
+      mateIntent.byPip.forEach((info, pip) => {
+        if (!info || info.confidence < 0.45 || mateVoids.has(pip)) return;
+        if (left !== pip && right !== pip) return;
+        keep += (weights.intentKeep || 0) * info.confidence * safety * (pip === preferred ? 1 : 0.45);
+      });
+      const cap = (weights.intentKeep || 0) * safety * partnerScale;
+      parts.intentKeep = Math.min(cap, keep * partnerScale);
+      score += parts.intentKeep;
+    }
+  }
+
+  if (nextIsOpp && !(options && options.ignoreIntent)) {
+    const nextVoids = hardVoid(beliefs, next.id);
+    const leftBlocked = left != null && nextVoids.has(left);
+    const rightBlocked = right != null && nextVoids.has(right);
+    if (!(leftBlocked && rightBlocked) && (leftBlocked || rightBlocked) && pNext > 0 && pNext < 1) {
+      parts.oppVoidExploit = (weights.oppVoidExploit || 0) * (1 - pNext);
+      score += parts.oppVoidExploit;
+    }
+    const oppIntent = intentionRow(beliefs, next.id);
+    if (oppIntent && oppIntent.byPip && pNext > 0) {
+      let feed = 0;
+      [left, right].forEach((pip) => {
+        const info = pip != null ? oppIntent.byPip[pip] : null;
+        if (info && info.confidence >= 0.45 && info.confidence > feed) feed = info.confidence;
+      });
+      if (feed > 0) {
+        parts.oppFeed = -((weights.oppFeed || 0) * feed * pNext);
+        score += parts.oppFeed;
+      }
+    }
   }
 
   if (other && isOpponent(view, other.id) && other !== next) {
-    parts.otherOpp = -(weights.otherOpp * canPlayProbability(view, beliefs, other, left, right));
+    const pOther = canPlayProbability(view, beliefs, other, left, right);
+    parts.otherOpp = -(weights.otherOpp * pOther);
     score += parts.otherOpp;
+    if (other.handCount === 1 && pOther > 0) {
+      const mateBetween = mate ? canPlayProbability(view, beliefs, mate, left, right) : 0;
+      const reach = (1 - pNext) * (1 - mateBetween);
+      parts.otherFinish = -(weights.roundWin * (weights.otherFinish || 0) * pOther * reach);
+      score += parts.otherFinish;
+    }
   }
 
   const outs = rest.filter((tile) => matchesEither(tile, left, right)).length;
@@ -212,6 +298,15 @@ function scoreMoveParts(view, beliefs, move, weights, options) {
   }
   parts.blockEquity = weights.blockEquity * edge;
   score += parts.blockEquity;
+
+  const plan = beliefs && beliefs._plan;
+  if (plan && plan.target != null && plan.mode && plan.mode !== "none" && !(options && options.ignorePlan)) {
+    if (left === plan.target || right === plan.target) {
+      const scale = plan.mode === "self-control" ? 1 : plan.mode === "opponent-denial" ? 0.65 : 0.75;
+      parts.planFit = (weights.planFit || 0) * (plan.confidence || 0) * scale;
+      score += parts.planFit;
+    }
+  }
   return { score: score, parts: parts };
 }
 
@@ -223,12 +318,10 @@ function rankMoves(view, beliefs, weights, options) {
   const ranked = [];
   (view.validMoves || []).forEach((move, index) => {
     const detail = scoreMoveParts(view, beliefs, move, weights, options);
-    const strategicBonus = scoreStrategicMove(view, move, options && options.strategicPlan, beliefs);
-    if (detail.parts) detail.parts.strategicPlan = strategicBonus;
     ranked.push({
       move: { tileId: move.tileId, side: move.side },
       index: index,
-      score: detail.score + strategicBonus,
+      score: detail.score,
       parts: detail.parts
     });
   });
@@ -240,6 +333,7 @@ module.exports = {
   partnerId,
   isMate,
   isOpponent,
+  playerByOffset,
   previewEnds,
   canPlayProbability,
   scoreMove,

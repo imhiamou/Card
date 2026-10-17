@@ -288,9 +288,23 @@ test("own-finish priority is explained from the real scores and hidden hands sta
   const model = client.renderModel(null);
   assert.equal(model.sections.length >= 5, true);
   assert.notEqual(model.status, "Evaluating");
-  assert.equal(client.renderModel({}).sections[0].lines.some((line) => line.includes("unavailable")), true);
+  assert.equal(model.sections.some((section) => section.heading === "Why this move"), true);
+  const blank = client.renderModel({});
+  assert.equal(blank.sections.some((section) => section.lines.join(" ").includes("No move has been selected")), true);
   const broken = client.renderModel({ selected: null, components: null, plan: null, comparison: {} });
-  assert.equal(broken.sections.some((section) => section.heading === "Why this move was selected"), true);
+  assert.equal(broken.sections.some((section) => section.heading === "Why this move"), true);
+  assert.equal(broken.sections.some((section) => section.advanced), true);
+  const summary = client.planView(move.diagnostics);
+  assert.equal(summary.strategy.label, "Playing for myself");
+  assert.match(summary.sections.find((section) => section.heading === "What I am looking for").lines.join(" "), /own finish/);
+  assert.match(summary.sections.find((section) => section.heading === "Next move").lines[0], /\[5\|5\]|\[0\|1\]/);
+  assert.equal(summary.sections.find((section) => section.heading === "Teammate").lines[0].includes("Helping teammate: No"), true);
+  const thinking = client.planView(move.diagnostics, { status: "evaluating" });
+  assert.equal(thinking.strategy.label, "Thinking");
+  assert.match(thinking.sections.find((section) => section.heading === "Last completed plan").lines[0], /Playing for myself/);
+  assert.match(thinking.sections.find((section) => section.heading === "Next move").lines[0], /Next move:/);
+  const errored = client.planView(null, { status: "error", error: "search failed" });
+  assert.match(errored.sections.find((section) => section.heading === "Next move").lines[0], /search failed/);
 
   const failed = client.failEvaluation(client.panelFromSnapshot("bot", move.diagnostics), "search failed");
   assert.equal(failed.status, "error");
@@ -302,6 +316,48 @@ test("own-finish priority is explained from the real scores and hidden hands sta
   const reopened = client.panelFromSnapshot("bot", move.diagnostics);
   assert.equal(reopened.status, "ready");
   assert.equal(reopened.snapshot.selectedMove.tileId, move.diagnostics.selectedMove.tileId);
+});
+
+test("simple strategy labels follow the recorded decision", () => {
+  function labeled(label, extra) {
+    return client.planView(Object.assign({
+      available: true,
+      status: "ready",
+      mode: { label: label, reason: "recorded" },
+      selected: {
+        tile: { id: "4-6", a: 4, b: 6 },
+        tileId: "4-6",
+        side: "right",
+        parts: extra && extra.parts || {}
+      },
+      leftEnd: 1,
+      rightEnd: 6,
+      plan: { continuation: [] },
+      partnership: extra && extra.partnership || { available: true, preserves: [], provenVoids: [] },
+      opponents: extra && extra.opponents || { opponents: [] },
+      comparison: extra && extra.comparison || { kind: "aligned", text: "aligned" }
+    }, extra && extra.snap || {}));
+  }
+  assert.equal(labeled("Supporting teammate", {
+    partnership: { available: true, preserves: [4], provenVoids: [], helpsEmpty: true },
+    parts: { mateReply: 3 }
+  }).strategy.label, "Helping my teammate");
+  const helping = labeled("Supporting teammate", {
+    partnership: { available: true, preserves: [4], provenVoids: [{ pip: 2 }, { pip: 5 }], helpsEmpty: true },
+    parts: { mateReply: 3 }
+  });
+  assert.match(helping.sections.find((section) => section.heading === "Teammate").lines[0], /Helping teammate: Yes/);
+  assert.match(helping.sections.find((section) => section.heading === "What I am looking for").lines.join(" "), /teammate/i);
+  const blocking = labeled("Blocking opponents", {
+    opponents: { opponents: [{ provenVoids: [{ pip: 4 }], suspectedWeak: [] }], forcesPass: true },
+    parts: { forcePass: 2 }
+  });
+  assert.equal(blocking.strategy.label, "Blocking opponents");
+  assert.match(blocking.sections.find((section) => section.heading === "Opponents").lines.join(" "), /Passed on 4/);
+  assert.match(blocking.sections.find((section) => section.heading === "What happens next").lines.join(" "), /one move at a time/);
+  const missing = client.planView({ status: "ready" });
+  assert.equal(missing.sections.some((section) => section.heading === "Advanced details"), true);
+  assert.doesNotThrow(() => client.renderModel({ components: null, plan: null, comparison: null, partnership: null }));
 });
 
 test("room 1111 state carries the finished decision and other rooms do not", () => {
@@ -326,30 +382,4 @@ test("room 1111 state carries the finished decision and other rooms do not", () 
   const again = client.panelFromSnapshot("botA", extra.botDiagnostics.botA);
   assert.equal(again.status, "ready");
   assert.equal(again.snapshot.reasoning.length > 0, true);
-});
-
-
-test("room 1111 lobby update test returns the current roster without mutating the game", () => {
-  const room = roomFor([tile(1, 2)], [tile(3, 4)], [tile(1, 4)]);
-  room.maxPlayers = 4;
-  const before = JSON.stringify(room.domino);
-  const human = socket("human");
-  const rooms = { "1111": room };
-  domino.registerSocket(human, io(), rooms);
-
-  human.handlers.dominoLobbyUpdateTest({ roomCode: "1111", requestId: 71 });
-  const update = human.emitted.find((item) => item.name === "dominoLobbyUpdate");
-  const result = human.emitted.find((item) => item.name === "dominoLobbyUpdateTestResult");
-  assert.ok(update);
-  assert.equal(update.data.room, "1111");
-  assert.equal(update.data.maxPlayers, 4);
-  assert.equal(update.data.players.length, 4);
-  assert.equal(result.data.ok, true);
-  assert.equal(result.data.requestId, 71);
-  assert.equal(JSON.stringify(room.domino), before);
-
-  human.handlers.dominoLobbyUpdateTest({ roomCode: "ABCD", requestId: 72 });
-  const rejected = human.emitted.filter((item) => item.name === "dominoLobbyUpdateTestResult").at(-1);
-  assert.equal(rejected.data.ok, false);
-  assert.equal(rejected.data.requestId, 72);
 });

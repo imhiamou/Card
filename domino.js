@@ -69,16 +69,20 @@
     '</div>' +
     '<div id="domInspect" class="domInspect hidden" role="dialog" aria-labelledby="domInspectTitle">' +
       '<div class="domInspectBar">' +
-        '<h3 id="domInspectTitle">Strategy inspector</h3>' +
+        '<div class="domInspectHeading">' +
+          '<h3 id="domInspectTitle">Bot</h3>' +
+          '<p id="domInspectState"></p>' +
+        '</div>' +
         '<button type="button" id="domInspectClose">Close</button>' +
       '</div>' +
-      '<p id="domInspectState"></p>' +
+      '<div id="domInspectNav" class="domInspectNav" role="tablist" aria-label="Bot inspector pages"></div>' +
       '<div id="domInspectBody"></div>' +
     '</div>';
 
   let socket = null;
   let currentRoom = null;
   let inspectBotId = null;
+  let inspectPage = "overview";
   let inspectRequest = 0;
   let inspectPanelState = null;
   let diagnosticStore = {};
@@ -963,42 +967,99 @@
     return document.getElementById("domInspect");
   }
 
-  function paintInspect(panel) {
-    const state = document.getElementById("domInspectState");
-    if (state && window.DominoInspect) state.textContent = window.DominoInspect.statusText(panel);
-    if (!panel || panel.status === "evaluating" || panel.status === "thinking") return;
-    if (panel.snapshot) renderInspect(panel.snapshot);
-    else if (panel.status === "error") {
-      renderInspect({ available: false, status: "error", error: panel.error, reason: panel.error });
-    }
+  function inspectBotName(botId) {
+    const player = players.find((item) => item.id === botId);
+    return player && player.name ? player.name : "Bot";
   }
 
-  function renderInspect(snapshot) {
+  function appendPlanBlock(parent, section) {
+    const block = document.createElement("section");
+    block.className = "domPlanBlock";
+    const heading = document.createElement("h4");
+    heading.textContent = section.heading || "";
+    block.appendChild(heading);
+    (section.lines || []).forEach((line) => {
+      const paragraph = document.createElement("p");
+      paragraph.textContent = line;
+      block.appendChild(paragraph);
+    });
+    parent.appendChild(block);
+  }
+
+  function paintInspect(panel) {
+    const title = document.getElementById("domInspectTitle");
+    const state = document.getElementById("domInspectState");
+    if (title) title.textContent = inspectBotName(panel && panel.botId);
+    if (state && window.DominoInspect) state.textContent = window.DominoInspect.statusText(panel);
+    renderInspect(panel);
+  }
+
+  function renderInspect(panel) {
     const body = document.getElementById("domInspectBody");
-    if (!body || !window.DominoInspect) return;
+    const nav = document.getElementById("domInspectNav");
+    if (!body || !nav || !window.DominoInspect) return;
+    const wasOpen = !!(body.querySelector("details") && body.querySelector("details").open);
+    const snapshot = panel && panel.snapshot;
     let model = null;
     try {
-      model = window.DominoInspect.renderModel(snapshot);
+      model = window.DominoInspect.renderModel(snapshot, {
+        status: panel && panel.status,
+        error: panel && panel.error
+      });
     } catch (err) {
       model = {
-        status: "error",
-        sections: [{ heading: "Error", lines: ["The diagnostic snapshot could not be shown."] }]
+        sections: [{ heading: "Why this move", lines: ["The diagnostic snapshot could not be shown."] }]
       };
     }
-    body.removeAttribute("data-stale");
-    body.textContent = "";
-    (model.sections || []).forEach((section) => {
-      const heading = document.createElement("h4");
-      heading.textContent = section.heading || "";
-      body.appendChild(heading);
-      const list = document.createElement("ul");
-      (section.lines || []).forEach((line) => {
-        const item = document.createElement("li");
-        item.textContent = line;
-        list.appendChild(item);
-      });
-      body.appendChild(list);
+
+    const pages = [
+      { id: "overview", label: "Overview", headings: ["Bot's Plan", "What I am looking for", "Next move", "What happens next", "Why this move"] },
+      { id: "strategy", label: "Strategy", headings: ["Strategic plan", "Next turn prediction"] },
+      { id: "teammate", label: "Teammate", headings: ["Teammate", "Partnership beliefs"] },
+      { id: "opponents", label: "Opponents", headings: ["Opponents", "Opponent beliefs"] },
+      { id: "details", label: "Details", headings: ["Advanced details"] }
+    ];
+    if (!pages.some((page) => page.id === inspectPage)) inspectPage = "overview";
+    nav.textContent = "";
+    pages.forEach((page) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "domInspectTab" + (inspectPage === page.id ? " active" : "");
+      button.textContent = page.label;
+      button.setAttribute("role", "tab");
+      button.setAttribute("aria-selected", inspectPage === page.id ? "true" : "false");
+      button.onclick = () => {
+        if (inspectPage === page.id) return;
+        inspectPage = page.id;
+        body.scrollTop = 0;
+        renderInspect(panel);
+      };
+      nav.appendChild(button);
     });
+
+    body.textContent = "";
+    const activePage = pages.find((page) => page.id === inspectPage);
+    (model.sections || []).filter((section) => activePage.headings.includes(section.heading)).forEach((section) => {
+      if (!section.advanced) {
+        appendPlanBlock(body, section);
+        return;
+      }
+      const details = document.createElement("details");
+      details.className = "domInspectAdvanced";
+      details.open = wasOpen;
+      const summary = document.createElement("summary");
+      summary.textContent = "Expanded diagnostics";
+      details.appendChild(summary);
+      (section.sections || []).forEach((inner) => appendPlanBlock(details, inner));
+      details.addEventListener("click", (event) => event.stopPropagation());
+      body.appendChild(details);
+    });
+    if (!body.childElementCount) {
+      const empty = document.createElement("p");
+      empty.className = "domInspectEmpty";
+      empty.textContent = "No information is available on this page yet.";
+      body.appendChild(empty);
+    }
   }
 
   function noteInspectActivity(eventName) {
@@ -1007,8 +1068,7 @@
       inspectPanelState || { open: true, botId: inspectBotId, status: "ready", snapshot: null },
       eventName
     );
-    const state = document.getElementById("domInspectState");
-    if (state) state.textContent = window.DominoInspect.statusText(inspectPanelState);
+    paintInspect(inspectPanelState);
   }
 
   function applyBotDiagnostics(map) {
@@ -1944,6 +2004,12 @@
     if (inspectClose && !inspectClose.dataset.wired) {
       inspectClose.dataset.wired = "1";
       inspectClose.onclick = () => closeInspect();
+    }
+    const inspectRoot = $("domInspect");
+    if (inspectRoot && !inspectRoot.dataset.wired) {
+      inspectRoot.dataset.wired = "1";
+      inspectRoot.addEventListener("click", (event) => event.stopPropagation());
+      inspectRoot.addEventListener("wheel", (event) => event.stopPropagation(), { passive: true });
     }
     const boardNav = $("domBoardNav");
     if (boardNav && !boardNav.dataset.wired) {

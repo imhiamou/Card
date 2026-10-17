@@ -30,21 +30,38 @@ function exposedPip(event) {
   return null;
 }
 
+function openingCounts(view) {
+  const counts = {};
+  (view.players || []).forEach((player) => {
+    let plays = 0;
+    let draws = 0;
+    (view.log || []).forEach((event) => {
+      if (!event || event.playerId !== player.id) return;
+      if (event.type === "play") plays += 1;
+      if (event.type === "draw") draws += 1;
+    });
+    counts[player.id] = (player.handCount || 0) + plays - draws;
+  });
+  return counts;
+}
+
 function buildBeliefs(view, options) {
   const ignorePasses = !!(options && options.ignorePasses);
   const players = {};
+  const running = openingCounts(view || {});
   (view.players || []).forEach((player) => {
     players[player.id] = {
       hard: new Set(),
       weak: {},
       support: [0, 0, 0, 0, 0, 0, 0],
       passHistory: [],
+      contradictions: [],
       recent: [],
       handCount: player.handCount || 0
     };
   });
 
-  (view.log || []).forEach((event) => {
+  (view.log || []).forEach((event, index) => {
     const belief = players[event.playerId];
     if (!belief || !event) return;
     if (event.type === "draw") {
@@ -56,6 +73,7 @@ function buildBeliefs(view, options) {
         pass.invalidated = true;
       });
       belief.recent.push({ type: "draw" });
+      running[event.playerId] = (running[event.playerId] || 0) + 1;
       return;
     }
     if (event.type === "pass") {
@@ -64,7 +82,12 @@ function buildBeliefs(view, options) {
         if (pip == null || ends.indexOf(pip) >= 0) return;
         ends.push(pip);
       });
-      const pass = { ends: ends.slice(), invalidated: false };
+      const pass = {
+        ends: ends.slice(),
+        invalidated: false,
+        index: index,
+        handCount: running[event.playerId] || 0
+      };
       belief.passHistory.push(pass);
       if (!ignorePasses) ends.forEach((pip) => belief.hard.add(pip));
       belief.recent.push({ type: "pass", ends: ends.slice() });
@@ -76,9 +99,15 @@ function buildBeliefs(view, options) {
       if (tile.b !== tile.a) belief.support[tile.b] += 1;
       const exposed = exposedPip(event);
       if (exposed != null) belief.support[exposed] += 0.5;
-      if (belief.hard.has(tile.a)) belief.hard.delete(tile.a);
-      if (belief.hard.has(tile.b)) belief.hard.delete(tile.b);
+      [tile.a, tile.b].forEach((pip) => {
+        if (!belief.hard.has(pip)) return;
+        // A play contradicting a no-draw pass is inconsistent history. Do not
+        // silently erase the historical constraint; record the conflict and
+        // let constrained sampling fall back safely if no allocation remains.
+        belief.contradictions.push({ pip: pip, tileId: tile.id, index: index });
+      });
       belief.recent.push({ type: "play", tileId: tile.id });
+      running[event.playerId] = Math.max(0, (running[event.playerId] || 0) - 1);
     }
   });
 
@@ -106,13 +135,27 @@ function buildBeliefs(view, options) {
       numberSupportConfidence: confidence,
       passHistory: raw.passHistory.map((pass) => ({
         ends: pass.ends.slice(),
-        invalidated: !!pass.invalidated
+        invalidated: !!pass.invalidated,
+        index: pass.index,
+        handCount: pass.handCount
+      })),
+      contradictions: raw.contradictions.map((item) => ({
+        pip: item.pip,
+        tileId: item.tileId,
+        index: item.index
       })),
       remainingTileCount: raw.handCount,
       recent: recent,
       _hard: raw.hard
     };
   });
+  if (!(options && options.ignoreIntent)) {
+    try {
+      require("./intent").annotateIntentions(view, out);
+    } catch (err) {
+      /* A belief failure must not stop the bot from playing a legal tile. */
+    }
+  }
   return out;
 }
 

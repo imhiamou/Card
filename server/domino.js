@@ -529,8 +529,7 @@ function initRound(room) {
     teamMode: teams.teamMode,
     teamA: teams.teamA,
     teamB: teams.teamB,
-    publicLog: [],
-    roundId: (room.dominoRoundCounter = (room.dominoRoundCounter || 0) + 1)
+    publicLog: []
   };
   room.dominoRematch = {};
 }
@@ -700,20 +699,19 @@ function publicBoard(room) {
 function notePublic(state, entry) {
   if (!state) return;
   if (!state.publicLog) state.publicLog = [];
-  const record = Object.assign({ turnNumber: state.publicLog.length + 1 }, entry || {});
-  state.publicLog.push(record);
+  state.publicLog.push(entry);
 }
 
 /**
  * Facts the bot is allowed to use: its own hand plus public table history.
  * Other hands stay on the server and are not copied into this view.
  */
-function decisionView(room, botId, roomCode) {
+function decisionView(room, botId) {
   const d = room.domino;
   return {
-    gameId: roomCode,
-    roundId: d.roundId || 1,
     selfId: botId,
+    gameId: room.id || room.roomId || room.code || room.roomCode || null,
+    roundNumber: (room.dominoMatch && room.dominoMatch.roundsCompleted || 0) + 1,
     hand: (d.hands[botId] || []).map((tile) => ({ id: tile.id, a: tile.a, b: tile.b })),
     validMoves: validMovesFor(room, botId).map((move) => ({ tileId: move.tileId, side: move.side })),
     leftEnd: d.leftEnd,
@@ -857,7 +855,7 @@ const INSPECT_ROOM = "1111";
  * Other rooms keep the normal decision and store nothing.
  */
 function decideBotMove(room, roomCode, botId) {
-  const view = decisionView(room, botId, roomCode);
+  const view = decisionView(room, botId);
   const code = typeof roomCode === "string" ? roomCode.trim().toUpperCase() : "";
   if (code !== INSPECT_ROOM) {
     return { move: dominoBot.getDominoMove(view), snapshot: null, restricted: true, key: null };
@@ -903,7 +901,7 @@ function inspectStateExtra(room, roomCode) {
       botDiagnostics[player.id] = decided && decided.snapshot
         ? decided.snapshot
         : dominoInspect.clientSnapshot(dominoInspect.unavailableSnapshot(
-          decisionView(room, player.id, code),
+          decisionView(room, player.id),
           "No decision was recorded."
         ));
     } catch (err) {
@@ -917,10 +915,10 @@ function inspectStateExtra(room, roomCode) {
   return { botDiagnostics: botDiagnostics };
 }
 
-function inspectPayload(stored, room, botId, roomCode) {
+function inspectPayload(stored, room, botId) {
   let snapshot = stored && stored.snapshot
     ? stored.snapshot
-    : dominoInspect.unavailableSnapshot(decisionView(room, botId, roomCode));
+    : dominoInspect.unavailableSnapshot(decisionView(room, botId));
   if (snapshot && snapshot.selected && room.domino.currentTurn !== botId) {
     const note = "It is not this bot's turn, so this preference can change before the bot plays.";
     const selected = Object.assign({}, snapshot.selected, { conditional: true, assumption: note });
@@ -963,7 +961,7 @@ function runBotTurn(room, io, roomCode, botId) {
     } catch (err) {
       console.warn("[bot] decision failed game=dominoes room=%s bot=%s", roomCode, botId);
       try {
-        choice = dominoBot.getDominoMove(decisionView(room, botId, roomCode));
+        choice = dominoBot.getDominoMove(decisionView(room, botId));
       } catch (ignored) {
         choice = null;
       }
@@ -1028,10 +1026,15 @@ function resolveAutoPasses(room, io, roomCode) {
     notePublic(d, {
       type: "pass",
       playerId: d.currentTurn,
-      leftEnd: d.leftEnd,
-      rightEnd: d.rightEnd,
+      legalAlternatives: 0,
       handSizeBefore: hand.length,
-      handSizeAfter: hand.length
+      handSizeAfter: hand.length,
+      boardLeftBefore: d.leftEnd,
+      boardRightBefore: d.rightEnd,
+      boardLeftAfter: d.leftEnd,
+      boardRightAfter: d.rightEnd,
+      leftEnd: d.leftEnd,
+      rightEnd: d.rightEnd
     });
     const passer = room.players.find((p) => p.id === d.currentTurn);
     // "dominoPassed" — Dominoes only. Announces an automatic pass.
@@ -1273,7 +1276,7 @@ function registerSocket(socket, io, rooms) {
     }
     let payload = null;
     try {
-      payload = inspectPayload(decideBotMove(room, roomCode, botId), room, botId, roomCode);
+      payload = inspectPayload(decideBotMove(room, roomCode, botId), room, botId);
     } catch (err) {
       payload = {
         ok: true,
@@ -1285,31 +1288,6 @@ function registerSocket(socket, io, rooms) {
     }
     payload.requestId = requestId;
     socket.emit("dominoInspectResult", payload);
-  });
-
-  // A read-only lobby event test, restricted to the dedicated inspector room.
-  // It exercises the same client update event without changing room state or
-  // broadcasting diagnostic data to other rooms.
-  socket.on("dominoLobbyUpdateTest", (data) => {
-    const roomCode = data && typeof data.roomCode === "string" ? data.roomCode.trim().toUpperCase() : "";
-    const requestId = data && data.requestId;
-    const room = rooms[roomCode];
-    if (roomCode !== INSPECT_ROOM || !room || room.gameMode !== "dominoes" ||
-        !room.players.some((player) => player.id === socket.id)) {
-      socket.emit("dominoLobbyUpdateTestResult", {
-        ok: false,
-        error: "Lobby update test is available only to seated players in room 1111.",
-        requestId: requestId
-      });
-      return;
-    }
-    socket.emit("dominoLobbyUpdate", {
-      room: roomCode,
-      maxPlayers: room.maxPlayers || 2,
-      teamMode: isTeamLobby(room),
-      players: publicLobbyPlayers(room)
-    });
-    socket.emit("dominoLobbyUpdateTestResult", { ok: true, requestId: requestId });
   });
 
   socket.on("dominoSetBotSpeed", (data) => {
@@ -1369,8 +1347,7 @@ function registerSocket(socket, io, rooms) {
       return;
     }
 
-    const legalMovesBefore = validMovesFor(room, socket.id);
-    const legal = legalMovesBefore.some(
+    const legal = validMovesFor(room, socket.id).some(
       (m) => m.tileId === tileId && (d.chain.length === 0 ? m.side === "center" : m.side === side)
     );
     if (!legal) {
@@ -1378,6 +1355,9 @@ function registerSocket(socket, io, rooms) {
       return;
     }
 
+    const legalMovesBefore = validMovesFor(room, socket.id);
+    const legalAlternatives = Math.max(0, legalMovesBefore.length - 1);
+    const handSizeBefore = hand.length;
     const leftBefore = d.leftEnd;
     const rightBefore = d.rightEnd;
     const placed = placeTile(d, tile, side === "center" ? "center" : side);
@@ -1389,14 +1369,23 @@ function registerSocket(socket, io, rooms) {
       type: "play",
       playerId: socket.id,
       tile: { id: tile.id, a: tile.a, b: tile.b },
+      tileValues: [tile.a, tile.b],
       side: side === "center" ? "center" : side,
+      matchedEnd: side === "left" || side === "right" ? side : null,
+      matchedValue: side === "left" ? leftBefore : side === "right" ? rightBefore : null,
+      exposedEnd: side === "left" || side === "right" ? side : null,
+      exposedValue: side === "left" ? d.leftEnd : side === "right" ? d.rightEnd : null,
+      legalAlternatives: legalAlternatives,
+      handSizeBefore: handSizeBefore,
+      handSizeAfter: handSizeBefore - 1,
+      boardLeftBefore: leftBefore,
+      boardRightBefore: rightBefore,
+      boardLeftAfter: d.leftEnd,
+      boardRightAfter: d.rightEnd,
       leftEndBefore: leftBefore,
       rightEndBefore: rightBefore,
       leftEnd: d.leftEnd,
-      rightEnd: d.rightEnd,
-      legalAlternatives: legalMovesBefore.length,
-      handSizeBefore: hand.length,
-      handSizeAfter: hand.length - 1
+      rightEnd: d.rightEnd
     });
 
     hand.splice(idx, 1);
@@ -1463,12 +1452,7 @@ function registerSocket(socket, io, rooms) {
 
     const drawn = d.boneyard.pop();
     d.hands[socket.id].push(drawn);
-    notePublic(d, {
-      type: "draw",
-      playerId: socket.id,
-      handSizeBefore: d.hands[socket.id].length - 1,
-      handSizeAfter: d.hands[socket.id].length
-    });
+    notePublic(d, { type: "draw", playerId: socket.id });
     const me = room.players.find((p) => p.id === socket.id);
 
     // "dominoDrawn" — Dominoes only. Public draw notice (tile hidden).
@@ -1485,6 +1469,13 @@ function registerSocket(socket, io, rooms) {
       notePublic(d, {
         type: "pass",
         playerId: socket.id,
+        legalAlternatives: 0,
+        handSizeBefore: d.hands[socket.id].length,
+        handSizeAfter: d.hands[socket.id].length,
+        boardLeftBefore: d.leftEnd,
+        boardRightBefore: d.rightEnd,
+        boardLeftAfter: d.leftEnd,
+        boardRightAfter: d.rightEnd,
         leftEnd: d.leftEnd,
         rightEnd: d.rightEnd
       });
