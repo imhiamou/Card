@@ -6,7 +6,7 @@ const domino = require("./domino");
 const { getDominoMove, normalize } = require("./bots/domino/ai");
 const { buildBeliefs } = require("./bots/domino/beliefs");
 const { clientSnapshot } = require("./bots/domino/inspect");
-const { resolvePlan, clearPlans, planStats } = require("./bots/domino/plan");
+const { resolvePlan, clearPlans, planStats, freshPlan } = require("./bots/domino/plan");
 const client = require("../assets/domino-inspect");
 
 const quiet = { limits: { samples: 0, maxMs: 0 } };
@@ -711,4 +711,50 @@ test("a teammate target stays visible across a later decision with incomplete in
   });
   const next = decide(nextState);
   assert.equal(next.diagnostics.strategy.teammateTarget, 3);
+});
+
+
+test("the bot establishes a provisional number objective after its second completed turn", () => {
+  clearPlans();
+  const state = base({
+    gameId: "objective-after-two-turns",
+    roundNumber: 1,
+    hand: [tile(0, 1), tile(0, 2), tile(3, 5), tile(4, 6)],
+    validMoves: [{ tileId: "0-1", side: "left" }],
+    leftEnd: 0,
+    rightEnd: 4,
+    log: [
+      play("me", 6, 6, "left", 6, 2, 6, 2),
+      play("me", 5, 5, "right", 6, 2, 6, 5)
+    ]
+  });
+  const view = normalize(state);
+  const plan = freshPlan(view, buildBeliefs(view));
+  assert.equal(plan.mode, "self-control");
+  assert.equal(plan.target, 0);
+  assert.match(plan.evidence, /After two completed turns/);
+  assert.equal(plan.confidence, 0.3);
+});
+
+test("diagnostics explicitly summarize each hidden player's inferred preference and voids", () => {
+  clearPlans();
+  const state = base({
+    hand: [tile(3, 3), tile(4, 4), tile(6, 6)],
+    validMoves: [{ tileId: "3-3", side: "left" }],
+    leftEnd: 3,
+    rightEnd: 6,
+    players: seats([3, 5, 5, 5]),
+    log: [
+      pass("opp", 2, 5),
+      play("mate", 1, 3, "right", 1, 2, 1, 3)
+    ]
+  });
+  const move = decide(state);
+  const rows = move.diagnostics.playerInferences;
+  assert.equal(rows.length, 3);
+  const opponent = rows.find((row) => row.playerId === "opp");
+  assert.deepEqual(opponent.provenVoids, [2, 5]);
+  assert.ok(Object.prototype.hasOwnProperty.call(opponent, "preferredNumber"));
+  const rendered = client.renderModel(move.diagnostics);
+  assert.ok(rendered.sections.some((section) => section.heading === "What I think each player prefers or lacks"));
 });
