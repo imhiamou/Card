@@ -758,3 +758,37 @@ test("diagnostics explicitly summarize each hidden player's inferred preference 
   const rendered = client.renderModel(move.diagnostics);
   assert.ok(rendered.sections.some((section) => section.heading === "What I think each player prefers or lacks"));
 });
+
+
+test("a teammate with one tile acting next can replace a stronger self-control objective", () => {
+  clearPlans();
+  const state = base({
+    selfId: "me",
+    gameId: "urgent-teammate-objective",
+    roundNumber: 1,
+    teamMode: true,
+    teamA: ["me", "mate"],
+    teamB: ["opp", "far"],
+    players: seats([4, 1, 4, 4], ["me", "mate", "opp", "far"]),
+    hand: [tile(4, 4), tile(0, 4), tile(1, 4), tile(2, 4)],
+    validMoves: [
+      { tileId: "4-4", side: "left" },
+      { tileId: "0-4", side: "left" },
+      { tileId: "1-4", side: "left" },
+      { tileId: "2-4", side: "left" }
+    ],
+    leftEnd: 2,
+    rightEnd: 4,
+    chain: [tile(1, 3), tile(3, 4)],
+    log: [
+      play("mate", 1, 3, "right", 2, 1, 2, 3),
+      play("mate", 4, 3, "right", 2, 3, 2, 4)
+    ]
+  });
+  const view = normalize(state);
+  const plan = freshPlan(view, buildBeliefs(view));
+  assert.equal(plan.mode, "teammate-support");
+  assert.equal(plan.target, 3);
+  assert.equal(plan.ownerId, "mate");
+  assert.match(plan.evidence, /acts next/);
+});
