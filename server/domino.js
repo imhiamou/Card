@@ -504,6 +504,7 @@ function initRound(room) {
   const playerIds = room.players.map((p) => p.id);
   ensureMatch(room);
   const firstRound = !room.dominoMatch.roundsCompleted;
+  if (room.dominoAiReview) room.dominoAiReview.roundStartIndex = (room.dominoAiReview.decisions || []).length;
   const dealt = dealHands(playerIds, firstRound ? { requireTileId: "6-6" } : null);
   const plan = planOpening(playerIds, dealt.hands, room.dominoMatch);
   const starterId = plan.starterId || playerIds[0];
@@ -889,8 +890,14 @@ function rememberDominoReview(room, botId, view, stored) {
 function buildDominoMatchReview(room) {
   const review = room && room.dominoAiReview;
   const d = room && room.domino;
-  if (!review || !d || !d.over) return null;
-  const decisions = review.decisions || [];
+  if (!review || !d) return null;
+  if (!Array.isArray(review.roundReviews)) review.roundReviews = [];
+  if (!d.over) return review.roundReviews.length ? review.roundReviews[review.roundReviews.length - 1] : null;
+  const roundNumber = room.dominoMatch && room.dominoMatch.roundsCompleted || 1;
+  const existing = review.roundReviews.find((item) => item.round === roundNumber);
+  if (existing) return existing;
+  const startIndex = review.roundStartIndex || 0;
+  const decisions = (review.decisions || []).slice(startIndex);
   const passes = decisions.filter((item) => item.action === "pass");
   const modes = {};
   decisions.forEach((item) => {
@@ -899,15 +906,15 @@ function buildDominoMatchReview(room) {
   });
   const scored = decisions.filter((item) => typeof item.candidateGap === "number");
   const missedGaps = scored.filter((item) => item.candidateGap > 0);
-  return {
+  const result = {
+    schemaVersion: 1,
     status: "round-complete",
     generatedAt: Date.now(),
-    note: "Review is based on decisions captured in the inspector room. Candidate gaps are heuristic score differences, not proof that another move would have won.",
-    round: (room.dominoMatch && room.dominoMatch.roundsCompleted || 0) + 1,
+    note: "Candidate gaps are heuristic score differences, not proof another move would have won. The trace is recorded only in inspector room 1111 and does not infer hidden hands.",
+    round: roundNumber,
     winnerId: d.winnerId || null,
     winnerTeam: d.winnerTeam || null,
     winReason: d.winReason || null,
-    roundsCompleted: room.dominoMatch && room.dominoMatch.roundsCompleted || 0,
     scoreboard: publicMatchScoreboard(room),
     totals: {
       decisions: decisions.length,
@@ -919,10 +926,13 @@ function buildDominoMatchReview(room) {
     passEvents: passes.map((item) => ({ botId: item.botId, turn: item.turn, objective: item.objective, reason: item.passReason })),
     decisionRecords: decisions.slice(),
     publicActions: (d.publicLog || []).map((event) => ({
-      type: event.type, playerId: event.playerId, tile: event.tile ? { a: event.tile.a, b: event.tile.b } : null,
+      type: event.type, playerId: event.playerId,
+      tile: event.tile ? { a: event.tile.a, b: event.tile.b } : null,
       leftEnd: event.leftEnd, rightEnd: event.rightEnd, legalAlternatives: event.legalAlternatives
     }))
   };
+  review.roundReviews.push(result);
+  return result;
 }
 
 function decideBotMove(room, roomCode, botId) {
