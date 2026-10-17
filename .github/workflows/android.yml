@@ -1,6 +1,7 @@
 name: Build Gameweb Android
 
 # Debug APKs build on pull requests and manual runs.
+# Keep the debug artifact tied to the exact source commit being reviewed.
 # A version tag such as v1.0.5 builds a signed release APK and uploads
 # it to that GitHub Release. The tag is the version. Drafts and
 # pre-releases are not used. This workflow does not publish the
