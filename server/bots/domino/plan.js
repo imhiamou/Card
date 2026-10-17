@@ -8,7 +8,7 @@
 
 const memory = new Map();
 const teammateMemory = new Map();
-const SWITCH_MARGIN = 1;
+const SWITCH_MARGIN = 0.25;
 const MEMORY_LIMIT = 256;
 const stats = { decisions: 0, held: 0, switched: 0, started: 0, none: 0 };
 
