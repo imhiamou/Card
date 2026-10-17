@@ -166,41 +166,16 @@ html.gameweb-app #lobbyScreen .lobbyCol {
   overflow: hidden;
 }
 
-html.gameweb-app #lobbyScreen:not([data-app-tab="play"]) .lobbyIdentity,
-html.gameweb-app #lobbyScreen:not([data-app-tab="play"]) .lobbyActions,
-html.gameweb-app #lobbyScreen:not([data-app-tab="setup"]) .lobbyConfig,
-html.gameweb-app #lobbyScreen:not([data-app-tab="room"]) .lobbyFeedback {
+html.gameweb-app #lobbyScreen:not([data-app-tab="play"]) #lobbyPlay,
+html.gameweb-app #lobbyScreen:not([data-app-tab="updates"]) #lobbyUpdates {
   display: none;
 }
 
-html.gameweb-app #lobbyScreen[data-app-tab="room"] .lobbyConfig {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-html.gameweb-app #lobbyScreen[data-app-tab="room"][data-room-teams="0"] .lobbyConfig {
-  display: none;
-}
-
-html.gameweb-app #lobbyScreen[data-app-tab="room"] .lobbyConfig > :not(#dominoLobbyTeams) {
-  display: none;
-}
-
-html.gameweb-app #lobbyScreen[data-app-tab="room"] #dominoLobbyTeams.hidden {
-  display: none;
-}
-
-html.gameweb-app #lobbyScreen[data-app-tab="setup"] .lobbyConfig,
-html.gameweb-app #lobbyScreen[data-app-tab="play"] .lobbyIdentity,
-html.gameweb-app #lobbyScreen[data-app-tab="play"] .lobbyActions,
-html.gameweb-app #lobbyScreen[data-app-tab="room"] .lobbyFeedback {
+html.gameweb-app #lobbyScreen[data-app-tab="play"] #lobbyPlay,
+html.gameweb-app #lobbyScreen[data-app-tab="updates"] #lobbyUpdates {
   flex: 1 1 auto;
-  overflow: hidden;
-}
-
-html.gameweb-app #lobbyScreen[data-app-tab="room"] .lobbyColumns {
-  flex: 0 1 auto;
+  overflow: auto;
+  min-height: 0;
 }
 
 html.gameweb-app .appNativeSelect {
@@ -222,7 +197,7 @@ html.gameweb-app .appGameGrid {
 }
 
 html.gameweb-app .appGameBtn {
-  min-height: 48px;
+  min-height: 36px;
   margin: 0;
   border-radius: 10px;
   border: 1px solid #3d4860;
@@ -235,7 +210,30 @@ html.gameweb-app .appGameBtn {
 html.gameweb-app #lobbyScreen input,
 html.gameweb-app #lobbyScreen select,
 html.gameweb-app #lobbyScreen button {
-  min-height: 44px;
+  min-height: 40px;
+}
+
+html.gameweb-app #lobbyScreen .lobbyIdentity input,
+html.gameweb-app #lobbyScreen .lobbyIdentity select,
+html.gameweb-app #lobbyScreen .lobbyActions input,
+html.gameweb-app #lobbyScreen .lobbyActions button,
+html.gameweb-app #lobbyScreen .lobbyConfig select,
+html.gameweb-app #lobbyScreen button {
+  margin-bottom: 4px;
+}
+
+html.gameweb-app #lobbyScreen h3 {
+  margin: 4px 0 2px;
+}
+
+html.gameweb-app #hiddenHunterHint.hhLobbyCard p + p {
+  display: none;
+}
+
+html.gameweb-app #hhEditorMsg:empty {
+  display: none;
+  min-height: 0;
+  margin: 0;
 }
 
 html.gameweb-app #lobbyScreen h3 {
@@ -270,10 +268,139 @@ html.gameweb-app #hhDifficultyChoices button {
 }
 
 @media (orientation: landscape) {
-  html.gameweb-app #lobbyScreen[data-app-tab="play"] .lobbyColumns {
+  html.gameweb-app #lobbyScreen h1 {
+    margin-bottom: 4px;
+    font-size: 18px;
+  }
+
+  html.gameweb-app #lobbyScreen[data-app-tab="play"] #lobbyPlay {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    column-gap: 12px;
     align-content: start;
+    overflow: hidden;
+  }
+
+  html.gameweb-app #lobbyScreen[data-app-tab="play"] #lobbyPlay > h2 {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    margin-bottom: 4px;
+  }
+
+  html.gameweb-app #lobbyScreen[data-app-tab="play"] #lobbyPlay > .lobbyIdentity {
+    grid-column: 1;
+    grid-row: 2;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  html.gameweb-app #lobbyScreen[data-app-tab="play"] #lobbyPlay > .lobbyActions {
+    grid-column: 2;
+    grid-row: 2;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  html.gameweb-app #lobbyScreen[data-app-tab="play"] #lobbyPlay:has(.lobbyConfig > :not(.hidden):not(.lobbyConfigEmpty)) {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, 0.95fr);
+  }
+
+  html.gameweb-app #lobbyScreen[data-app-tab="play"] #lobbyPlay:has(.lobbyConfig > :not(.hidden):not(.lobbyConfigEmpty)) > .lobbyConfig {
+    grid-column: 2;
+    grid-row: 2;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  html.gameweb-app #lobbyScreen[data-app-tab="play"] #lobbyPlay:has(.lobbyConfig > :not(.hidden):not(.lobbyConfigEmpty)) > .lobbyActions {
+    grid-column: 3;
+  }
+
+  html.gameweb-app #lobbyScreen .lobbyConfig:not(:has(> :not(.hidden):not(.lobbyConfigEmpty))) {
+    display: none;
+  }
+
+  html.gameweb-app .appGameGrid {
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 6px;
+    margin-bottom: 0;
+  }
+
+  html.gameweb-app .appGameBtn,
+  html.gameweb-app #lobbyScreen input,
+  html.gameweb-app #lobbyScreen select,
+  html.gameweb-app #lobbyScreen button,
+  html.gameweb-app .appTabBar button {
+    min-height: 34px;
+  }
+
+  html.gameweb-app #lobbyScreen h3 {
+    margin: 2px 0;
+  }
+
+  html.gameweb-app #lobbyScreen .lobbyIdentity input,
+  html.gameweb-app #lobbyScreen .lobbyIdentity select,
+  html.gameweb-app #lobbyScreen .lobbyActions input,
+  html.gameweb-app #lobbyScreen .lobbyActions button,
+  html.gameweb-app #lobbyScreen .lobbyConfig select,
+  html.gameweb-app #lobbyScreen button {
+    margin-bottom: 4px;
+  }
+
+  html.gameweb-app .appTabBar {
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+
+  html.gameweb-app #lobbyScreen #hhMapPreview,
+  html.gameweb-app #lobbyScreen #hhMapMeta,
+  html.gameweb-app #hiddenHunterHint {
+    display: none;
+  }
+
+  html.gameweb-app #hhDifficultyChoices button,
+  html.gameweb-app #hhMapChoices button {
+    padding: 4px;
+    font-size: 11px;
+    line-height: 1.15;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  html.gameweb-app #hhMapChoices {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+
+  html.gameweb-app #hhEditorGate.hhLobbyCard:not(.hidden) {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  html.gameweb-app #hhEditorGate.hhLobbyCard h3,
+  html.gameweb-app #hhEditorGate.hhLobbyCard button {
+    margin: 0;
+  }
+
+  html.gameweb-app #hhEditorGate.hhLobbyCard button {
+    width: auto;
+    flex: 1 1 auto;
+  }
+
+  html.gameweb-app #hhDifficultyChoices {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+
+  html.gameweb-app #hhDifficultyChoices button,
+  html.gameweb-app #hhMapChoices button {
+    min-height: 32px;
+  }
+
+  html.gameweb-app #lobbyScreen #status {
+    margin-top: 2px;
+    font-size: 14px;
   }
 }
 

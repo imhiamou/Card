@@ -509,8 +509,8 @@ flex-direction:column;
 }
 }
 
-/* Desktop lobby: identity, game setup, and create/join sit side by side.
-   Narrow windows stack the same controls. */
+/* Desktop lobby: Play and Updates sit side by side.
+   Narrow windows stack the same two panels. */
 #lobbyScreen.box{
 width:min(1360px, calc(100vw - 40px));
 max-width:calc(100vw - 24px);
@@ -563,9 +563,23 @@ color:#b7c4d8;
 }
 #lobbyScreen .lobbyColumns{
 display:grid;
-grid-template-columns:minmax(0,.9fr) minmax(0,1.25fr) minmax(0,.95fr);
+grid-template-columns:minmax(0,1.7fr) minmax(260px,.8fr);
 gap:14px;
 align-items:stretch;
+}
+#lobbyScreen .lobbyPlay h2,
+#lobbyScreen .lobbyUpdates h2{
+margin:0 0 10px;
+font-size:18px;
+letter-spacing:0;
+text-transform:none;
+color:#fff;
+}
+#lobbyPlay .lobbyCol{
+background:transparent;
+border:0;
+border-radius:0;
+padding:0;
 }
 #lobbyScreen .lobbyCol{
 background:#232a38;
@@ -752,27 +766,24 @@ font-weight:bold;
 .lobbySetup{
 position:fixed;
 inset:0;
-z-index:80;
+z-index:40;
 display:flex;
-align-items:flex-end;
+align-items:center;
 justify-content:center;
-padding:12px;
-padding-bottom:calc(env(safe-area-inset-bottom,0px) + 12px);
-background:rgba(8,12,20,.72);
+background:rgba(8,12,18,.55);
+padding:16px;
 box-sizing:border-box;
-font-family:Inter,system-ui,sans-serif;
 }
 .lobbySetup.hidden{display:none}
 .lobbySetupCard{
 width:min(480px,100%);
-max-height:min(92dvh,760px);
+max-height:min(640px, calc(100dvh - 32px));
 overflow:auto;
-background:#161d2b;
-color:#e8eef8;
-border:1px solid #3a4d68;
-border-radius:16px;
-padding:16px;
-box-shadow:0 16px 40px rgba(0,0,0,.4);
+background:#2a3140;
+border:1px solid #3d4860;
+border-radius:12px;
+padding:16px 16px 12px;
+box-shadow:0 16px 40px rgba(0,0,0,.45);
 }
 .lobbySetupCard h2{margin:0 0 4px;font-size:20px}
 .lobbySetupLead{margin:0 0 10px;color:#b7c6da;font-size:13px}
@@ -781,26 +792,24 @@ box-shadow:0 16px 40px rgba(0,0,0,.4);
 .lobbySetupActions{display:flex;justify-content:flex-end;gap:8px}
 #lobbySetupCancel,#lobbySetupConfirm{
 width:auto;
-min-height:44px;
+min-width:108px;
 margin:0;
-padding:8px 14px;
-border-radius:10px;
-font-weight:800;
-font-family:inherit;
 }
 #lobbySetupCancel{
-background:#243044;
+background:#232a38;
 color:#fff;
-border:1px solid #3d5270;
+border:1px solid #6aabff;
 }
 #lobbySetupConfirm{
 background:#4f9cff;
 color:#0b1220;
-border:0;
+border:none;
+font-weight:bold;
 }
 #lobbySetupBody h3{margin:10px 0 6px}
 #lobbySetupBody input,
 #lobbySetupBody select,
 #lobbySetupBody button{
-margin:0 0 10px;
+margin:0 0 8px;
 }
+

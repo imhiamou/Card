@@ -179,7 +179,7 @@ const MEASURE = `
       bad.push("offscreen " + name);
     }
     const scrolls = node.scrollHeight - node.clientHeight > 4 || node.scrollWidth - node.clientWidth > 4;
-    const allowed = node.closest(".hheLibScroll, .ceLibScroll, .ceGrid, .cePick, .ceCarts, .ceLibPreview, .ceLibCats");
+    const allowed = node.closest(".hheLibScroll, .ceLibScroll, .ceGrid, .cePick, .ceCarts, .ceLibPreview, .ceLibCats, #lobbyPlay, #lobbyUpdates");
     if (scrolls && style.overflow !== "hidden" && style.overflowY !== "hidden" && style.overflowX !== "hidden" && !allowed) {
       bad.push("scroll " + name);
     }
@@ -294,7 +294,7 @@ describe("android viewport", { skip: fs.existsSync(chromeBin) ? false : "chrome 
           `,
           returnByValue: true
         });
-        for (const tab of ["play", "setup", "room"]) {
+        for (const tab of ["play", "updates"]) {
           await page.send("Runtime.evaluate", {
             expression: "document.querySelector('.appTabBar button[data-app-tab=\"" + tab + "\"]').click()",
             returnByValue: true

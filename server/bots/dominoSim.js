@@ -87,8 +87,6 @@ function makeTable(spec) {
   const order = spec.order.slice();
   const starter = spec.starter || order[0];
   return {
-    gameId: spec.gameId || "simulation",
-    roundId: spec.roundId == null ? 1 : spec.roundId,
     order: order,
     turn: Math.max(0, order.indexOf(starter)),
     hands: spec.hands,
@@ -147,8 +145,6 @@ function publicView(table, playerId) {
     table.mustPlayId
   );
   return {
-    gameId: table.gameId || "simulation",
-    roundId: table.roundId == null ? 1 : table.roundId,
     selfId: playerId,
     hand: (table.hands[playerId] || []).map(cloneTile),
     validMoves: moves.map((move) => ({ tileId: move.tileId, side: move.side })),
@@ -252,6 +248,45 @@ function greedyMove(view) {
   return best ? best.move : null;
 }
 
+function partnerId(view) {
+  if (!view.teamMode || !view.teamA || !view.teamB) return null;
+  const team = view.teamA.indexOf(view.selfId) >= 0 ? view.teamA
+    : view.teamB.indexOf(view.selfId) >= 0 ? view.teamB
+    : null;
+  if (!team) return null;
+  for (let i = 0; i < team.length; i++) {
+    if (team[i] !== view.selfId) return team[i];
+  }
+  return null;
+}
+
+function followMove(view) {
+  const mate = partnerId(view);
+  let pip = null;
+  (view.log || []).forEach((event) => {
+    if (!mate || !event || event.playerId !== mate || event.type !== "play") return;
+    if (event.side === "left" && event.leftEnd != null) pip = event.leftEnd;
+    else if (event.side === "right" && event.rightEnd != null) pip = event.rightEnd;
+  });
+  if (pip == null) return greedyMove(view);
+  let best = null;
+  view.validMoves.forEach((move, index) => {
+    const tile = view.hand.find((item) => item.id === move.tileId);
+    if (!tile) return;
+    const state = {
+      chain: (view.chain || []).map(cloneTile),
+      leftEnd: view.leftEnd,
+      rightEnd: view.rightEnd,
+      mustPlayId: view.mustPlayId || null
+    };
+    if (!domino.placeTile(state, tile, move.side)) return;
+    const keeps = state.leftEnd === pip || state.rightEnd === pip;
+    const score = (keeps ? 100 : 0) + tile.a + tile.b - index * 0.01;
+    if (!best || score > best.score) best = { move: move, score: score };
+  });
+  return best ? best.move : greedyMove(view);
+}
+
 function choose(strategy, view, rng, config) {
   if (!view.validMoves.length) return null;
   if (strategy === "random") {
@@ -260,11 +295,13 @@ function choose(strategy, view, rng, config) {
   if (strategy === "greedy") return greedyMove(view);
   if (strategy === "legacy") return dominoBot.legacyGetDominoMove(view);
   if (strategy === "human") return humanSuitMove(view);
+  if (strategy === "follow") return followMove(view);
   if (strategy === "first") return view.validMoves[0];
   if (strategy === "illegal") return { tileId: "9-9", side: "left" };
   const limits = Object.assign({}, QUIET);
   const options = { limits: limits };
-  if (strategy === "ai" || strategy === "ai-no-passes" || strategy === "ai-no-team") {
+  if (strategy === "ai" || strategy === "ai-no-passes" || strategy === "ai-no-team" || strategy === "no-hands" ||
+      strategy === "predict" || strategy === "no-future" || strategy === "predict-no-intent" || strategy === "predict-no-sample") {
     Object.assign(limits, config && config.aiLimits ? config.aiLimits : {
       samples: 4,
       maxMs: 12,
@@ -274,6 +311,40 @@ function choose(strategy, view, rng, config) {
   }
   if (strategy === "no-passes" || strategy === "ai-no-passes") options.ignorePasses = true;
   if (strategy === "no-team" || strategy === "ai-no-team") options.ignoreTeam = true;
+  if (strategy === "no-intent" || strategy === "predict-no-intent") options.ignoreIntent = true;
+  if (strategy === "no-hands") options.ignoreHands = true;
+  if (strategy === "no-future") options.ignoreFuture = true;
+  if (strategy === "predict-no-sample") options.ignoreSamples = true;
+  if (strategy === "no-plan") options.ignorePlan = true;
+  if (strategy === "baseline") {
+    options.ignoreIntent = true;
+    options.ignorePlan = true;
+    options.weights = {
+      shedPips: 12,
+      dumpDouble: 5,
+      mateSuit: 1.1,
+      intentKeep: 0,
+      mateVoidHarm: 0,
+      oppVoidExploit: 0,
+      oppFeed: 0,
+      mateFinish: 0,
+      otherFinish: 0,
+      planFit: 0
+    };
+  }
+  if (strategy === "passes") {
+    options.ignoreIntent = true;
+    options.ignorePlan = true;
+    options.weights = {
+      mateSuit: 0,
+      intentKeep: 0,
+      mateFinish: 0,
+      oppFeed: 0,
+      shedPips: 8,
+      dumpDouble: 4,
+      planFit: 0
+    };
+  }
   options.seed = (config && config.seed) || 1;
   return dominoBot.getDominoMove(view, options);
 }
@@ -403,7 +474,8 @@ function playTable(table, strategies, seed, stats, config) {
     map[id] = Array.isArray(strategies) ? strategies[index] : strategies[id];
   });
   let guard = 0;
-  while (!table.over && guard++ < 400) {
+  const cap = config && config.maxSteps ? config.maxSteps : 400;
+  while (!table.over && guard++ < cap) {
     stepTable(table, map, rng, stats, config);
     const books = account(table);
     if (books.unique !== books.count) {
@@ -412,7 +484,7 @@ function playTable(table, strategies, seed, stats, config) {
       break;
     }
   }
-  if (!table.over) {
+  if (!table.over && !(config && config.maxSteps)) {
     table.over = true;
     table.winReason = "blocked";
   }
@@ -434,10 +506,6 @@ function playMatch(options) {
   for (let round = 0; round < total; round++) {
     const dealRng = mulberry32(hashString(String(options.seed) + ":" + round));
     const table = startRound(order, match, dealRng, teamMode);
-    // Match and round identity must be part of the public decision view so
-    // persistent bot plans reset on a new deal, exactly as in live rooms.
-    table.gameId = "simulation:" + String(options.seed);
-    table.roundId = round + 1;
     playTable(table, strategies, hashString(String(options.seed) + ":play:" + round), stats, {
       seed: options.seed,
       aiLimits: options.aiLimits

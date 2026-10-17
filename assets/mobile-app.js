@@ -4,7 +4,7 @@
   if (!document.documentElement.classList.contains("gameweb-app")) return;
 
   const $ = (id) => document.getElementById(id);
-  const SCROLLERS = ".hheLibScroll, .ceLibScroll, .ceGrid, .cePick, .ceCarts, .ceLibPreview, .ceLibCats, .hheProps, .ceRight, .ceDialog, input, textarea, select";
+  const SCROLLERS = ".hheLibScroll, .ceLibScroll, .ceGrid, .cePick, .ceCarts, .ceLibPreview, .ceLibCats, .hheProps, .ceRight, .ceDialog, #lobbyPlay, #lobbyUpdates, .lobbySetupCard, input, textarea, select";
 
   function syncViewport() {
     const vv = window.visualViewport;
@@ -107,7 +107,7 @@
       const nav = document.createElement("nav");
       nav.className = "appTabBar";
       nav.setAttribute("aria-label", "Lobby");
-      [["play", "Play"], ["setup", "Setup"], ["room", "Room"]].forEach(([id, label]) => {
+      [["play", "Play"], ["updates", "Updates"]].forEach(([id, label]) => {
         const btn = document.createElement("button");
         btn.type = "button";
         btn.dataset.appTab = id;
@@ -120,14 +120,6 @@
       });
       root.appendChild(nav);
     }
-
-    ["createBtn", "joinBtn", "cartsPlayBtn"].forEach((id) => {
-      const btn = $(id);
-      if (btn && !btn.dataset.appTabWired) {
-        btn.dataset.appTabWired = "1";
-        if (id === "joinBtn") btn.addEventListener("click", () => setTab("room"));
-      }
-    });
 
     const teams = $("dominoLobbyTeams");
     if (teams) new MutationObserver(syncRoomTeams).observe(teams, { attributes: true, attributeFilter: ["class"] });

@@ -1,0 +1,59 @@
+name: Gameweb Android build
+
+on:
+  pull_request:
+    branches:
+      - cursor/domino-predict-lobby-fda4
+  push:
+    branches:
+      - ci/android-build-pr165-check
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android-debug-build:
+    name: Build Gameweb Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Install mobile dependencies
+        run: npm ci --prefix mobile
+
+      - name: Run mobile tests
+        run: npm --prefix mobile test
+
+      - name: Copy Gameweb frontend and sync Capacitor
+        run: |
+          npm --prefix mobile run copy
+          cd mobile
+          npx cap sync android
+
+      - name: Build Android debug APK
+        working-directory: mobile/android
+        run: ./gradlew --no-daemon assembleDebug
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: gameweb-android-debug
+          path: mobile/android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
