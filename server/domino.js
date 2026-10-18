@@ -883,6 +883,20 @@ function rememberDominoReview(room, botId, view, stored) {
     bestCandidateScore: best && typeof best.score === "number" ? best.score : null,
     candidateGap: candidateGap,
     passReason: snapshot.passAnalysis && snapshot.passAnalysis.reason || null,
+    ownHandAtDecision: (view.hand || []).map((tile) => ({ id: tile.id, a: tile.a, b: tile.b })),
+    boardAtDecision: {
+      leftEnd: view.leftEnd == null ? null : view.leftEnd,
+      rightEnd: view.rightEnd == null ? null : view.rightEnd,
+      chain: (view.chain || []).map((tile) => ({ id: tile.id, a: tile.a, b: tile.b })),
+      boneyardCount: view.boneyardCount == null ? null : view.boneyardCount
+    },
+    legalMovesAtDecision: (view.validMoves || []).map((move) => ({ tileId: move.tileId, side: move.side })),
+    candidateScores: evaluations.slice(0, 20).map((row) => ({
+      tile: row.tile || null, tileId: row.tileId || row.move && row.move.tileId || null,
+      side: row.side || row.move && row.move.side || null,
+      score: typeof row.score === "number" ? row.score : null,
+      reason: row.reason || row.explanation || null
+    })),
     publicLogLength: (view.log || []).length
   });
   // Keep the in-room history bounded. Full round logs are summarized at match end.
@@ -922,12 +936,22 @@ function buildDominoMatchReview(room) {
     scoreboard: publicMatchScoreboard(room),
     totals: {
       decisions: decisions.length,
+      plays: decisions.filter((item) => item.action === "play").length,
       passes: passes.length,
       decisionsWithAlternatives: scored.length,
       selectedBelowTopCandidate: missedGaps.length
     },
+    reviewFindings: {
+      passPositionsWithOwnHand: passes.filter((item) => Array.isArray(item.ownHandAtDecision)).length,
+      scoreGapInterpretation: "A negative gap means the selected move's score was below the best candidate score recorded by the heuristic. It is a review flag, not proof of a better game outcome.",
+      passLearning: "Compare ownHandAtDecision and boardAtDecision to identify unavailable end numbers; after the pass, use only the public pass event to update opponents' void beliefs."
+    },
     strategyCounts: modes,
-    passEvents: passes.map((item) => ({ botId: item.botId, turn: item.turn, objective: item.objective, reason: item.passReason })),
+    passEvents: passes.map((item) => ({
+      botId: item.botId, turn: item.turn, objective: item.objective, reason: item.passReason,
+      ownHandAtDecision: item.ownHandAtDecision || null,
+      boardAtDecision: item.boardAtDecision || null
+    })),
     decisionRecords: decisions.slice(),
     publicActions: (d.publicLog || []).map((event) => ({
       type: event.type, playerId: event.playerId,
@@ -936,6 +960,26 @@ function buildDominoMatchReview(room) {
     }))
   };
   review.roundReviews.push(result);
+  const matchStrategyCounts = {};
+  let matchDecisions = 0, matchPasses = 0, belowTopCandidate = 0;
+  review.roundReviews.forEach((round) => {
+    const totals = round.totals || {};
+    matchDecisions += totals.decisions || 0;
+    matchPasses += totals.passes || 0;
+    belowTopCandidate += totals.selectedBelowTopCandidate || 0;
+    Object.keys(round.strategyCounts || {}).forEach((mode) => {
+      matchStrategyCounts[mode] = (matchStrategyCounts[mode] || 0) + round.strategyCounts[mode];
+    });
+  });
+  result.matchSummary = {
+    roundsReviewed: review.roundReviews.length,
+    decisions: matchDecisions,
+    passes: matchPasses,
+    selectedBelowTopCandidate: belowTopCandidate,
+    strategyCounts: matchStrategyCounts,
+    scoreboard: publicMatchScoreboard(room),
+    note: "Aggregate covers completed rounds recorded in this inspector room. It is lost when the in-memory room/server is reset unless exported."
+  };
   return result;
 }
 
