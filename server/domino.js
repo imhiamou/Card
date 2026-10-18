@@ -883,6 +883,24 @@ function rememberDominoReview(room, botId, view, stored) {
     bestCandidateScore: best && typeof best.score === "number" ? best.score : null,
     candidateGap: candidateGap,
     passReason: snapshot.passAnalysis && snapshot.passAnalysis.reason || null,
+    // Capture only this bot's own hand plus public board state at decision time.
+    // This is essential for offline review of forced passes without leaking opponents' tiles.
+    ownHandAtDecision: (view.hand || []).map((tile) => ({ id: tile.id, a: tile.a, b: tile.b })),
+    boardAtDecision: {
+      leftEnd: view.leftEnd == null ? null : view.leftEnd,
+      rightEnd: view.rightEnd == null ? null : view.rightEnd,
+      chain: (view.chain || []).map((tile) => ({ id: tile.id, a: tile.a, b: tile.b })),
+      boneyardCount: view.boneyardCount == null ? null : view.boneyardCount
+    },
+    legalMovesAtDecision: (view.validMoves || []).map((move) => ({
+      tileId: move.tileId, side: move.side
+    })),
+    candidateScores: evaluations.slice(0, 20).map((row) => ({
+      tile: row.tile || null, tileId: row.tileId || row.move && row.move.tileId || null,
+      side: row.side || row.move && row.move.side || null,
+      score: typeof row.score === "number" ? row.score : null,
+      reason: row.reason || row.explanation || null
+    })),
     publicLogLength: (view.log || []).length
   });
   // Keep the in-room history bounded. Full round logs are summarized at match end.
@@ -922,9 +940,15 @@ function buildDominoMatchReview(room) {
     scoreboard: publicMatchScoreboard(room),
     totals: {
       decisions: decisions.length,
+      plays: decisions.filter((item) => item.action === "play").length,
       passes: passes.length,
       decisionsWithAlternatives: scored.length,
       selectedBelowTopCandidate: missedGaps.length
+    },
+    reviewFindings: {
+      passPositionsWithOwnHand: passes.filter((item) => Array.isArray(item.ownHandAtDecision)).length,
+      scoreGapInterpretation: "A negative gap means the selected move's score was below the best candidate score recorded by the heuristic. It is a review flag, not proof of a better game outcome.",
+      passLearning: "Compare ownHandAtDecision and boardAtDecision to identify unavailable end numbers; after the pass, use only the public pass event to update opponents' void beliefs."
     },
     strategyCounts: modes,
     passEvents: passes.map((item) => ({ botId: item.botId, turn: item.turn, objective: item.objective, reason: item.passReason })),
