@@ -1,6 +1,6 @@
 name: Build Gameweb Android
 
-# Debug APKs build on pull requests and manual runs.
+# Debug APKs build on pull requests, manual runs, and every push to main.
 # A version tag such as v1.0.5 builds a signed release APK and uploads
 # it to that GitHub Release. The tag is the version. Drafts and
 # pre-releases are not used. This workflow does not publish the
@@ -29,6 +29,8 @@ on:
       - "assets/**"
       - ".github/workflows/android.yml"
   push:
+    branches:
+      - main
     tags:
       - "v*"
 
@@ -37,7 +39,7 @@ permissions:
 
 jobs:
   debug-apk:
-    if: github.event_name != 'push'
+    if: github.event_name != 'push' || github.ref == 'refs/heads/main'
     permissions:
       contents: read
     runs-on: ubuntu-latest
@@ -80,7 +82,7 @@ jobs:
           if-no-files-found: error
 
   release-apk:
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     concurrency:
       group: android-release-${{ github.ref }}
       cancel-in-progress: false
