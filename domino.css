@@ -1233,3 +1233,91 @@ border-radius:10px;
 .domInspectNav{gap:4px;padding:7px 8px;}
 .domInspectTab{padding:8px 9px;font-size:12px;}
 }
+
+/* Dominoes UI fit-and-scroll correction. Keep every inspector inside the viewport. */
+body.domino-desk-play #dominoScreen{
+  height:100dvh;
+  max-height:100dvh;
+  min-height:0;
+  gap:0;
+  padding:6px 10px max(4px, env(safe-area-inset-bottom, 0px));
+}
+body.domino-desk-play .domTableArena{
+  flex:1 1 0;
+  min-height:0;
+}
+body.domino-desk-play .domHandSection{
+  flex:0 0 auto;
+  margin-top:2px;
+  padding-bottom:0;
+}
+body.domino-desk-play .domHand{
+  min-height:0;
+  max-height:none;
+  padding:4px 6px 6px;
+}
+body.domino-desk-play #domMsg{
+  min-height:0;
+  margin:0;
+  line-height:1.1;
+}
+.domInspect{
+  max-height:calc(100dvh - max(16px, env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)));
+  overscroll-behavior:contain;
+}
+#domInspectBody{
+  flex:1 1 0;
+  height:auto;
+  min-height:0;
+  overflow-y:auto;
+  overflow-x:hidden;
+  overscroll-behavior-y:contain;
+  -webkit-overflow-scrolling:touch;
+  touch-action:pan-y;
+  scrollbar-gutter:stable;
+  contain:none;
+}
+.domInspect{
+  height:auto;
+  min-height:0;
+  max-height:calc(100dvh - max(16px, env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)));
+}
+@media(max-width:720px){
+  body.domino-desk-play #dominoScreen,
+  #dominoScreen{
+    padding:
+      max(4px, env(safe-area-inset-top, 0px))
+      max(6px, env(safe-area-inset-right, 0px))
+      max(4px, env(safe-area-inset-bottom, 0px))
+      max(6px, env(safe-area-inset-left, 0px));
+  }
+  body.domino-desk-play .domTile.inHand,
+  .domTile.inHand{
+    width:42px;
+    height:84px;
+  }
+  /* Use the vertical space that was left unused below the hand. */
+  #dominoScreen .domTableArena{
+    flex:1 1 0;
+    min-height:0;
+    margin-bottom:6px;
+    gap:12px 12px;
+  }
+  #dominoScreen .domTableArena[data-count="4"]{
+    column-gap:12px;
+  }
+  #dominoScreen .domTableArena[data-count="4"] .domPlayerChip{
+    padding:7px 5px;
+  }
+  #dominoScreen .domBoardWrap{
+    min-height:0;
+    flex:1 1 0;
+  }
+  #dominoScreen .domHandSection{
+    flex:0 0 auto;
+    margin-top:4px;
+  }
+  #dominoScreen .domHand{
+    padding:6px 6px 8px;
+  }
+}

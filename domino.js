@@ -2195,8 +2195,8 @@
       sfx("playCard");
       if (data.board) board = data.board;
       renderBoard(data.tile && data.tile.id);
-      domMsg.textContent = (data.name || "Player") + " played " +
-        (data.tile ? data.tile.a + "|" + data.tile.b : "a domino") + ".";
+      // The board animation already shows the play; do not spend a status line repeating it.
+      if (domMsg) domMsg.textContent = "";
     });
 
     // "dominoDrawn" — Dominoes only.
