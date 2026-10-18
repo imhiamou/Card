@@ -960,6 +960,29 @@ function buildDominoMatchReview(room) {
     }))
   };
   review.roundReviews.push(result);
+  const allRounds = review.roundReviews;
+  const matchStrategyCounts = {};
+  let matchDecisions = 0;
+  let matchPasses = 0;
+  let belowTopCandidate = 0;
+  allRounds.forEach((round) => {
+    const totals = round.totals || {};
+    matchDecisions += totals.decisions || 0;
+    matchPasses += totals.passes || 0;
+    belowTopCandidate += totals.selectedBelowTopCandidate || 0;
+    Object.keys(round.strategyCounts || {}).forEach((mode) => {
+      matchStrategyCounts[mode] = (matchStrategyCounts[mode] || 0) + round.strategyCounts[mode];
+    });
+  });
+  result.matchSummary = {
+    roundsReviewed: allRounds.length,
+    decisions: matchDecisions,
+    passes: matchPasses,
+    selectedBelowTopCandidate: belowTopCandidate,
+    strategyCounts: matchStrategyCounts,
+    scoreboard: publicMatchScoreboard(room),
+    note: "Aggregate covers completed rounds recorded in this inspector room. It is lost when the in-memory room/server is reset unless exported."
+  };
   return result;
 }
 
