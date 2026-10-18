@@ -671,14 +671,56 @@
     const review = snap.matchReview || null;
     if (review) {
       const totals = review.totals || {};
+      const botId = snap.playerId || snap.botId || null;
+      const botDecisions = (review.decisionRecords || []).filter((item) =>
+        botId != null && String(item.botId) === String(botId)
+      );
+      const botPasses = botDecisions.filter((item) => item.action === "pass");
+      const botMissed = botDecisions.filter((item) =>
+        typeof item.candidateGap === "number" && item.candidateGap < 0
+      );
+      const botModes = {};
+      botDecisions.forEach((item) => {
+        const key = item.mode || "unlabelled";
+        botModes[key] = (botModes[key] || 0) + 1;
+      });
+      const modeSummary = Object.keys(botModes).length
+        ? Object.keys(botModes).map((key) => key + " (" + botModes[key] + ")").join(", ")
+        : "No recorded decisions for this bot.";
+      const latestDecision = botDecisions.length ? botDecisions[botDecisions.length - 1] : null;
+      const followedPlan = latestDecision
+        ? (latestDecision.objective && (latestDecision.objective.mode || latestDecision.objective.label || latestDecision.objective.code)
+            || latestDecision.mode || "No named plan recorded") +
+          (latestDecision.target != null ? " targeting number " + latestDecision.target : "")
+        : "No committed plan was recorded for this bot during the reviewed round.";
+      let alternativePlan = "No better-scored legal alternative was recorded by the move heuristic.";
+      const missedDecision = botMissed.find((item) => Array.isArray(item.candidateScores) && item.candidateScores.length);
+      if (missedDecision) {
+        const best = missedDecision.candidateScores.reduce((current, row) =>
+          !current || (typeof row.score === "number" && row.score > current.score) ? row : current, null);
+        if (best) {
+          const tile = best.tile && best.tile.a != null && best.tile.b != null
+            ? "[" + best.tile.a + "|" + best.tile.b + "]"
+            : best.tileId != null ? "tile " + best.tileId : "an alternative move";
+          alternativePlan = "The heuristic's highest-scored alternative was " + tile +
+            (best.side ? " on the " + best.side + " end" : "") +
+            (best.reason ? " (" + best.reason + ")" : "") +
+            ". This is a heuristic recommendation, not proof it would have won.";
+        }
+      }
       sections.push({
         heading: "End-of-round review",
         lines: [
           "Round " + text(review.round) + " result: " + (review.winReason || "unknown") +
             "; winner " + (review.winnerTeam ? "Team " + review.winnerTeam : review.winnerId || "unknown") + ".",
-          "Recorded decisions: " + text(totals.decisions || 0) + "; forced passes: " + text(totals.passes || 0) +
+          "This bot — plan followed: " + followedPlan + ".",
+          "This bot — decisions: " + botDecisions.length + "; forced passes: " + botPasses.length +
+            "; heuristic selections below the top-scored candidate: " + botMissed.length + ".",
+          "This bot — strategy usage: " + modeSummary,
+          "This bot — plan to consider next time: " + alternativePlan,
+          "All bots — recorded decisions: " + text(totals.decisions || 0) + "; forced passes: " + text(totals.passes || 0) +
             "; positions with alternatives scored: " + text(totals.decisionsWithAlternatives || 0) + ".",
-          "Strategy usage: " + Object.keys(review.strategyCounts || {}).map((key) => key + " (" + review.strategyCounts[key] + ")").join(", "),
+          "All bots — strategy usage: " + Object.keys(review.strategyCounts || {}).map((key) => key + " (" + review.strategyCounts[key] + ")").join(", "),
           "Pass analysis: " + ((review.passEvents || []).map((item) => {
             const ends = item.boardAtDecision ? " at ends " + text(item.boardAtDecision.leftEnd) + "/" + text(item.boardAtDecision.rightEnd) : "";
             const hand = Array.isArray(item.ownHandAtDecision) ? "; hand " + item.ownHandAtDecision.map((tile) => "[" + tile.a + "|" + tile.b + "]").join(" ") : "";
