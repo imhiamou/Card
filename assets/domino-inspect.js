@@ -679,7 +679,25 @@
           "Recorded decisions: " + text(totals.decisions || 0) + "; forced passes: " + text(totals.passes || 0) +
             "; positions with alternatives scored: " + text(totals.decisionsWithAlternatives || 0) + ".",
           "Strategy usage: " + Object.keys(review.strategyCounts || {}).map((key) => key + " (" + review.strategyCounts[key] + ")").join(", "),
-          "Pass analysis: " + ((review.passEvents || []).map((item) => "bot " + item.botId + " — " + (item.reason || "reason unavailable")).join(" | ") || "No forced pass was recorded."),
+          "Pass analysis: " + ((review.passEvents || []).map((item) => {
+            const ends = item.boardAtDecision
+              ? " at ends " + text(item.boardAtDecision.leftEnd) + "/" + text(item.boardAtDecision.rightEnd)
+              : "";
+            const hand = Array.isArray(item.ownHandAtDecision)
+              ? "; hand " + item.ownHandAtDecision.map((tile) => "[" + tile.a + "|" + tile.b + "]").join(" ")
+              : "";
+            return "bot " + item.botId + ends + hand + " — " + (item.reason || "reason unavailable");
+          }).join(" | ") || "No forced pass was recorded."),
+          review.matchSummary
+            ? "Match overview: " + text(review.matchSummary.roundsReviewed) + " rounds reviewed; " +
+              text(review.matchSummary.decisions) + " decisions; " + text(review.matchSummary.passes) +
+              " passes; below-top heuristic selections: " + text(review.matchSummary.selectedBelowTopCandidate) +
+              ". Strategy totals: " + Object.keys(review.matchSummary.strategyCounts || {}).map((key) =>
+                key + " (" + review.matchSummary.strategyCounts[key] + ")").join(", ") + "."
+            : "Match overview will accumulate as completed rounds are recorded in inspector room 1111.",
+          review.reviewFindings
+            ? "Review guidance: " + review.reviewFindings.passLearning + " " + review.reviewFindings.scoreGapInterpretation
+            : "Review data is based on logged decisions and heuristic comparisons.",
           review.note || "Review data is based on logged decisions and heuristic comparisons."
         ]
       });
