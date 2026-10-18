@@ -951,7 +951,14 @@ function buildDominoMatchReview(room) {
       passLearning: "Compare ownHandAtDecision and boardAtDecision to identify unavailable end numbers; after the pass, use only the public pass event to update opponents' void beliefs."
     },
     strategyCounts: modes,
-    passEvents: passes.map((item) => ({ botId: item.botId, turn: item.turn, objective: item.objective, reason: item.passReason })),
+    passEvents: passes.map((item) => ({
+      botId: item.botId,
+      turn: item.turn,
+      objective: item.objective,
+      reason: item.passReason,
+      ownHandAtDecision: item.ownHandAtDecision || null,
+      boardAtDecision: item.boardAtDecision || null
+    })),
     decisionRecords: decisions.slice(),
     publicActions: (d.publicLog || []).map((event) => ({
       type: event.type, playerId: event.playerId,
