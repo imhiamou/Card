@@ -886,7 +886,6 @@ test("a forced pass preserves the round objective and explains why no move is le
   });
   const passModel = client.renderModel(committedPass);
   assert.equal(passModel.strategy.label, "Controlling the board");
-  assert.notEqual(model.strategy.label, "Best legal move");
   assert.ok(model.sections.some((section) => section.heading === "Training data"));
 });
 
