@@ -65,7 +65,7 @@ jobs:
           packages: platform-tools platforms;android-36 build-tools;35.0.0
 
       - name: Copy the frontend and sync Capacitor
-        run: npm ci --prefix mobile && npm --prefix mobile run sync
+        run: npm ci --prefix mobile && npm --prefix mobile test && npm --prefix mobile run sync
 
       - name: Build debug APK
         working-directory: mobile/android
@@ -146,7 +146,14 @@ jobs:
           packages: platform-tools platforms;android-36 build-tools;35.0.0
 
       - name: Copy the frontend and sync Capacitor
-        run: npm ci --prefix mobile && npm --prefix mobile run sync
+        run: npm ci --prefix mobile && npm --prefix mobile test && npm --prefix mobile run sync
+
+      - name: Stamp APK version and source commit into the bundled lobby
+        working-directory: mobile
+        env:
+          VERSION_NAME: ${{ env.VERSION_NAME }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: node scripts/stamp-android-build.js && npx cap copy android && grep -q "name=\"gameweb-version\" content=\"$VERSION_NAME\"" android/app/src/main/assets/public/index.html && grep -q "name=\"gameweb-build-commit\" content=\"$GITHUB_SHA\"" android/app/src/main/assets/public/index.html
 
       - name: Decode the release keystore
         env:

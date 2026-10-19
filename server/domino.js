@@ -1255,6 +1255,9 @@ function endEmptyHand(room, io, roomCode, winnerId) {
       " from opponents' remaining points.";
   }
   rememberRoundWinner(room);
+  // Persist the AI review at the round-ending transition, not only when a
+  // client happens to poll the inspector while d.over is true.
+  buildDominoMatchReview(room);
 
   // "dominoOver" — Dominoes only. Hand emptied; scoreboard included.
   io.to(roomCode).emit("dominoOver", {
@@ -1322,6 +1325,9 @@ function endBlocked(room, io, roomCode) {
       roundPoints + " from opponents' remaining points.";
   }
   rememberRoundWinner(room);
+  // Persist the AI review at the round-ending transition, not only when a
+  // client happens to poll the inspector while d.over is true.
+  buildDominoMatchReview(room);
 
   // "dominoOver" — Dominoes only. Table blocked; match scoreboard included.
   io.to(roomCode).emit("dominoOver", {

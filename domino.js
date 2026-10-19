@@ -1097,6 +1097,10 @@
       eventName
     );
     paintInspect(inspectPanelState);
+    // Refresh the server snapshot as well as the visible activity state. This
+    // is required for the completed-round review and prevents a cached plan
+    // from remaining on screen after the board changes.
+    requestInspect();
   }
 
   function applyBotDiagnostics(map) {
@@ -1150,6 +1154,8 @@
     if (snap && window.DominoInspect) {
       inspectPanelState = window.DominoInspect.panelFromSnapshot(botId, snap);
       paintInspect(inspectPanelState);
+      // The cache is only for instant first paint; always fetch fresh state.
+      requestInspect();
       return;
     }
     inspectPanelState = { open: true, botId: botId, status: "evaluating", snapshot: null, error: null };
@@ -2165,12 +2171,14 @@
           matchScoreboard: data.matchScoreboard,
           roundPoints: data.roundPoints
         });
+        noteInspectActivity("dominoOver");
       }
     });
 
     // "dominoPlayed" — Dominoes only.
     socket.on("dominoInspectResult", (data) => {
       if (!data || !window.DominoInspect) return;
+      if (data.requestId != null && data.requestId !== inspectRequest) return;
       const botId = data.botId || (data.snapshot && (data.snapshot.playerId || data.snapshot.botId));
       if (data.ok && data.snapshot && botId) diagnosticStore[botId] = data.snapshot;
       if (!inspectBotId || (botId && botId !== inspectBotId)) return;

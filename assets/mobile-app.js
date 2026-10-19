@@ -4,7 +4,7 @@
   if (!document.documentElement.classList.contains("gameweb-app")) return;
 
   const $ = (id) => document.getElementById(id);
-  const SCROLLERS = ".hheLibScroll, .ceLibScroll, .ceGrid, .cePick, .ceCarts, .ceLibPreview, .ceLibCats, .hheProps, .ceRight, .ceDialog, #lobbyPlay, #lobbyUpdates, .lobbySetupCard, input, textarea, select";
+  const SCROLLERS = ".domInspect, #domInspectBody, .domInspectNav, .hheLibScroll, .ceLibScroll, .ceGrid, .cePick, .ceCarts, .ceLibPreview, .ceLibCats, .hheProps, .ceRight, .ceDialog, #lobbyPlay, #lobbyUpdates, .lobbySetupCard, input, textarea, select";
 
   function syncViewport() {
     const vv = window.visualViewport;
@@ -67,6 +67,17 @@
   function buildLobby(root) {
     const title = root.querySelector("h1");
     if (title) title.textContent = "Gameweb";
+    if (title && !root.querySelector(".appBuildStamp")) {
+      const versionMeta = document.querySelector('meta[name="gameweb-version"]');
+      const commitMeta = document.querySelector('meta[name="gameweb-build-commit"]');
+      const version = versionMeta && versionMeta.content ? versionMeta.content : "unknown";
+      const commit = commitMeta && commitMeta.content ? commitMeta.content.slice(0, 7) : "unstamped";
+      const buildStamp = document.createElement("p");
+      buildStamp.className = "appBuildStamp";
+      buildStamp.textContent = "APK v" + version + " · commit " + commit;
+      buildStamp.setAttribute("aria-label", "Installed Android APK version " + version + ", source commit " + commit);
+      title.insertAdjacentElement("afterend", buildStamp);
+    }
     root.dataset.appTab = "play";
     const select = $("gameSelect");
     if (select && !root.querySelector(".appGameGrid")) {
