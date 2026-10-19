@@ -1321,3 +1321,65 @@ body.domino-desk-play #domMsg{
     padding:6px 6px 8px;
   }
 }
+
+
+/* Android APK layout correction: force a bounded inspector scroll region
+   and let the mobile table consume the vertical space above the hand. */
+@media (max-width: 720px) {
+  #dominoScreen {
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  #dominoScreen .domTableArena {
+    flex: 1 1 0;
+    min-height: 0;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 14px;
+    margin-bottom: 8px;
+  }
+
+  #dominoScreen .domTableArena[data-count="4"] {
+    grid-template-rows: auto minmax(0, 1fr);
+    column-gap: 14px;
+  }
+
+  #dominoScreen .domTableCenter {
+    min-height: 0;
+    height: 100%;
+  }
+
+  #dominoScreen .domBoardWrap {
+    flex: 1 1 0;
+    min-height: 0 !important;
+    height: 100% !important;
+  }
+
+  #dominoScreen .domPlayerChip {
+    padding: 8px 7px;
+  }
+
+  .domInspect {
+    display: flex;
+    flex-direction: column;
+    top: max(8px, env(safe-area-inset-top, 0px));
+    bottom: max(8px, env(safe-area-inset-bottom, 0px));
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    overflow: hidden;
+  }
+
+  #domInspectBody {
+    flex: 1 1 0;
+    height: 0;
+    min-height: 0;
+    overflow-y: scroll;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+    touch-action: pan-y;
+    contain: none;
+  }
+}
