@@ -153,7 +153,7 @@ jobs:
         env:
           VERSION_NAME: ${{ env.VERSION_NAME }}
           GITHUB_SHA: ${{ github.sha }}
-        run: node scripts/stamp-android-build.js && npx cap copy android
+        run: node scripts/stamp-android-build.js && npx cap copy android && grep -q "name=\"gameweb-version\" content=\"$VERSION_NAME\"" android/app/src/main/assets/public/index.html && grep -q "name=\"gameweb-build-commit\" content=\"$GITHUB_SHA\"" android/app/src/main/assets/public/index.html
 
       - name: Decode the release keystore
         env:
