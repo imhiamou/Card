@@ -742,6 +742,79 @@
         lines: ["A round review will appear here after a round finishes in inspector room 1111."]
       });
     }
+    if (review && review.status === "round-complete") {
+      const records = Array.isArray(review.decisionRecords) ? review.decisionRecords : [];
+      const byBot = {};
+      records.forEach((item) => {
+        if (!item || item.botId == null) return;
+        const key = String(item.botId);
+        if (!byBot[key]) byBot[key] = [];
+        byBot[key].push(item);
+      });
+      const retrospectiveLines = [];
+      const botIds = Object.keys(byBot);
+      if (!botIds.length) {
+        retrospectiveLines.push("No bot decisions were recorded for this completed round.");
+      } else {
+        botIds.forEach((id) => {
+          const decisions = byBot[id];
+          const passes = decisions.filter((item) => item.action === "pass");
+          const belowTop = decisions.filter((item) =>
+            typeof item.candidateGap === "number" && item.candidateGap < 0
+          );
+          const modeCounts = {};
+          decisions.forEach((item) => {
+            const mode = item.mode || (item.objective && (item.objective.mode || item.objective.label || item.objective.code)) || "unlabelled";
+            modeCounts[mode] = (modeCounts[mode] || 0) + 1;
+          });
+          const dominantMode = Object.keys(modeCounts).sort((a, b) => modeCounts[b] - modeCounts[a])[0];
+          const last = decisions[decisions.length - 1];
+          const objective = last && last.objective;
+          const target = last && last.target != null ? " targeting number " + last.target : "";
+          const plan = objective && (objective.label || objective.mode || objective.code)
+            ? (objective.label || objective.mode || objective.code) + target
+            : dominantMode || "No named plan was recorded";
+          retrospectiveLines.push(
+            "BOT " + id + " — Plan followed: " + plan + ". Strategy usage: " +
+            Object.keys(modeCounts).map((mode) => mode + " (" + modeCounts[mode] + ")").join(", ") + "."
+          );
+          retrospectiveLines.push(
+            "BOT " + id + " — What could improve: " + passes.length + " passes; " +
+            belowTop.length + " selected moves scored below another recorded candidate. " +
+            (passes.length ? "Review the pass positions and held tiles to distinguish forced passes from avoidable planning failures." : "No passes were recorded.")
+          );
+          let recommended = null;
+          belowTop.forEach((decision) => {
+            const rows = Array.isArray(decision.candidateScores) ? decision.candidateScores : [];
+            rows.forEach((row) => {
+              if (typeof row.score === "number" && (!recommended || row.score > recommended.score)) {
+                recommended = row;
+              }
+            });
+          });
+          if (recommended) {
+            const tile = recommended.tile && recommended.tile.a != null && recommended.tile.b != null
+              ? "[" + recommended.tile.a + "|" + recommended.tile.b + "]"
+              : recommended.tileId != null ? "tile " + recommended.tileId : "the highest-scored alternative";
+            retrospectiveLines.push(
+              "BOT " + id + " — Plan to consider instead: play " + tile +
+              (recommended.side ? " on the " + recommended.side + " end" : "") +
+              (recommended.reason ? " (" + recommended.reason + ")" : "") +
+              ". This is a heuristic recommendation, not proof it would have won."
+            );
+          } else {
+            retrospectiveLines.push(
+              "BOT " + id + " — Plan to consider instead: no better alternative can be established from the recorded candidate scores."
+            );
+          }
+        });
+      }
+      retrospectiveLines.push(
+        "This review uses recorded decisions and move scores. It cannot prove a different move would have won, and it does not infer hidden hands."
+      );
+      sections.push({ heading: "Bot-by-bot retrospective", lines: retrospectiveLines });
+    }
+
     const trainingData = snap.trainingData || null;
     sections.push({
       heading: "Training data",
