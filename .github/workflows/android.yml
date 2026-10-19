@@ -107,105 +107,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$GITHUB_REF" = "refs/heads/main" ]; then
-            latest="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName --jq '.[].tagName' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+
-
-      - name: Record the release version
-        run: node mobile/scripts/android-release.js export-env
-
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 21
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          accept-android-sdk-licenses: true
-          packages: platform-tools platforms;android-36 build-tools;35.0.0
-
-      - name: Copy the frontend and sync Capacitor
-        run: npm ci --prefix mobile && npm --prefix mobile run sync
-
-      - name: Decode the release keystore
-        env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-        run: |
-          umask 077
-          printf '%s' "$ANDROID_KEYSTORE_BASE64" | tr -d '[:space:]' | base64 -d > "$RUNNER_TEMP/gameweb-release.keystore"
-          if [ ! -s "$RUNNER_TEMP/gameweb-release.keystore" ]; then
-            echo "ANDROID_KEYSTORE_BASE64 did not decode to a keystore file."
-            exit 1
-          fi
-          if ! keytool -list -keystore "$RUNNER_TEMP/gameweb-release.keystore" -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" >/dev/null; then
-            echo "The decoded keystore could not be opened with ANDROID_KEYSTORE_PASSWORD and ANDROID_KEY_ALIAS."
-            exit 1
-          fi
-
-      - name: Build the signed release APK
-        working-directory: mobile/android
-        env:
-          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/gameweb-release.keystore
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: ./gradlew assembleRelease --no-daemon -PgamewebVersionName="$VERSION_NAME" -PgamewebVersionCode="$VERSION_CODE"
-
-      - name: Inspect the release APK signature
-        run: |
-          APK="mobile/android/app/build/outputs/apk/release/app-release.apk"
-          if [ ! -f "$APK" ]; then
-            echo "assembleRelease did not write app-release.apk."
-            ls -l mobile/android/app/build/outputs/apk/release || true
-            exit 1
-          fi
-          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort | tail -n 1)"
-          ZIPALIGN="$(find "$ANDROID_HOME/build-tools" -type f -name zipalign | sort | tail -n 1)"
-          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort | tail -n 1)"
-          test -n "$APKSIGNER"
-          test -n "$ZIPALIGN"
-          test -n "$AAPT"
-          export PATH="$(dirname "$APKSIGNER"):$(dirname "$ZIPALIGN"):$(dirname "$AAPT"):$PATH"
-          BADGING="$(aapt dump badging "$APK" | head -n 1)"
-          echo "$BADGING"
-          echo "$BADGING" | grep -q "name='com.imhiamou.gameweb'"
-          apksigner verify --verbose --print-certs "$APK"
-          if ! zipalign -c -v 4 "$APK" > "$RUNNER_TEMP/zipalign.txt"; then
-            echo "zipalign check failed."
-            tail -n 30 "$RUNNER_TEMP/zipalign.txt"
-            exit 1
-          fi
-          tail -n 5 "$RUNNER_TEMP/zipalign.txt"
-
-      - name: Verify the APK signature
-        env:
-          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/gameweb-release.keystore
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-        run: node mobile/scripts/android-release.js verify mobile/android/app/build/outputs/apk/release/app-release.apk
-
-      - name: Write Android update metadata
-        env:
-          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/gameweb-release.keystore
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-        run: node mobile/scripts/android-release.js metadata mobile/android/app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/android-release"
-
-      - name: Publish the APK to the GitHub Release
-        # Uploads Gameweb-<version>.apk, Gameweb-<version>.apk.sha256, and
-        # android-latest.json. --clobber replaces those names on a rerun
-        # and leaves the Windows installer assets in place.
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-        run: node mobile/scripts/android-release.js publish "$RUNNER_TEMP/android-release"
-
-      - name: Remove the keystore from the runner disk
-        if: always()
-        run: rm -f "$RUNNER_TEMP/gameweb-release.keystore"
- | sort -V | tail -n 1)"
+            latest="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName --jq '.[].tagName' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)"
             if [ -z "$latest" ]; then
               echo "No published semantic-version release exists; refusing to guess the initial version."
               exit 1
@@ -228,8 +130,7 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: node mobile/scripts/android-release.js check
 
-      - name: Record the version from the tag
-        env:
+      - name: Record the release version
         run: node mobile/scripts/android-release.js export-env
 
       - name: Setup Java
