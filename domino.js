@@ -1013,12 +1013,12 @@
     }
 
     const pages = [
-      { id: "overview", label: "Overview", headings: ["Bot's Plan", "What I am looking for", "Next move", "What happens next", "Why this move"] },
+      { id: "overview", label: "Overview", headings: ["Bot's Plan", "What I am looking for", "Next move", "What happens next", "Why this move", "Bot-by-bot retrospective"] },
       { id: "strategy", label: "Strategy", headings: ["Strategic plan", "Next turn prediction"] },
       { id: "teammate", label: "Teammate", headings: ["Teammate", "Partnership beliefs"] },
       { id: "opponents", label: "Opponents", headings: ["Opponents", "Opponent beliefs"] },
       { id: "details", label: "Details", headings: ["Advanced details"] },
-      { id: "review", label: "Review & Export", headings: ["End-of-round review", "Training data"] }
+      { id: "review", label: "Review & Export", headings: ["End-of-round review", "Bot-by-bot retrospective", "Training data"] }
     ];
     if (!pages.some((page) => page.id === inspectPage)) inspectPage = "overview";
     nav.textContent = "";
