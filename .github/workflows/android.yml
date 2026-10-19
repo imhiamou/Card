@@ -148,6 +148,13 @@ jobs:
       - name: Copy the frontend and sync Capacitor
         run: npm ci --prefix mobile && npm --prefix mobile run sync
 
+      - name: Stamp APK version and source commit into the bundled lobby
+        working-directory: mobile
+        env:
+          VERSION_NAME: ${{ env.VERSION_NAME }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: node scripts/stamp-android-build.js && npx cap copy android
+
       - name: Decode the release keystore
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
