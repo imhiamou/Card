@@ -88,6 +88,15 @@ html.gameweb-app #lobbyScreen.box:not(.hidden) {
     calc(env(safe-area-inset-left, 0px) + 10px);
 }
 
+html.gameweb-app #lobbyScreen .appBuildStamp {
+  margin: -5px 0 10px;
+  color: #9db2d0;
+  font-size: 11px;
+  line-height: 1.35;
+  letter-spacing: .02em;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
 html.gameweb-app #lobbyScreen h1 {
   flex: 0 0 auto;
   margin: 0 0 8px;
