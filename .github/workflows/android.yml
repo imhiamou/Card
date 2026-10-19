@@ -1,10 +1,8 @@
 name: Build Gameweb Android
 
-# Debug APKs build on pull requests, manual runs, and every push to main.
-# Main pushes build a signed Android release and publish it to a new
-# patch-version GitHub Release. Version-tag pushes still build that tag.
-# Drafts and pre-releases are not used. The Windows installer workflow
-# remains separate.
+# Debug APKs build on pull requests and manual runs. Main pushes also
+# publish a signed, versioned Android APK. Version-tag pushes publish
+# the specified version. Drafts and pre-releases are not used.
 
 on:
   workflow_dispatch:
@@ -111,9 +109,7 @@ jobs:
           if [ "$GITHUB_REF" = "refs/heads/main" ]; then
             latest="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName --jq '.[].tagName' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+
 
-      - name: Record the version from the tag
-        env:
-          RELEASE_TAG: ${{ env.RELEASE_TAG }}
+      - name: Record the release version
         run: node mobile/scripts/android-release.js export-env
 
       - name: Setup Java
@@ -192,7 +188,6 @@ jobs:
 
       - name: Write Android update metadata
         env:
-          RELEASE_TAG: ${{ env.RELEASE_TAG }}
           ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/gameweb-release.keystore
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
@@ -204,7 +199,6 @@ jobs:
         # and leaves the Windows installer assets in place.
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ env.RELEASE_TAG }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: node mobile/scripts/android-release.js publish "$RUNNER_TEMP/android-release"
 
@@ -226,20 +220,16 @@ jobs:
           echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
           echo "Publishing Android release $RELEASE_TAG"
 
-      - name: Require a valid release version and signing secrets
+      - name: Require a valid release version and the release signing secrets
         env:
-          RELEASE_TAG: ${{ github.ref == 'refs/heads/main' && '' || github.ref_name }}
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: |
-          if [ -z "$RELEASE_TAG" ]; then RELEASE_TAG="$(grep '^RELEASE_TAG=' "$GITHUB_ENV" | tail -n1 | cut -d= -f2-)"; fi
-          node mobile/scripts/android-release.js check
+        run: node mobile/scripts/android-release.js check
 
       - name: Record the version from the tag
         env:
-          RELEASE_TAG: ${{ env.RELEASE_TAG }}
         run: node mobile/scripts/android-release.js export-env
 
       - name: Setup Java
@@ -318,7 +308,6 @@ jobs:
 
       - name: Write Android update metadata
         env:
-          RELEASE_TAG: ${{ env.RELEASE_TAG }}
           ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/gameweb-release.keystore
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
@@ -330,7 +319,6 @@ jobs:
         # and leaves the Windows installer assets in place.
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ env.RELEASE_TAG }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: node mobile/scripts/android-release.js publish "$RUNNER_TEMP/android-release"
 
