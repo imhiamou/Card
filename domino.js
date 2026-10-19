@@ -994,6 +994,92 @@
     renderInspect(panel);
   }
 
+  function showTrainingExport(jsonText) {
+    const previous = document.getElementById("domTrainingExportOverlay");
+    if (previous) previous.remove();
+
+    const overlay = document.createElement("div");
+    overlay.id = "domTrainingExportOverlay";
+    overlay.setAttribute("role", "dialog");
+    overlay.setAttribute("aria-modal", "true");
+    overlay.setAttribute("aria-label", "Export bot training data");
+    overlay.style.cssText = "position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.78);display:flex;align-items:center;justify-content:center;padding:12px;box-sizing:border-box;";
+    const panel = document.createElement("div");
+    panel.style.cssText = "display:flex;flex-direction:column;gap:10px;width:min(720px,100%);max-height:90%;padding:14px;background:#171717;color:#fff;border:1px solid #666;border-radius:10px;box-sizing:border-box;";
+    const heading = document.createElement("h3");
+    heading.textContent = "Training export";
+    heading.style.margin = "0";
+    const explanation = document.createElement("p");
+    explanation.textContent = "The export is shown here as a fallback for Android WebView, where file downloads may not open. Copy the JSON or try Download.";
+    explanation.style.margin = "0";
+    const textarea = document.createElement("textarea");
+    textarea.value = jsonText;
+    textarea.readOnly = true;
+    textarea.setAttribute("aria-label", "Export JSON");
+    textarea.style.cssText = "width:100%;min-height:180px;flex:1;resize:vertical;box-sizing:border-box;background:#0c0c0c;color:#f5f5f5;border:1px solid #777;border-radius:6px;padding:10px;font:12px/1.4 monospace;";
+    const status = document.createElement("p");
+    status.setAttribute("aria-live", "polite");
+    status.textContent = "JSON ready. " + jsonText.length + " characters.";
+    status.style.margin = "0";
+    const actions = document.createElement("div");
+    actions.style.cssText = "display:flex;flex-wrap:wrap;gap:8px;";
+    function actionButton(label, onClick) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = label;
+      button.style.cssText = "min-height:40px;padding:8px 12px;border:1px solid #888;border-radius:6px;background:#292929;color:#fff;";
+      button.addEventListener("click", onClick);
+      actions.appendChild(button);
+      return button;
+    }
+    actionButton("Copy JSON", async () => {
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(jsonText);
+          status.textContent = "JSON copied to clipboard.";
+          return;
+        }
+      } catch (err) { /* Use the WebView-compatible fallback below. */ }
+      textarea.focus();
+      textarea.select();
+      let copied = false;
+      try { copied = document.execCommand("copy"); } catch (err) { copied = false; }
+      status.textContent = copied
+        ? "JSON copied to clipboard."
+        : "Copy was blocked. Select the JSON above and use your device's Copy command.";
+    });
+    actionButton("Download JSON", () => {
+      try {
+        const blob = new Blob([jsonText], { type: "application/json;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "domino-ai-training-review.json";
+        link.style.display = "none";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 30000);
+        status.textContent = "Download requested. If no file appears, use Copy JSON above.";
+      } catch (err) {
+        status.textContent = "Download failed. Use Copy JSON above instead.";
+      }
+    });
+    actionButton("Close", () => overlay.remove());
+    panel.appendChild(heading);
+    panel.appendChild(explanation);
+    panel.appendChild(textarea);
+    panel.appendChild(status);
+    panel.appendChild(actions);
+    overlay.appendChild(panel);
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) overlay.remove();
+    });
+    document.body.appendChild(overlay);
+    textarea.focus();
+    textarea.select();
+  }
+
   function renderInspect(panel) {
     const body = document.getElementById("domInspectBody");
     const nav = document.getElementById("domInspectNav");
@@ -1070,15 +1156,7 @@
           latestRoundReview: latest.matchReview || null,
           trainingData: latest.trainingData || { schemaVersion: 1, decisions: [] }
         };
-        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = "domino-ai-training-review.json";
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        URL.revokeObjectURL(url);
+        showTrainingExport(JSON.stringify(payload, null, 2));
       });
       body.appendChild(exportButton);
     }
