@@ -65,7 +65,7 @@ jobs:
           packages: platform-tools platforms;android-36 build-tools;35.0.0
 
       - name: Copy the frontend and sync Capacitor
-        run: npm ci --prefix mobile && npm --prefix mobile run sync
+        run: npm ci --prefix mobile && npm --prefix mobile test && npm --prefix mobile run sync
 
       - name: Build debug APK
         working-directory: mobile/android
@@ -146,7 +146,7 @@ jobs:
           packages: platform-tools platforms;android-36 build-tools;35.0.0
 
       - name: Copy the frontend and sync Capacitor
-        run: npm ci --prefix mobile && npm --prefix mobile run sync
+        run: npm ci --prefix mobile && npm --prefix mobile test && npm --prefix mobile run sync
 
       - name: Stamp APK version and source commit into the bundled lobby
         working-directory: mobile
