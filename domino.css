@@ -1383,3 +1383,46 @@ body.domino-desk-play #domMsg{
     contain: none;
   }
 }
+
+
+/* Android WebView: use a grid-bounded scroll viewport instead of a flex child
+   with a forced zero height. Long diagnostics and round reviews must scroll. */
+.domInspect {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  height: auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.domInspectBar,
+.domInspectNav {
+  min-height: 0;
+}
+#domInspectBody {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+  contain: none;
+  align-self: stretch;
+  padding-bottom: max(18px, env(safe-area-inset-bottom, 0px));
+}
+@media (max-width: 720px) {
+  .domInspect {
+    top: max(8px, env(safe-area-inset-top, 0px));
+    bottom: max(8px, env(safe-area-inset-bottom, 0px));
+    grid-template-rows: auto auto minmax(0, 1fr);
+  }
+  #domInspectBody {
+    min-height: 0;
+    overflow-y: scroll;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
+  }
+}
