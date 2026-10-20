@@ -925,6 +925,7 @@ test("the move evaluator rewards preserving a proven opponent void on one open e
     ],
     leftEnd: 0,
     rightEnd: 1,
+    chain: [tile(0, 4), tile(4, 6), tile(3, 6), tile(3, 5), tile(1, 5)],
     log: [pass("opp", 0, 4)]
   });
   const view = normalize(state);
