@@ -5,6 +5,8 @@ const assert = require("node:assert/strict");
 const domino = require("./domino");
 const { getDominoMove, normalize } = require("./bots/domino/ai");
 const { buildBeliefs } = require("./bots/domino/beliefs");
+const { scoreMoveParts } = require("./bots/domino/eval");
+const { mergeWeights } = require("./bots/domino/weights");
 const { clientSnapshot } = require("./bots/domino/inspect");
 const { resolvePlan, clearPlans, planStats, freshPlan } = require("./bots/domino/plan");
 const client = require("../assets/domino-inspect");
@@ -910,4 +912,39 @@ test("the inspector renders round review and exposes a structured training datas
   assert.ok(model.sections.some((section) => section.heading === "Training data"));
   assert.equal(model.trainingData.recordedPositions, 8);
   assert.equal(model.matchHistory.length, 1);
+});
+
+
+test("the move evaluator rewards preserving a proven opponent void on one open end", () => {
+  clearPlans();
+  const state = base({
+    hand: [tile(1, 2), tile(0, 3), tile(4, 5), tile(2, 6)],
+    validMoves: [
+      { tileId: "1-2", side: "right" },
+      { tileId: "0-3", side: "left" }
+    ],
+    leftEnd: 0,
+    rightEnd: 1,
+    log: [pass("opp", 0, 4)]
+  });
+  const view = normalize(state);
+  const beliefs = buildBeliefs(view);
+  const preserve = scoreMoveParts(view, beliefs, { tileId: "1-2", side: "right" }, mergeWeights(), quiet);
+  const abandon = scoreMoveParts(view, beliefs, { tileId: "0-3", side: "left" }, mergeWeights(), quiet);
+  assert.ok(preserve.parts.oppVoidExploit > 0);
+  assert.equal(abandon.parts.oppVoidExploit, 0);
+});
+
+test("end-game review export includes completed rounds, latest review, and decision trace", () => {
+  const review = { round: 4, status: "round-complete", matchSummary: { roundsReviewed: 4 }, decisionRecords: [{ action: "pass" }] };
+  const prior = { round: 3, status: "round-complete" };
+  const payload = client.buildReviewExport({
+    matchReview: review,
+    matchHistory: [prior, review],
+    trainingData: { schemaVersion: 1, recordedPositions: 1, decisions: [{ action: "pass" }] }
+  }, "2026-10-20T00:00:00.000Z");
+  assert.equal(payload.latestRoundReview, review);
+  assert.deepEqual(payload.completedRounds, [prior, review]);
+  assert.equal(payload.matchSummary.roundsReviewed, 4);
+  assert.equal(payload.trainingData.recordedPositions, 1);
 });
