@@ -10,10 +10,26 @@
   "use strict";
 
   const INSPECT_ROOM = "1111";
-  const REFRESH_EVENTS = ["dominoState", "dominoPlayed", "dominoPassed", "dominoDrawn"];
+  const REFRESH_EVENTS = ["dominoState", "dominoPlayed", "dominoPassed", "dominoDrawn", "dominoOver"];
 
   function normalizeRoom(code) {
     return String(code || "").trim().toUpperCase();
+  }
+
+  function buildReviewExport(snapshot, exportedAt) {
+    const snap = snapshot || {};
+    const latestReview = snap.matchReview || null;
+    const completedRounds = Array.isArray(snap.matchHistory) ? snap.matchHistory.slice() : [];
+    return {
+      schemaVersion: 1,
+      exportedAt: exportedAt || new Date().toISOString(),
+      source: "Gameweb Dominoes inspector room 1111",
+      note: "Completed-round review and recorded bot decisions. The trace includes each bot's own hand at decision time and public actions; it does not reconstruct hidden hands.",
+      latestRoundReview: latestReview,
+      completedRounds: completedRounds,
+      matchSummary: latestReview && latestReview.matchSummary || null,
+      trainingData: snap.trainingData || { schemaVersion: 1, recordedPositions: 0, decisions: [] }
+    };
   }
 
   function inspectClick(roomCode, player, openBotId) {
@@ -858,6 +874,7 @@
     INSPECT_ROOM: INSPECT_ROOM,
     normalizeRoom: normalizeRoom,
     inspectClick: inspectClick,
+    buildReviewExport: buildReviewExport,
     onTableEvent: onTableEvent,
     panelFromSnapshot: panelFromSnapshot,
     beginEvaluation: beginEvaluation,
