@@ -994,7 +994,7 @@
     renderInspect(panel);
   }
 
-  function showTrainingExport(jsonText, title, explanation, filename) {
+  function showTrainingExport(jsonText, title, dialogExplanation, filename) {
     const previous = document.getElementById("domTrainingExportOverlay");
     if (previous) previous.remove();
 
@@ -1010,7 +1010,7 @@
     heading.textContent = title || "Training export";
     heading.style.margin = "0";
     const explanation = document.createElement("p");
-    explanation.textContent = explanation || "The export is shown here as a fallback for Android WebView, where file downloads may not open. Copy the JSON or try Download."
+    explanation.textContent = dialogExplanation || "The export is shown here as a fallback for Android WebView, where file downloads may not open. Copy the JSON or try Download."
     explanation.style.margin = "0";
     const textarea = document.createElement("textarea");
     textarea.value = jsonText;
