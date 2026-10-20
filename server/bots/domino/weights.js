@@ -44,7 +44,7 @@ const DEFAULT_WEIGHTS = {
   dumpDouble: 5,
   blockEquity: 0.9,
   searchScale: 6,
-  intentKeep: 5,
+  intentKeep: 6.5,
   mateVoidHarm: 7,
   mateFinish: 0.85,
   oppVoidExploit: 6,
