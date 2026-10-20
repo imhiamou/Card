@@ -994,7 +994,7 @@
     renderInspect(panel);
   }
 
-  function showTrainingExport(jsonText) {
+  function showTrainingExport(jsonText, title, explanation, filename) {
     const previous = document.getElementById("domTrainingExportOverlay");
     if (previous) previous.remove();
 
@@ -1007,10 +1007,10 @@
     const panel = document.createElement("div");
     panel.style.cssText = "display:flex;flex-direction:column;gap:10px;width:min(720px,100%);max-height:90%;padding:14px;background:#171717;color:#fff;border:1px solid #666;border-radius:10px;box-sizing:border-box;";
     const heading = document.createElement("h3");
-    heading.textContent = "Training export";
+    heading.textContent = title || "Training export";
     heading.style.margin = "0";
     const explanation = document.createElement("p");
-    explanation.textContent = "The export is shown here as a fallback for Android WebView, where file downloads may not open. Copy the JSON or try Download.";
+    explanation.textContent = explanation || "The export is shown here as a fallback for Android WebView, where file downloads may not open. Copy the JSON or try Download."
     explanation.style.margin = "0";
     const textarea = document.createElement("textarea");
     textarea.value = jsonText;
@@ -1054,7 +1054,7 @@
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.href = url;
-        link.download = "domino-ai-training-review.json";
+        link.download = filename || "domino-ai-training-review.json";
         link.style.display = "none";
         document.body.appendChild(link);
         link.click();
@@ -1156,9 +1156,45 @@
           latestRoundReview: latest.matchReview || null,
           trainingData: latest.trainingData || { schemaVersion: 1, decisions: [] }
         };
-        showTrainingExport(JSON.stringify(payload, null, 2));
+        showTrainingExport(
+          JSON.stringify(payload, null, 2),
+          "Training export",
+          "The training trace is shown here as a fallback for Android WebView. Copy the JSON or try Download.",
+          "domino-ai-training-review.json"
+        );
       });
       body.appendChild(exportButton);
+
+      const reviewButton = document.createElement("button");
+      reviewButton.type = "button";
+      reviewButton.className = "domInspectTab";
+      reviewButton.textContent = "Export end-game review JSON";
+      const currentSnapshot = inspectPanelState && inspectPanelState.snapshot || snapshot || {};
+      const hasReview = !!(currentSnapshot.matchReview ||
+        (Array.isArray(currentSnapshot.matchHistory) && currentSnapshot.matchHistory.length));
+      reviewButton.disabled = !hasReview;
+      reviewButton.title = hasReview
+        ? "Export completed-round findings and the recorded decision trace."
+        : "A completed-round review is not available yet. Finish a round and wait for the inspector to refresh.";
+      reviewButton.addEventListener("click", () => {
+        const latest = inspectPanelState && inspectPanelState.snapshot || snapshot || {};
+        const payload = window.DominoInspect && typeof window.DominoInspect.buildReviewExport === "function"
+          ? window.DominoInspect.buildReviewExport(latest, new Date().toISOString())
+          : {
+              schemaVersion: 1,
+              exportedAt: new Date().toISOString(),
+              source: "Gameweb Dominoes inspector room 1111",
+              latestRoundReview: latest.matchReview || null,
+              completedRounds: latest.matchHistory || []
+            };
+        showTrainingExport(
+          JSON.stringify(payload, null, 2),
+          "End-game review export",
+          "This contains completed-round findings and recorded bot decisions. On Android WebView, copy the JSON if Download does not create a file.",
+          "domino-end-game-review.json"
+        );
+      });
+      body.appendChild(reviewButton);
     }
     if (!body.childElementCount) {
       const empty = document.createElement("p");
@@ -2345,6 +2381,7 @@
       domTurnIndicator.textContent = "Round Over";
       if (domDrawBtn) domDrawBtn.disabled = true;
       domMsg.textContent = data.message || "Round over.";
+      noteInspectActivity("dominoOver");
     });
 
     // "dominoPlayAgainWait" — Dominoes only.
