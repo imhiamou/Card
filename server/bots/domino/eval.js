@@ -232,7 +232,7 @@ function scoreMoveParts(view, beliefs, move, weights, options) {
     if (!(options && options.ignoreIntent) && mateIntent && mateIntent.byPip) {
       let keep = 0;
       mateIntent.byPip.forEach((info, pip) => {
-        if (!info || info.confidence < 0.45 || mateVoids.has(pip)) return;
+        if (!info || info.confidence < 0.30 || mateVoids.has(pip)) return;
         if (left !== pip && right !== pip) return;
         keep += (weights.intentKeep || 0) * info.confidence * safety * (pip === preferred ? 1 : 0.45);
       });
@@ -246,8 +246,15 @@ function scoreMoveParts(view, beliefs, move, weights, options) {
     const nextVoids = hardVoid(beliefs, next.id);
     const leftBlocked = left != null && nextVoids.has(left);
     const rightBlocked = right != null && nextVoids.has(right);
-    if (!(leftBlocked && rightBlocked) && (leftBlocked || rightBlocked) && pNext > 0 && pNext < 1) {
-      parts.oppVoidExploit = (weights.oppVoidExploit || 0) * (1 - pNext);
+    // Preserve a proven void as one of the resulting open ends. This remains
+    // useful when the opponent can play the other end with certainty: keep the
+    // known gap available while changing the other end.
+    const preservedVoidEnds = [left, right].filter((pip, index, ends) =>
+      pip != null && ends.indexOf(pip) === index && nextVoids.has(pip)
+    );
+    if (preservedVoidEnds.length) {
+      const preservationFactor = preservedVoidEnds.length > 1 ? 1.25 : 1;
+      parts.oppVoidExploit = (weights.oppVoidExploit || 0) * preservationFactor;
       score += parts.oppVoidExploit;
     }
     const oppIntent = intentionRow(beliefs, next.id);
