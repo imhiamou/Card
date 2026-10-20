@@ -102,8 +102,8 @@ function getDominoMove(state, options) {
   const limits = mergeLimits(options && options.limits);
   const beliefs = buildBeliefs(view, options);
   // Resolve/refresh the round plan even on a pass. A forced pass is a game
-  // event, not a reason to forget the objective; its public cause becomes
-  // evidence for the next decision.
+  // event, not a reason to forget the objective. Record the cause and keep
+  // the plan; do not infer opponent voids from this bot's own forced pass.
   beliefs._plan = resolvePlan(view, beliefs, options);
   if (!view.validMoves.length) {
     if (!(options && options.explain)) return null;
@@ -113,7 +113,7 @@ function getDominoMove(state, options) {
     diagnostics.available = true;
     diagnostics.status = "ready";
     diagnostics.error = null;
-    diagnostics.reason = "I must pass because no tile in my hand matches either open end. I keep my round objective and use this pass as evidence about the board and hidden hands.";
+    diagnostics.reason = "I must pass because no tile in my hand matches either open end. I keep my round objective and record the cause without changing opponent beliefs from my own pass.";
     diagnostics.reasoning = diagnostics.reason;
     diagnostics.passAnalysis = {
       forced: true,
@@ -123,7 +123,7 @@ function getDominoMove(state, options) {
       handCount: view.hand.length,
       objective: { mode: plan.mode || "none", target: plan.target == null ? null : plan.target,
         owner: plan.owner || null, confidence: plan.confidence || 0, evidence: plan.evidence || null },
-      futureAdjustment: "After the pass, update number-absence beliefs from the public pass record; retain the strategy unless public evidence invalidates its target."
+      futureAdjustment: "After the pass, retain the objective and re-evaluate it when the board changes; do not update opponent beliefs from my own pass."
     };
     diagnostics.strategicMode = { label: plan.mode || "No committed objective", reason: plan.evidence || diagnostics.reason };
     diagnostics.mode = diagnostics.strategicMode;
