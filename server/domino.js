@@ -889,6 +889,14 @@ function rememberDominoReview(room, botId, view, stored) {
     candidateGap: candidateGap,
     passReason: snapshot.passAnalysis && snapshot.passAnalysis.reason || null,
     ownHandAtDecision: (view.hand || []).map((tile) => ({ id: tile.id, a: tile.a, b: tile.b })),
+    // Hindsight-only ground truth for training. This field is only emitted in
+    // the dedicated inspector room's review/export, never in public game state.
+    actualHandsAtDecision: Object.keys((room.domino && room.domino.hands) || {}).reduce((hands, playerId) => {
+      hands[playerId] = ((room.domino.hands[playerId]) || []).map((tile) => ({
+        id: tile.id, a: tile.a, b: tile.b
+      }));
+      return hands;
+    }, {}),
     boardAtDecision: {
       leftEnd: view.leftEnd == null ? null : view.leftEnd,
       rightEnd: view.rightEnd == null ? null : view.rightEnd,
