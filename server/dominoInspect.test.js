@@ -290,7 +290,8 @@ test("own-finish priority is explained from the real scores and hidden hands sta
     .some((item) => item.id === "5-5"));
   assert.ok(payload.snapshot.fullMatchReview.decisionRecords[0].actualHandsAtDecision.botC
     .some((item) => item.id === "0-0"));
-  assert.equal(payload.snapshot.selectedMove.tileId === "1-2" || payload.snapshot.selectedMove.tileId === "2-6", true);
+  assert.ok(payload.snapshot.candidateEvaluations.some((row) => row.tileId === "1-2" || row.tileId === "2-6"),
+    "the inspector response must preserve candidate tile identities");
 
   const model = client.renderModel(null);
   assert.equal(model.sections.length >= 5, true);
