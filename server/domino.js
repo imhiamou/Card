@@ -504,7 +504,10 @@ function initRound(room) {
   const playerIds = room.players.map((p) => p.id);
   ensureMatch(room);
   const firstRound = !room.dominoMatch.roundsCompleted;
-  if (room.dominoAiReview) room.dominoAiReview.roundStartIndex = (room.dominoAiReview.decisions || []).length;
+  if (room.dominoAiReview) {
+    room.dominoAiReview.roundStartIndex = (room.dominoAiReview.decisions || []).length;
+    room.dominoAiReview.roundActionStartIndex = (room.dominoAiReview.actionSnapshots || []).length;
+  }
   const dealt = dealHands(playerIds, firstRound ? { requireTileId: "6-6" } : null);
   const plan = planOpening(playerIds, dealt.hands, room.dominoMatch);
   const starterId = plan.starterId || playerIds[0];
@@ -697,10 +700,43 @@ function publicBoard(room) {
   };
 }
 
-function notePublic(state, entry) {
+function notePublic(state, entry, room, roomCode) {
   if (!state) return;
   if (!state.publicLog) state.publicLog = [];
   state.publicLog.push(entry);
+  // Full ground-truth action snapshots are stored only for the dedicated
+  // inspector room, separately from publicLog so bot inference never sees them.
+  const code = typeof roomCode === "string" ? roomCode.trim().toUpperCase() : "";
+  if (code !== INSPECT_ROOM || !room) return;
+  if (!room.dominoAiReview) {
+    room.dominoAiReview = {
+      startedAt: Date.now(), decisions: [], actionSnapshots: [],
+      roundReviews: [], roundStartIndex: 0, roundActionStartIndex: 0
+    };
+  }
+  if (!Array.isArray(room.dominoAiReview.actionSnapshots)) room.dominoAiReview.actionSnapshots = [];
+  const actualHandsAtEvent = Object.keys(state.hands || {}).reduce((hands, playerId) => {
+    hands[playerId] = (state.hands[playerId] || []).map((tile) => ({
+      id: tile.id, a: tile.a, b: tile.b
+    }));
+    return hands;
+  }, {});
+  room.dominoAiReview.actionSnapshots.push({
+    round: (room.dominoMatch && room.dominoMatch.roundsCompleted || 0) + 1,
+    actionIndex: state.publicLog.length - 1,
+    type: entry.type || null,
+    playerId: entry.playerId || null,
+    tile: entry.tile ? { id: entry.tile.id || null, a: entry.tile.a, b: entry.tile.b } : null,
+    side: entry.side || null,
+    leftEnd: state.leftEnd == null ? null : state.leftEnd,
+    rightEnd: state.rightEnd == null ? null : state.rightEnd,
+    actualHandsAtEvent: actualHandsAtEvent,
+    handSnapshotTiming: entry.type === "draw"
+      ? "after-draw"
+      : entry.type === "play"
+        ? "before-play-removal"
+        : "at-action"
+  });
 }
 
 /**
@@ -938,6 +974,7 @@ function buildDominoMatchReview(room) {
   if (existing) return existing;
   const startIndex = review.roundStartIndex || 0;
   const decisions = (review.decisions || []).slice(startIndex);
+  const actionSnapshots = (review.actionSnapshots || []).slice(review.roundActionStartIndex || 0);
   const passes = decisions.filter((item) => item.action === "pass");
   const modes = {};
   decisions.forEach((item) => {
@@ -975,6 +1012,7 @@ function buildDominoMatchReview(room) {
       boardAtDecision: item.boardAtDecision || null
     })),
     decisionRecords: decisions.slice(),
+    actionSnapshots: actionSnapshots.slice(),
     publicActions: (d.publicLog || []).map((event, index) => ({
       index: index,
       type: event.type || null,
@@ -1048,6 +1086,7 @@ function buildDominoFullMatchReview(room) {
       return counts;
     }, {}),
     decisionRecords: currentDecisions.slice(),
+    actionSnapshots: (review.actionSnapshots || []).slice(review.roundActionStartIndex || 0),
     publicActions: (room.domino.publicLog || []).map((event, index) => ({
       index: index,
       type: event.type || null,
@@ -1072,6 +1111,9 @@ function buildDominoFullMatchReview(room) {
     Object.assign({ round: round.round }, item)
   ));
   const publicActions = rounds.flatMap((round) => (round.publicActions || []).map((item) =>
+    Object.assign({ round: round.round }, item)
+  ));
+  const actionSnapshots = rounds.flatMap((round) => (round.actionSnapshots || []).map((item) =>
     Object.assign({ round: round.round }, item)
   ));
   const strategyCounts = {};
@@ -1103,8 +1145,9 @@ function buildDominoFullMatchReview(room) {
     rounds: rounds,
     decisionRecords: decisionRecords,
     publicActions: publicActions,
+    actionSnapshots: actionSnapshots,
     latestRoundReview: latestRound,
-    note: "One match-wide trace across all rounds recorded in inspector room 1111. Each decision includes the acting bot's own hand and candidate evaluations; publicActions records the moves, passes, draws, board transitions, and legal-alternative counts visible at the table. Hidden hands are not reconstructed."
+    note: "One match-wide trace across all rounds recorded in inspector room 1111. Each decision includes the acting bot's own hand and candidate evaluations. actionSnapshots records the exact hands held by every player at each logged action for hindsight training; publicActions records the corresponding played tiles, passes, draws, board transitions, and legal-alternative counts. This ground truth is restricted to the dedicated inspector room."
   };
 }
 
@@ -1327,7 +1370,7 @@ function resolveAutoPasses(room, io, roomCode) {
       boardRightAfter: d.rightEnd,
       leftEnd: d.leftEnd,
       rightEnd: d.rightEnd
-    });
+    }, room, roomCode);
     const passer = room.players.find((p) => p.id === d.currentTurn);
     // "dominoPassed" — Dominoes only. Announces an automatic pass.
     io.to(roomCode).emit("dominoPassed", {
@@ -1684,7 +1727,7 @@ function registerSocket(socket, io, rooms) {
       rightEndBefore: rightBefore,
       leftEnd: d.leftEnd,
       rightEnd: d.rightEnd
-    });
+    }, room, roomCode);
 
     hand.splice(idx, 1);
     d.consecutivePasses = 0;
@@ -1750,7 +1793,7 @@ function registerSocket(socket, io, rooms) {
 
     const drawn = d.boneyard.pop();
     d.hands[socket.id].push(drawn);
-    notePublic(d, { type: "draw", playerId: socket.id });
+    notePublic(d, { type: "draw", playerId: socket.id }, room, roomCode);
     const me = room.players.find((p) => p.id === socket.id);
 
     // "dominoDrawn" — Dominoes only. Public draw notice (tile hidden).
@@ -1776,7 +1819,7 @@ function registerSocket(socket, io, rooms) {
         boardRightAfter: d.rightEnd,
         leftEnd: d.leftEnd,
         rightEnd: d.rightEnd
-      });
+      }, room, roomCode);
       io.to(roomCode).emit("dominoPassed", {
         by: socket.id,
         name: me ? me.name : "Player",
