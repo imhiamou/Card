@@ -949,3 +949,59 @@ test("end-game review export includes completed rounds, latest review, and decis
   assert.equal(payload.matchSummary.roundsReviewed, 4);
   assert.equal(payload.trainingData.recordedPositions, 1);
 });
+
+
+test("retained teammate targets refresh their evidence and proven voids clear unsupported targets", () => {
+  clearPlans();
+  const state = base({
+    gameId: "intent-evidence-refresh",
+    roundNumber: 1,
+    hand: [tile(0, 1), tile(2, 3)],
+    players: seats([2, 3, 3, 3]),
+    validMoves: [{ tileId: "0-1", side: "left" }],
+    leftEnd: 0,
+    rightEnd: 5
+  });
+  const view = normalize(state);
+  const makeBeliefs = (weakEvidence, teammateVoids) => {
+    const byPip = Array.from({ length: 7 }, (_, pip) => ({
+      pip, inHand: 0, unseen: 6,
+      expectedTiles: 0, pAtLeastOne: 0.3, pMultiple: 0,
+      inTile: 0, bridged: 0, continued: 0, missed: 0,
+      confidence: 0, strategic: 0, last: ""
+    }));
+    if (!weakEvidence) {
+      byPip[4].pAtLeastOne = 0.7;
+      byPip[4].pMultiple = 0.2;
+      byPip[4].inTile = 2;
+      byPip[4].bridged = 1;
+      byPip[4].confidence = 0.9;
+    }
+    const intention = {
+      preferred: weakEvidence ? null : 4,
+      confidence: weakEvidence ? 0 : 0.9,
+      byPip
+    };
+    return {
+      mate: { knownImpossibleNumbers: teammateVoids || [], intention },
+      opp: { knownImpossibleNumbers: [], intention: { preferred: null, confidence: 0, byPip } },
+      far: { knownImpossibleNumbers: [], intention: { preferred: null, confidence: 0, byPip } },
+      _inventory: { byPip: byPip.map((row) => Object.assign({}, row)) }
+    };
+  };
+
+  const first = resolvePlan(view, makeBeliefs(false, []));
+  assert.equal(first.mode, "teammate-support");
+  assert.equal(first.target, 4);
+
+  const retained = resolvePlan(view, makeBeliefs(true, []));
+  assert.equal(retained.mode, "teammate-support");
+  assert.equal(retained.target, 4);
+  assert.match(retained.evidence, /retained hypothesis, not fresh confirmation/i);
+  assert.match(retained.evidence, /0 tile observations/);
+
+  const ruledOut = resolvePlan(view, makeBeliefs(true, [4]));
+  assert.equal(ruledOut.mode, "teammate-support");
+  assert.equal(ruledOut.target, null);
+  assert.match(ruledOut.evidence, /rules out the committed target 4/i);
+});
