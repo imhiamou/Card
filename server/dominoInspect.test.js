@@ -282,11 +282,15 @@ test("own-finish priority is explained from the real scores and hidden hands sta
   const human = socket("human");
   domino.registerSocket(human, io(), { "1111": room });
   human.handlers.dominoInspect({ roomCode: "1111", botId: "botA", requestId: 8 });
-  const payload = JSON.stringify(human.emitted[0].data);
-  assert.equal(payload.includes("3-4"), false);
-  assert.equal(payload.includes("5-5"), false);
-  assert.equal(payload.includes("0-0"), false);
-  assert.equal(payload.includes("1-2") || payload.includes("2-6"), true);
+  const payload = human.emitted[0].data;
+  assert.equal(payload.snapshot.hand, undefined, "the live snapshot does not expose a raw hand array");
+  assert.ok(payload.snapshot.fullMatchReview.decisionRecords[0].actualHandsAtDecision.human
+    .some((item) => item.id === "3-4"));
+  assert.ok(payload.snapshot.fullMatchReview.decisionRecords[0].actualHandsAtDecision.botB
+    .some((item) => item.id === "5-5"));
+  assert.ok(payload.snapshot.fullMatchReview.decisionRecords[0].actualHandsAtDecision.botC
+    .some((item) => item.id === "0-0"));
+  assert.equal(payload.snapshot.selectedMove.tileId === "1-2" || payload.snapshot.selectedMove.tileId === "2-6", true);
 
   const model = client.renderModel(null);
   assert.equal(model.sections.length >= 5, true);
