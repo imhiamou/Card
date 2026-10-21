@@ -38,6 +38,11 @@
       rounds: completedRounds,
       matchSummary: matchReview ? {
         status: matchReview.status,
+        roundsReviewed: matchReview.totals && matchReview.totals.completedRounds != null
+          ? matchReview.totals.completedRounds
+          : matchReview.matchSummary && matchReview.matchSummary.roundsReviewed != null
+            ? matchReview.matchSummary.roundsReviewed
+            : completedRounds.length,
         totals: matchReview.totals || null,
         strategyCounts: matchReview.strategyCounts || {},
         scoreboard: matchReview.scoreboard || null,
