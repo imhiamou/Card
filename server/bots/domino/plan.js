@@ -334,6 +334,7 @@ function freshPlan(view, beliefs) {
   }
   plan.teammateTarget = teammateTarget;
   plan.teammateConfidence = teammateConfidence;
+  plan.teammateEvidence = mate ? teammateEvidence(mate) : null;
   plan.teammateVoidNumbers = (beliefs && beliefs[mateId] && beliefs[mateId].knownImpossibleNumbers || []).slice();
   const teammateIntent = intentionOf(beliefs, mateId);
   plan.teammateSuspectedMissingNumbers = teammateIntent
@@ -488,6 +489,11 @@ function resolvePlan(view, beliefs, options) {
           next.evidence = "The overall strategy remains teammate support, but public pass evidence rules out the committed target " + prev.target +
             ". No alternative has enough repeated public evidence yet; the move evaluator continues to seek the best team-advantage move without treating the ruled-out number as valid.";
         }
+      } else if (fresh.teammateTarget === prev.target && fresh.teammateEvidence) {
+        // Refresh the explanation with current evidence while retaining the
+        // round commitment. A persistent target must not keep a stale or
+        // contradictory explanation from the turn it was first selected.
+        next.evidence = fresh.teammateEvidence;
       }
     } else if (prev.mode === "opponent-denial") {
       const belief = beliefs && beliefs[prev.ownerId];
