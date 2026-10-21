@@ -692,7 +692,7 @@ function unavailableSnapshot(view, reason) {
   };
 }
 
-function clientSnapshot(diagnostics) {
+function clientSnapshot(diagnostics, options) {
   const source = diagnostics || unavailableSnapshot(null, "No decision was recorded.");
   let copy = null;
   try {
@@ -738,7 +738,8 @@ function clientSnapshot(diagnostics) {
     const safe = {};
     const currentPath = path || "";
     Object.keys(value).forEach((key) => {
-      const identityIsInspectable = /(^|\.)(legalMoves|candidateEvaluations|selectedMove|selected|scores|plan|continuation|alternatives|publicActions|decisionRecords)(\.|\[|$)/.test(currentPath);
+      const identityIsInspectable = !!(options && options.includeCandidateIdentities) &&
+        /(^|\.)(legalMoves|candidateEvaluations|selectedMove|selected|scores|plan|continuation|alternatives|publicActions|decisionRecords)(\.|\[|$)/.test(currentPath);
       if (/^(hand|hands|tiles|handTiles|unseenTileIds|positionKey)$/i.test(key)) return;
       if (/^(tile|tileId|tileIds)$/i.test(key) && !identityIsInspectable) return;
       safe[key] = redact(value[key], currentPath + "." + key);
