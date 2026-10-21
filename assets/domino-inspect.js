@@ -18,7 +18,8 @@
 
   function buildReviewExport(snapshot, exportedAt) {
     const snap = snapshot || {};
-    const matchReview = snap.fullMatchReview || snap.matchReview || null;
+    const latestRoundReview = snap.matchReview || null;
+    const matchReview = snap.fullMatchReview || latestRoundReview;
     const completedRounds = Array.isArray(matchReview && matchReview.rounds)
       ? matchReview.rounds.filter((round) => round && round.status !== "in-progress")
       : (Array.isArray(snap.matchHistory) ? snap.matchHistory.slice() : []);
@@ -32,6 +33,8 @@
       scope: "one-match-review",
       note: "Single match-wide review, not a per-bot export. It includes every recorded bot decision, each bot's own hand and candidate scores at decision time, plus public plays, passes, draws, board transitions, and round results. Hidden hands are not reconstructed.",
       matchReview: matchReview,
+      latestRoundReview: latestRoundReview,
+      completedRounds: completedRounds,
       rounds: completedRounds,
       matchSummary: matchReview ? {
         status: matchReview.status,
