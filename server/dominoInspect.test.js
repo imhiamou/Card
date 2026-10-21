@@ -130,6 +130,12 @@ test("room 1111 opens, switches, and closes the inspector without a game action"
   assert.equal(human.emitted[0].data.ok, true);
   assert.equal(human.emitted[0].data.snapshot.botId, "botA");
   assert.equal(human.emitted[1].data.snapshot.botId, "botB");
+  // Polling the inspector snapshots every bot, but only the active seat's
+  // actual decision belongs in the round trace. A non-active bot with no
+  // legal move is not a forced pass.
+  assert.ok(room.dominoAiReview.decisions.length >= 1);
+  assert.equal(room.dominoAiReview.decisions.every((row) => row.botId === "botA"), true);
+  assert.equal(room.dominoAiReview.decisions.some((row) => row.botId === "botB" && row.action === "pass"), false);
   assert.equal(human.emitted[0].data.snapshot.selected.tileId, domino.decideBotMove(room, "1111", "botA").move.tileId);
   assert.notEqual(human.emitted[0].data.snapshot.selected.conditional, true);
   assert.equal(human.emitted[1].data.snapshot.selected.conditional, true);
