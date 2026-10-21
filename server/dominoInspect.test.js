@@ -349,7 +349,7 @@ test("simple strategy labels follow the recorded decision", () => {
     partnership: { available: true, preserves: [4], provenVoids: [{ pip: 2 }, { pip: 5 }], helpsEmpty: true },
     parts: { mateReply: 3 }
   });
-  assert.match(helping.sections.find((section) => section.heading === "Teammate").lines[0], /Helping teammate: Yes/);
+  assert.match(helping.sections.find((section) => section.heading === "Teammate").lines[0], /Round commitment: Yes/);
   assert.match(helping.sections.find((section) => section.heading === "What I am looking for").lines.join(" "), /teammate/i);
   const blocking = labeled("Blocking opponents", {
     opponents: { opponents: [{ provenVoids: [{ pip: 4 }], suspectedWeak: [] }], forcesPass: true },
@@ -391,9 +391,16 @@ test("room 1111 state carries the finished decision and other rooms do not", () 
   assert.equal(exported.scope, "one-match-review");
   assert.equal(exported.matchReview.decisionRecords.length, 1);
   assert.equal(exported.trainingData.recordedPositions, 1);
-  const text = JSON.stringify(published);
-  assert.equal(text.includes("3-4"), false);
-  assert.equal(text.includes("0-0"), false);
+  assert.equal(published.hand, undefined, "the live bot snapshot must not expose a raw hand array");
+  assert.equal(
+    published.fullMatchReview.decisionRecords[0].actualHandsAtDecision.human[0].id,
+    "3-4",
+    "the dedicated match review must retain actual hands for hindsight analysis"
+  );
+  assert.equal(
+    published.fullMatchReview.decisionRecords[0].actualHandsAtDecision.botC[0].id,
+    "0-0"
+  );
   const other = client.panelFromSnapshot("botB", extra.botDiagnostics.botB);
   assert.equal(other.snapshot.playerId, "botB");
   assert.notEqual(other.snapshot.selectedMove && other.snapshot.selectedMove.tileId, published.selectedMove.tileId);
