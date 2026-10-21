@@ -514,8 +514,11 @@ function resolvePlan(view, beliefs, options) {
     next = Object.assign({}, fresh, { held: false, switched: false });
   }
 
-  next.teammateTarget = fresh.teammateTarget != null ? fresh.teammateTarget : (prev && prev.teammateTarget != null ? prev.teammateTarget : null);
-  next.teammateConfidence = fresh.teammateConfidence || (prev && prev.teammateConfidence) || 0;
+  const previousMateTargetRuledOut = !!(prev && prev.teammateTarget != null &&
+    (fresh.teammateVoidNumbers || []).indexOf(prev.teammateTarget) >= 0);
+  next.teammateTarget = fresh.teammateTarget != null ? fresh.teammateTarget
+    : (prev && prev.teammateTarget != null && !previousMateTargetRuledOut ? prev.teammateTarget : null);
+  next.teammateConfidence = fresh.teammateConfidence || (previousMateTargetRuledOut ? 0 : (prev && prev.teammateConfidence)) || 0;
   next.teammateVoidNumbers = fresh.teammateVoidNumbers || (prev && prev.teammateVoidNumbers) || [];
   next.teammateSuspectedMissingNumbers = fresh.teammateSuspectedMissingNumbers ||
     (prev && prev.teammateSuspectedMissingNumbers) || [];
