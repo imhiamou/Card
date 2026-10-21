@@ -18,17 +18,35 @@
 
   function buildReviewExport(snapshot, exportedAt) {
     const snap = snapshot || {};
-    const latestReview = snap.matchReview || null;
-    const completedRounds = Array.isArray(snap.matchHistory) ? snap.matchHistory.slice() : [];
+    const matchReview = snap.fullMatchReview || snap.matchReview || null;
+    const completedRounds = Array.isArray(matchReview && matchReview.rounds)
+      ? matchReview.rounds.filter((round) => round && round.status !== "in-progress")
+      : (Array.isArray(snap.matchHistory) ? snap.matchHistory.slice() : []);
+    const decisions = Array.isArray(matchReview && matchReview.decisionRecords)
+      ? matchReview.decisionRecords
+      : (snap.trainingData && Array.isArray(snap.trainingData.decisions) ? snap.trainingData.decisions : []);
     return {
-      schemaVersion: 1,
+      schemaVersion: 2,
       exportedAt: exportedAt || new Date().toISOString(),
       source: "Gameweb Dominoes inspector room 1111",
-      note: "Completed-round review and recorded bot decisions. The trace includes each bot's own hand at decision time and public actions; it does not reconstruct hidden hands.",
-      latestRoundReview: latestReview,
-      completedRounds: completedRounds,
-      matchSummary: latestReview && latestReview.matchSummary || null,
-      trainingData: snap.trainingData || { schemaVersion: 1, recordedPositions: 0, decisions: [] }
+      scope: "one-match-review",
+      note: "Single match-wide review, not a per-bot export. It includes every recorded bot decision, each bot's own hand and candidate scores at decision time, plus public plays, passes, draws, board transitions, and round results. Hidden hands are not reconstructed.",
+      matchReview: matchReview,
+      rounds: completedRounds,
+      matchSummary: matchReview ? {
+        status: matchReview.status,
+        totals: matchReview.totals || null,
+        strategyCounts: matchReview.strategyCounts || {},
+        scoreboard: matchReview.scoreboard || null,
+        winnerId: matchReview.winnerId || null,
+        winnerTeam: matchReview.winnerTeam || null
+      } : null,
+      trainingData: {
+        schemaVersion: 2,
+        roomCode: "1111",
+        recordedPositions: decisions.length,
+        decisions: decisions
+      }
     };
   }
 
