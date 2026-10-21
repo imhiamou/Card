@@ -857,6 +857,11 @@ const INSPECT_ROOM = "1111";
  */
 function rememberDominoReview(room, botId, view, stored) {
   if (!room || !stored || !stored.snapshot) return;
+  // Inspector polling computes snapshots for every seated bot, including bots
+  // that are not currently allowed to act. Those snapshots are useful for
+  // inspection, but they are not decisions and must not enter training/review
+  // history as plays or forced passes.
+  if (!room.domino || room.domino.currentTurn !== botId || room.domino.over) return;
   if (!room.dominoAiReview) room.dominoAiReview = { startedAt: Date.now(), decisions: [] };
   const snapshot = stored.snapshot;
   const selected = snapshot.selected || snapshot.selectedMove || null;
