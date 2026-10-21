@@ -1137,7 +1137,7 @@ function decideBotMove(room, roomCode, botId) {
   const move = explained && !explained.pass && explained.tileId != null
     ? { tileId: explained.tileId, side: explained.side } : null;
   const snapshot = explained && explained.diagnostics
-    ? dominoInspect.clientSnapshot(explained.diagnostics)
+    ? dominoInspect.clientSnapshot(explained.diagnostics, { includeCandidateIdentities: true })
     : dominoInspect.clientSnapshot(dominoInspect.unavailableSnapshot(view, "No legal move is available."));
   const stored = { key: key, move: move, snapshot: snapshot, restricted: false };
   room.dominoDecisions[botId] = stored;
