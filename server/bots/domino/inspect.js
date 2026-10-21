@@ -825,6 +825,7 @@ function buildDiagnostics(input) {
     legalMoves: (view.validMoves || []).map((move) => ({ tileId: move.tileId, side: move.side })),
     selectedMove: selected,
     candidateEvaluations: ranked.map((row) => ({
+      tile: copyTile(handTile(view, row.move.tileId)),
       tileId: row.move.tileId,
       side: row.move.side,
       score: round3(row.score),
