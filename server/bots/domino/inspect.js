@@ -732,13 +732,16 @@ function clientSnapshot(diagnostics) {
   // Diagnostics are delivered to a client. Keep the strategy explanation,
   // counts, probabilities, and scores, but never serialize a hidden hand or
   // a tile identity/value that would reveal a bot's private tiles.
-  function redact(value) {
-    if (Array.isArray(value)) return value.map(redact);
+  function redact(value, path) {
+    if (Array.isArray(value)) return value.map((item, index) => redact(item, (path || "") + "[" + index + "]"));
     if (!value || typeof value !== "object") return value;
     const safe = {};
+    const currentPath = path || "";
     Object.keys(value).forEach((key) => {
-      if (/^(hand|hands|tiles|tile|tileId|tileIds|handTiles|unseenTileIds|positionKey)$/i.test(key)) return;
-      safe[key] = redact(value[key]);
+      const identityIsInspectable = /(^|\.)(legalMoves|candidateEvaluations|selectedMove|selected|scores|plan|continuation|alternatives|publicActions|decisionRecords)(\.|\[|$)/.test(currentPath);
+      if (/^(hand|hands|tiles|handTiles|unseenTileIds|positionKey)$/i.test(key)) return;
+      if (/^(tile|tileId|tileIds)$/i.test(key) && !identityIsInspectable) return;
+      safe[key] = redact(value[key], currentPath + "." + key);
     });
     return safe;
   }
