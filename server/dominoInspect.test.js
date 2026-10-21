@@ -383,6 +383,9 @@ test("room 1111 state carries the finished decision and other rooms do not", () 
   assert.equal(extra.fullMatchReview.decisionRecords.length, 1,
     "match review must contain one shared trace, not a separate trace per bot");
   assert.equal(extra.fullMatchReview.decisionRecords[0].botId, "botA");
+  assert.ok(extra.fullMatchReview.decisionRecords[0].actualHandsAtDecision.botA,
+    "the match review must retain ground-truth hands for later hindsight analysis");
+  assert.ok(extra.fullMatchReview.decisionRecords[0].actualHandsAtDecision.human);
   assert.equal(extra.fullMatchReview.rounds[0].status, "in-progress");
   const exported = client.buildReviewExport(published, "2026-10-21T00:00:00.000Z");
   assert.equal(exported.scope, "one-match-review");
