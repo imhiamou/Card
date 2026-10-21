@@ -1024,9 +1024,10 @@ function buildDominoFullMatchReview(room) {
   if (!review) return null;
   const latestRound = buildDominoMatchReview(room);
   const completedRounds = Array.isArray(review.roundReviews) ? review.roundReviews.slice() : [];
-  const currentRoundNumber = room.dominoMatch && room.dominoMatch.roundsCompleted
-    ? room.dominoMatch.roundsCompleted + (room.domino.over ? 0 : 1)
-    : (room.domino.over ? 1 : 1);
+  const completedRoundCount = room.dominoMatch && room.dominoMatch.roundsCompleted || 0;
+  const currentRoundNumber = room.domino.over
+    ? Math.max(1, completedRoundCount)
+    : completedRoundCount + 1;
   const startIndex = review.roundStartIndex || 0;
   const currentDecisions = room.domino.over ? [] : (review.decisions || []).slice(startIndex);
   const currentRound = room.domino.over ? null : {
