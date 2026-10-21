@@ -36,6 +36,8 @@
       latestRoundReview: latestRoundReview,
       completedRounds: completedRounds,
       rounds: completedRounds,
+      actionSnapshots: Array.isArray(matchReview && matchReview.actionSnapshots)
+        ? matchReview.actionSnapshots : [],
       matchSummary: matchReview ? {
         status: matchReview.status,
         roundsReviewed: matchReview.totals && matchReview.totals.completedRounds != null
