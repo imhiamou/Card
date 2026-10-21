@@ -169,11 +169,11 @@ function freshPlan(view, beliefs) {
     const support = previousInfo
       ? (previousInfo.inTile || 0) + (previousInfo.bridged || 0) + (previousInfo.continued || 0)
       : 0;
-    const previousStillSupported = previous && previousInfo &&
+    const previousStillSupported = !!(previous && previousInfo &&
       voids.indexOf(previous.pip) < 0 &&
       previousInfo.pAtLeastOne >= 0.2 &&
       !((previousInfo.missed || 0) >= 0.75 && previousInfo.pAtLeastOne < 0.35) &&
-      support >= 1.5;
+      support >= 1.5);
     // Lock the teammate-support number for the round. Ordinary changes in
     // confidence do not cause the target to jump from number to number.
     // Reassign only after public evidence proves the committed number impossible.
@@ -183,15 +183,19 @@ function freshPlan(view, beliefs) {
         pip: previous.pip,
         score: previous.score || 0,
         confidence: previous.confidence != null ? previous.confidence : (mateIntent ? mateIntent.confidence : 0),
-        info: info
+        info: info,
+        retained: true,
+        evidenceSupported: previousStillSupported
       };
     } else if (previous && voids.indexOf(previous.pip) >= 0) {
       const rows = mateIntent && mateIntent.byPip || [];
       let alternative = null;
       rows.forEach((info, pip) => {
         if (voids.indexOf(pip) >= 0) return;
-        const score = (info.pAtLeastOne || 0) * 4 + (info.expectedTiles || 0) +
-          (info.inTile || 0) + (info.bridged || 0);
+        const support = (info.inTile || 0) + (info.bridged || 0) + (info.continued || 0);
+        if (!info || info.pAtLeastOne < 0.2 ||
+            (info.missed >= 0.75 && info.pAtLeastOne < 0.35) || support < 1.5) return;
+        const score = (info.pAtLeastOne || 0) * 4 + (info.expectedTiles || 0) + support;
         if (!alternative || score > alternative.score) alternative = { pip: pip, score: score, info: info };
       });
       if (alternative) {
@@ -288,9 +292,7 @@ function freshPlan(view, beliefs) {
       score: mateScore,
       held: false,
       switched: false,
-      evidence: "Public play history repeatedly supports " + mate.pip + " as the teammate's useful number: " +
-        round1(mate.info.inTile) + " tile observations and " + round1(mate.info.bridged) +
-        " links to previous plays."
+      evidence: teammateEvidence(mate)
     };
   } else if (oppScore > 0) {
     plan = {
@@ -332,6 +334,7 @@ function freshPlan(view, beliefs) {
   }
   plan.teammateTarget = teammateTarget;
   plan.teammateConfidence = teammateConfidence;
+  plan.teammateEvidence = mate ? teammateEvidence(mate) : null;
   plan.teammateVoidNumbers = (beliefs && beliefs[mateId] && beliefs[mateId].knownImpossibleNumbers || []).slice();
   const teammateIntent = intentionOf(beliefs, mateId);
   plan.teammateSuspectedMissingNumbers = teammateIntent
@@ -341,6 +344,28 @@ function freshPlan(view, beliefs) {
       .map((item) => item.pip)
     : [];
   return plan;
+}
+
+function teammateEvidence(mate) {
+  const info = mate && mate.info || {};
+  const inTile = round1(info.inTile);
+  const bridged = round1(info.bridged);
+  const continued = round1(info.continued);
+  const support = (info.inTile || 0) + (info.bridged || 0) + (info.continued || 0);
+  if (mate && mate.retained && !mate.evidenceSupported) {
+    return "Retaining the previously committed teammate-support target " + mate.pip +
+      " (stored confidence " + round1(mate.confidence) +
+      ") because no public pass has proved it impossible. Current reconstructed evidence is weak or incomplete: " +
+      inTile + " tile observations, " + bridged + " links to previous plays, and " + continued +
+      " continuations. This is a retained hypothesis, not fresh confirmation.";
+  }
+  if (support < 1.5) {
+    return "The teammate-support target is " + mate.pip +
+      ", but current public play history does not provide enough repeated evidence to call it a confirmed preference (" +
+      inTile + " tile observations, " + bridged + " links, " + continued + " continuations).";
+  }
+  return "Public play history supports " + mate.pip + " as a possible teammate-useful number: " +
+    inTile + " tile observations, " + bridged + " links to previous plays, and " + continued + " continuations.";
 }
 
 function round1(value) {
@@ -458,9 +483,17 @@ function resolvePlan(view, beliefs, options) {
           next.evidence = "The overall strategy remains teammate support. Public pass evidence ruled out " + prev.target +
             ", so I reassigned the support target to " + alternative + ".";
         } else {
+          next.target = null;
+          next.confidence = 0;
+          next.score = 0;
           next.evidence = "The overall strategy remains teammate support, but public pass evidence rules out the committed target " + prev.target +
-            ". No supported replacement is available yet; the move evaluator continues to seek the best team-advantage move.";
+            ". No alternative has enough repeated public evidence yet; the move evaluator continues to seek the best team-advantage move without treating the ruled-out number as valid.";
         }
+      } else if (fresh.teammateTarget === prev.target && fresh.teammateEvidence) {
+        // Refresh the explanation with current evidence while retaining the
+        // round commitment. A persistent target must not keep a stale or
+        // contradictory explanation from the turn it was first selected.
+        next.evidence = fresh.teammateEvidence;
       }
     } else if (prev.mode === "opponent-denial") {
       const belief = beliefs && beliefs[prev.ownerId];
