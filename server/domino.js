@@ -896,12 +896,21 @@ function rememberDominoReview(room, botId, view, stored) {
       boneyardCount: view.boneyardCount == null ? null : view.boneyardCount
     },
     legalMovesAtDecision: (view.validMoves || []).map((move) => ({ tileId: move.tileId, side: move.side })),
-    candidateScores: evaluations.slice(0, 20).map((row) => ({
-      tile: row.tile || null, tileId: row.tileId || row.move && row.move.tileId || null,
-      side: row.side || row.move && row.move.side || null,
-      score: typeof row.score === "number" ? row.score : null,
-      reason: row.reason || row.explanation || null
-    })),
+    candidateScores: evaluations.slice(0, 20).map((row) => {
+      const tileId = row.tileId || row.move && row.move.tileId || null;
+      const ownTile = tileId == null ? null : (view.hand || []).find((tile) => tile.id === tileId) || null;
+      return {
+        tile: ownTile ? { id: ownTile.id, a: ownTile.a, b: ownTile.b } : null,
+        tileId: tileId,
+        side: row.side || row.move && row.move.side || null,
+        score: typeof row.score === "number" ? row.score : null,
+        parts: row.parts || null,
+        wins: row.wins == null ? null : row.wins,
+        samplesUsed: row.samplesUsed == null ? null : row.samplesUsed,
+        prediction: row.prediction || null,
+        reason: row.reason || row.explanation || null
+      };
+    }),
     publicLogLength: (view.log || []).length
   });
   // Keep the in-room history bounded. Full round logs are summarized at match end.
@@ -958,10 +967,23 @@ function buildDominoMatchReview(room) {
       boardAtDecision: item.boardAtDecision || null
     })),
     decisionRecords: decisions.slice(),
-    publicActions: (d.publicLog || []).map((event) => ({
-      type: event.type, playerId: event.playerId,
-      tile: event.tile ? { a: event.tile.a, b: event.tile.b } : null,
-      leftEnd: event.leftEnd, rightEnd: event.rightEnd, legalAlternatives: event.legalAlternatives
+    publicActions: (d.publicLog || []).map((event, index) => ({
+      index: index,
+      type: event.type || null,
+      playerId: event.playerId || null,
+      tile: event.tile ? { id: event.tile.id || null, a: event.tile.a, b: event.tile.b } : null,
+      side: event.side || null,
+      exposedEnd: event.exposedEnd == null ? null : event.exposedEnd,
+      exposedValue: event.exposedValue == null ? null : event.exposedValue,
+      legalAlternatives: event.legalAlternatives == null ? null : event.legalAlternatives,
+      handSizeBefore: event.handSizeBefore == null ? null : event.handSizeBefore,
+      handSizeAfter: event.handSizeAfter == null ? null : event.handSizeAfter,
+      boardLeftBefore: event.boardLeftBefore == null ? null : event.boardLeftBefore,
+      boardRightBefore: event.boardRightBefore == null ? null : event.boardRightBefore,
+      boardLeftAfter: event.boardLeftAfter == null ? null : event.boardLeftAfter,
+      boardRightAfter: event.boardRightAfter == null ? null : event.boardRightAfter,
+      leftEnd: event.leftEnd == null ? null : event.leftEnd,
+      rightEnd: event.rightEnd == null ? null : event.rightEnd
     }))
   };
   review.roundReviews.push(result);
@@ -986,6 +1008,95 @@ function buildDominoMatchReview(room) {
     note: "Aggregate covers completed rounds recorded in this inspector room. It is lost when the in-memory room/server is reset unless exported."
   };
   return result;
+}
+
+function buildDominoFullMatchReview(room) {
+  if (!room || !room.domino) return null;
+  const review = room.dominoAiReview;
+  if (!review) return null;
+  const latestRound = buildDominoMatchReview(room);
+  const completedRounds = Array.isArray(review.roundReviews) ? review.roundReviews.slice() : [];
+  const currentRoundNumber = room.dominoMatch && room.dominoMatch.roundsCompleted
+    ? room.dominoMatch.roundsCompleted + (room.domino.over ? 0 : 1)
+    : (room.domino.over ? 1 : 1);
+  const startIndex = review.roundStartIndex || 0;
+  const currentDecisions = room.domino.over ? [] : (review.decisions || []).slice(startIndex);
+  const currentRound = room.domino.over ? null : {
+    round: currentRoundNumber,
+    status: "in-progress",
+    winnerId: null,
+    winnerTeam: null,
+    winReason: null,
+    scoreboard: publicMatchScoreboard(room),
+    totals: {
+      decisions: currentDecisions.length,
+      plays: currentDecisions.filter((item) => item.action === "play").length,
+      passes: currentDecisions.filter((item) => item.action === "pass").length
+    },
+    strategyCounts: currentDecisions.reduce((counts, item) => {
+      const key = item.mode || "unlabelled";
+      counts[key] = (counts[key] || 0) + 1;
+      return counts;
+    }, {}),
+    decisionRecords: currentDecisions.slice(),
+    publicActions: (room.domino.publicLog || []).map((event, index) => ({
+      index: index,
+      type: event.type || null,
+      playerId: event.playerId || null,
+      tile: event.tile ? { id: event.tile.id || null, a: event.tile.a, b: event.tile.b } : null,
+      side: event.side || null,
+      exposedEnd: event.exposedEnd == null ? null : event.exposedEnd,
+      exposedValue: event.exposedValue == null ? null : event.exposedValue,
+      legalAlternatives: event.legalAlternatives == null ? null : event.legalAlternatives,
+      handSizeBefore: event.handSizeBefore == null ? null : event.handSizeBefore,
+      handSizeAfter: event.handSizeAfter == null ? null : event.handSizeAfter,
+      boardLeftBefore: event.boardLeftBefore == null ? null : event.boardLeftBefore,
+      boardRightBefore: event.boardRightBefore == null ? null : event.boardRightBefore,
+      boardLeftAfter: event.boardLeftAfter == null ? null : event.boardLeftAfter,
+      boardRightAfter: event.boardRightAfter == null ? null : event.boardRightAfter,
+      leftEnd: event.leftEnd == null ? null : event.leftEnd,
+      rightEnd: event.rightEnd == null ? null : event.rightEnd
+    }))
+  };
+  const rounds = currentRound ? completedRounds.concat([currentRound]) : completedRounds;
+  const decisionRecords = rounds.flatMap((round) => (round.decisionRecords || []).map((item) =>
+    Object.assign({ round: round.round }, item)
+  ));
+  const publicActions = rounds.flatMap((round) => (round.publicActions || []).map((item) =>
+    Object.assign({ round: round.round }, item)
+  ));
+  const strategyCounts = {};
+  rounds.forEach((round) => Object.keys(round.strategyCounts || {}).forEach((mode) => {
+    strategyCounts[mode] = (strategyCounts[mode] || 0) + round.strategyCounts[mode];
+  }));
+  const totals = {
+    rounds: rounds.length,
+    completedRounds: completedRounds.length,
+    decisions: decisionRecords.length,
+    plays: decisionRecords.filter((item) => item.action === "play").length,
+    passes: decisionRecords.filter((item) => item.action === "pass").length,
+    publicActions: publicActions.length,
+    selectedBelowTopCandidate: decisionRecords.filter((item) =>
+      typeof item.candidateGap === "number" && item.candidateGap < 0
+    ).length
+  };
+  return {
+    schemaVersion: 2,
+    status: room.domino.over ? "match-review" : "match-in-progress",
+    generatedAt: Date.now(),
+    roomCode: INSPECT_ROOM,
+    scoreboard: publicMatchScoreboard(room),
+    winnerId: room.domino.over ? room.domino.winnerId || null : null,
+    winnerTeam: room.domino.over ? room.domino.winnerTeam || null : null,
+    winReason: room.domino.over ? room.domino.winReason || null : null,
+    totals: totals,
+    strategyCounts: strategyCounts,
+    rounds: rounds,
+    decisionRecords: decisionRecords,
+    publicActions: publicActions,
+    latestRoundReview: latestRound,
+    note: "One match-wide trace across all rounds recorded in inspector room 1111. Each decision includes the acting bot's own hand and candidate evaluations; publicActions records the moves, passes, draws, board transitions, and legal-alternative counts visible at the table. Hidden hands are not reconstructed."
+  };
 }
 
 function decideBotMove(room, roomCode, botId) {
@@ -1049,9 +1160,11 @@ function inspectStateExtra(room, roomCode) {
     }
   });
   const matchReview = buildDominoMatchReview(room);
+  const fullMatchReview = buildDominoFullMatchReview(room);
   Object.keys(botDiagnostics).forEach((id) => {
     botDiagnostics[id] = Object.assign({}, botDiagnostics[id], {
       matchReview: matchReview,
+      fullMatchReview: fullMatchReview,
       matchHistory: room.dominoAiReview && room.dominoAiReview.roundReviews
         ? room.dominoAiReview.roundReviews.slice() : [],
       trainingData: {
@@ -1063,7 +1176,7 @@ function inspectStateExtra(room, roomCode) {
       }
     });
   });
-  return { botDiagnostics: botDiagnostics, matchReview: matchReview };
+  return { botDiagnostics: botDiagnostics, matchReview: matchReview, fullMatchReview: fullMatchReview };
 }
 
 function inspectPayload(stored, room, botId) {
@@ -1071,8 +1184,10 @@ function inspectPayload(stored, room, botId) {
     ? stored.snapshot
     : dominoInspect.unavailableSnapshot(decisionView(room, botId));
   const matchReview = buildDominoMatchReview(room);
+  const fullMatchReview = buildDominoFullMatchReview(room);
   snapshot = Object.assign({}, snapshot, {
     matchReview: matchReview,
+    fullMatchReview: fullMatchReview,
     matchHistory: room.dominoAiReview && room.dominoAiReview.roundReviews ? room.dominoAiReview.roundReviews.slice() : [],
     trainingData: {
       schemaVersion: 1,
