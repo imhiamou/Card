@@ -375,7 +375,19 @@ test("room 1111 state carries the finished decision and other rooms do not", () 
   assert.ok(published.legalMoves.length >= 1);
   published.candidateEvaluations.forEach((row) => {
     assert.equal(published.legalMoves.some((move) => move.tileId === row.tileId && move.side === row.side), true);
+    assert.ok(row.tileId, "candidate evaluation must preserve tile identity");
+    assert.ok(row.tile && row.tile.a != null && row.tile.b != null,
+      "candidate evaluation must preserve the acting bot's tile values");
   });
+  assert.equal(extra.fullMatchReview.status, "match-in-progress");
+  assert.equal(extra.fullMatchReview.decisionRecords.length, 1,
+    "match review must contain one shared trace, not a separate trace per bot");
+  assert.equal(extra.fullMatchReview.decisionRecords[0].botId, "botA");
+  assert.equal(extra.fullMatchReview.rounds[0].status, "in-progress");
+  const exported = client.buildReviewExport(published, "2026-10-21T00:00:00.000Z");
+  assert.equal(exported.scope, "one-match-review");
+  assert.equal(exported.matchReview.decisionRecords.length, 1);
+  assert.equal(exported.trainingData.recordedPositions, 1);
   const text = JSON.stringify(published);
   assert.equal(text.includes("3-4"), false);
   assert.equal(text.includes("0-0"), false);
