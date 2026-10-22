@@ -994,6 +994,21 @@
     renderInspect(panel);
   }
 
+  async function createServerExportLink(jsonText, filename) {
+    const serverBase = "https://cardb-2uys.onrender.com";
+    const response = await fetch(serverBase + "/api/domino-export?filename=" + encodeURIComponent(filename || "domino-end-game-review.json"), {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: jsonText
+    });
+    let result = null;
+    try { result = await response.json(); } catch (err) { /* handled below */ }
+    if (!response.ok || !result || !result.downloadUrl) {
+      throw new Error(result && result.error ? result.error : "The server could not prepare the export file.");
+    }
+    return result.downloadUrl;
+  }
+
   function showTrainingExport(jsonText, title, dialogExplanation, filename) {
     const previous = document.getElementById("domTrainingExportOverlay");
     if (previous) previous.remove();
@@ -1002,24 +1017,19 @@
     overlay.id = "domTrainingExportOverlay";
     overlay.setAttribute("role", "dialog");
     overlay.setAttribute("aria-modal", "true");
-    overlay.setAttribute("aria-label", "Export bot training data");
+    overlay.setAttribute("aria-label", title || "Export bot training data");
     overlay.style.cssText = "position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.78);display:flex;align-items:center;justify-content:center;padding:12px;box-sizing:border-box;";
     const panel = document.createElement("div");
-    panel.style.cssText = "display:flex;flex-direction:column;gap:10px;width:min(720px,100%);max-height:90%;padding:14px;background:#171717;color:#fff;border:1px solid #666;border-radius:10px;box-sizing:border-box;";
+    panel.style.cssText = "display:flex;flex-direction:column;gap:12px;width:min(560px,100%);padding:16px;background:#171717;color:#fff;border:1px solid #666;border-radius:10px;box-sizing:border-box;";
     const heading = document.createElement("h3");
-    heading.textContent = title || "Training export";
+    heading.textContent = title || "Export";
     heading.style.margin = "0";
     const explanation = document.createElement("p");
-    explanation.textContent = dialogExplanation || "The export is shown here as a fallback for Android WebView, where file downloads may not open. Copy the JSON or try Download."
+    explanation.textContent = "The server will prepare a real downloadable JSON file. The temporary download link expires after 30 minutes and can be used once.";
     explanation.style.margin = "0";
-    const textarea = document.createElement("textarea");
-    textarea.value = jsonText;
-    textarea.readOnly = true;
-    textarea.setAttribute("aria-label", "Export JSON");
-    textarea.style.cssText = "width:100%;min-height:180px;flex:1;resize:vertical;box-sizing:border-box;background:#0c0c0c;color:#f5f5f5;border:1px solid #777;border-radius:6px;padding:10px;font:12px/1.4 monospace;";
     const status = document.createElement("p");
     status.setAttribute("aria-live", "polite");
-    status.textContent = "JSON ready. " + jsonText.length + " characters.";
+    status.textContent = "Export ready to download (" + Math.round(jsonText.length / 1024) + " KB of text).";
     status.style.margin = "0";
     const actions = document.createElement("div");
     actions.style.cssText = "display:flex;flex-wrap:wrap;gap:8px;";
@@ -1027,92 +1037,48 @@
       const button = document.createElement("button");
       button.type = "button";
       button.textContent = label;
-      button.style.cssText = "min-height:40px;padding:8px 12px;border:1px solid #888;border-radius:6px;background:#292929;color:#fff;";
+      button.style.cssText = "min-height:44px;padding:9px 14px;border:1px solid #888;border-radius:6px;background:#292929;color:#fff;";
       button.addEventListener("click", onClick);
       actions.appendChild(button);
       return button;
     }
-    actionButton("Copy JSON", async () => {
+    const downloadButton = actionButton("Prepare & Download JSON", async () => {
+      downloadButton.disabled = true;
+      status.textContent = "Uploading export to the server and preparing the download…";
       try {
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          await navigator.clipboard.writeText(jsonText);
-          status.textContent = "JSON copied to clipboard.";
-          return;
-        }
-      } catch (err) { /* Use the WebView-compatible fallback below. */ }
-      textarea.focus();
-      textarea.select();
-      let copied = false;
-      try { copied = document.execCommand("copy"); } catch (err) { copied = false; }
-      status.textContent = copied
-        ? "JSON copied to clipboard."
-        : "Copy was blocked. Select the JSON above and use your device's Copy command.";
-    });
-    function makeExportBlobUrl() {
-      const blob = new Blob([jsonText], { type: "application/json;charset=utf-8" });
-      return URL.createObjectURL(blob);
-    }
-    actionButton("Download JSON", () => {
-      let url = null;
-      try {
-        url = makeExportBlobUrl();
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = filename || "domino-ai-training-review.json";
-        link.style.display = "none";
-        link.setAttribute("target", "_blank");
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        status.textContent = "Download requested. If no file appears, tap Open JSON and use your browser's Save or Share menu.";
-        window.setTimeout(() => {
-          try { URL.revokeObjectURL(url); } catch (err) { /* no-op */ }
-        }, 120000);
+        const url = await createServerExportLink(jsonText, filename);
+        status.textContent = "Download starting. If the app does not save it, use Share Download Link.";
+        window.location.href = url;
       } catch (err) {
-        status.textContent = "Direct download is unavailable here. Tap Open JSON or Copy JSON.";
-        if (url) {
-          try { URL.revokeObjectURL(url); } catch (revokeErr) { /* no-op */ }
-        }
+        status.textContent = "Download preparation failed: " + (err && err.message ? err.message : "unknown error") + ". Check your connection and try again.";
+      } finally {
+        downloadButton.disabled = false;
       }
     });
-    actionButton("Open JSON", () => {
+    actionButton("Share Download Link", async () => {
+      status.textContent = "Preparing a secure, temporary download link…";
       try {
-        const url = makeExportBlobUrl();
-        const opened = window.open(url, "_blank");
-        if (!opened) window.location.href = url;
-        status.textContent = "JSON opened. Use the browser's Save or Share menu to keep the file.";
-        window.setTimeout(() => {
-          try { URL.revokeObjectURL(url); } catch (err) { /* no-op */ }
-        }, 120000);
-      } catch (err) {
-        status.textContent = "Could not open the JSON here. Use Copy JSON above.";
-      }
-    });
-    actionButton("Share file", async () => {
-      try {
-        if (typeof File !== "function" || !navigator.share) {
-          status.textContent = "File sharing is not supported here. Use Open JSON or Copy JSON.";
-          return;
+        const url = await createServerExportLink(jsonText, filename);
+        if (navigator.share) {
+          await navigator.share({
+            title: title || "Dominoes review export",
+            text: "Download the Dominoes JSON export. This link expires after 30 minutes and works once.",
+            url
+          });
+          status.textContent = "Share sheet opened with the download link.";
+        } else {
+          await navigator.clipboard.writeText(url);
+          status.textContent = "Share sheet is unavailable in this app. The temporary download link was copied; paste it into the app you want to share with.";
         }
-        const file = new File([jsonText], filename || "domino-ai-training-review.json", {
-          type: "application/json"
-        });
-        if (navigator.canShare && !navigator.canShare({ files: [file] })) {
-          status.textContent = "This app cannot share files directly. Use Open JSON or Copy JSON.";
-          return;
-        }
-        await navigator.share({ files: [file], title: title || "Dominoes review export" });
-        status.textContent = "Share sheet opened.";
       } catch (err) {
         status.textContent = err && err.name === "AbortError"
           ? "Sharing cancelled."
-          : "File sharing failed. Use Open JSON or Copy JSON.";
+          : "Sharing failed: " + (err && err.message ? err.message : "unknown error") + ". Try Prepare & Download JSON.";
       }
     });
     actionButton("Close", () => overlay.remove());
     panel.appendChild(heading);
     panel.appendChild(explanation);
-    panel.appendChild(textarea);
     panel.appendChild(status);
     panel.appendChild(actions);
     overlay.appendChild(panel);
@@ -1120,8 +1086,6 @@
       if (event.target === overlay) overlay.remove();
     });
     document.body.appendChild(overlay);
-    textarea.focus();
-    textarea.select();
   }
 
   function renderInspect(panel) {
