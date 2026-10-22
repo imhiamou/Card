@@ -388,6 +388,15 @@ test("room 1111 state carries the finished decision and other rooms do not", () 
   assert.equal(extra.fullMatchReview.decisionRecords.length, 1,
     "match review must contain one shared trace, not a separate trace per bot");
   assert.equal(extra.fullMatchReview.decisionRecords[0].botId, "botA");
+  assert.ok(extra.fullMatchReview.decisionRecords[0].strategyPlan,
+    "match review must record the persistent plan separately from the broad move mode");
+  assert.equal(typeof extra.fullMatchReview.decisionRecords[0].strategyPlan.mode, "string");
+  assert.ok(extra.fullMatchReview.decisionRecords[0].objective,
+    "objective must not be null when a persistent plan exists");
+  assert.equal(
+    extra.fullMatchReview.decisionRecords[0].target,
+    extra.fullMatchReview.decisionRecords[0].strategyPlan.target
+  );
   assert.ok(extra.fullMatchReview.decisionRecords[0].actualHandsAtDecision.botA,
     "the match review must retain ground-truth hands for later hindsight analysis");
   assert.ok(extra.fullMatchReview.decisionRecords[0].actualHandsAtDecision.human);
