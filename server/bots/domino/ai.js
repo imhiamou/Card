@@ -140,13 +140,23 @@ function getDominoMove(state, options) {
   }
   const rng = mulberry32(seedFor(view, options));
   let report = null;
-  const alreadyWinning = ranked[0].score >= weights.roundWin;
-  if (!alreadyWinning && limits.samples > 0 && view.players.length > 1) {
+
+  // A legal tile that empties this hand is a terminal win, not a heuristic
+  // trade-off. Never let team support, sampling noise, or "vary" choose a
+  // non-winning move instead. The evaluator marks this only after confirming
+  // that no tiles remain in the bot's hand.
+  const immediateWin = ranked.find((row) => row.parts && row.parts.immediateWin > 0);
+  if (immediateWin) {
+    ranked = [immediateWin].concat(ranked.filter((row) => row !== immediateWin));
+  } else if (limits.samples > 0 && view.players.length > 1) {
+    // A high static score is not proof that a move is safe. Search every
+    // non-terminal decision so opponent-hand hypotheses and future turn order
+    // can overturn a superficially attractive move.
     report = searchMoves(view, beliefs, ranked, weights, options, rng, limits);
     ranked = report.ranked;
   }
-  const vary = !!(options && options.vary);
-  const chosen = chooseRanked(ranked, rng, vary, limits.varyEpsilon);
+  const vary = !!(options && options.vary) && !immediateWin;
+  const chosen = immediateWin ? immediateWin.move : chooseRanked(ranked, rng, vary, limits.varyEpsilon);
   if (options && options.explain) {
     return {
       tileId: chosen.tileId,
