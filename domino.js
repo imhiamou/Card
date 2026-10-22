@@ -1048,21 +1048,65 @@
         ? "JSON copied to clipboard."
         : "Copy was blocked. Select the JSON above and use your device's Copy command.";
     });
+    function makeExportBlobUrl() {
+      const blob = new Blob([jsonText], { type: "application/json;charset=utf-8" });
+      return URL.createObjectURL(blob);
+    }
     actionButton("Download JSON", () => {
+      let url = null;
       try {
-        const blob = new Blob([jsonText], { type: "application/json;charset=utf-8" });
-        const url = URL.createObjectURL(blob);
+        url = makeExportBlobUrl();
         const link = document.createElement("a");
         link.href = url;
         link.download = filename || "domino-ai-training-review.json";
         link.style.display = "none";
+        link.setAttribute("target", "_blank");
         document.body.appendChild(link);
         link.click();
         link.remove();
-        window.setTimeout(() => URL.revokeObjectURL(url), 30000);
-        status.textContent = "Download requested. If no file appears, use Copy JSON above.";
+        status.textContent = "Download requested. If no file appears, tap Open JSON and use your browser's Save or Share menu.";
+        window.setTimeout(() => {
+          try { URL.revokeObjectURL(url); } catch (err) { /* no-op */ }
+        }, 120000);
       } catch (err) {
-        status.textContent = "Download failed. Use Copy JSON above instead.";
+        status.textContent = "Direct download is unavailable here. Tap Open JSON or Copy JSON.";
+        if (url) {
+          try { URL.revokeObjectURL(url); } catch (revokeErr) { /* no-op */ }
+        }
+      }
+    });
+    actionButton("Open JSON", () => {
+      try {
+        const url = makeExportBlobUrl();
+        const opened = window.open(url, "_blank");
+        if (!opened) window.location.href = url;
+        status.textContent = "JSON opened. Use the browser's Save or Share menu to keep the file.";
+        window.setTimeout(() => {
+          try { URL.revokeObjectURL(url); } catch (err) { /* no-op */ }
+        }, 120000);
+      } catch (err) {
+        status.textContent = "Could not open the JSON here. Use Copy JSON above.";
+      }
+    });
+    actionButton("Share file", async () => {
+      try {
+        if (typeof File !== "function" || !navigator.share) {
+          status.textContent = "File sharing is not supported here. Use Open JSON or Copy JSON.";
+          return;
+        }
+        const file = new File([jsonText], filename || "domino-ai-training-review.json", {
+          type: "application/json"
+        });
+        if (navigator.canShare && !navigator.canShare({ files: [file] })) {
+          status.textContent = "This app cannot share files directly. Use Open JSON or Copy JSON.";
+          return;
+        }
+        await navigator.share({ files: [file], title: title || "Dominoes review export" });
+        status.textContent = "Share sheet opened.";
+      } catch (err) {
+        status.textContent = err && err.name === "AbortError"
+          ? "Sharing cancelled."
+          : "File sharing failed. Use Open JSON or Copy JSON.";
       }
     });
     actionButton("Close", () => overlay.remove());
@@ -1157,7 +1201,7 @@
           trainingData: latest.trainingData || { schemaVersion: 1, decisions: [] }
         };
         showTrainingExport(
-          JSON.stringify(payload, null, 2),
+          JSON.stringify(payload),
           "Training export",
           "The training trace is shown here as a fallback for Android WebView. Copy the JSON or try Download.",
           "domino-ai-training-review.json"
@@ -1188,7 +1232,7 @@
               completedRounds: latest.matchHistory || []
             };
         showTrainingExport(
-          JSON.stringify(payload, null, 2),
+          JSON.stringify(payload),
           "End-game review export",
           "This contains completed-round findings and recorded bot decisions. On Android WebView, copy the JSON if Download does not create a file.",
           "domino-end-game-review.json"
