@@ -85,6 +85,39 @@ function diagnose(unseen, groups) {
  * another shuffle usually frees the scarce tile. If every attempt fails,
  * the caller must not pretend the last partial deal was real.
  */
+function clamp01(value) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(1, value));
+}
+
+/**
+ * Soft evidence for a hidden-hand hypothesis. A player's repeated choices
+ * increase the likelihood of holding related suits, but one play alone is
+ * weak evidence. Only public-log-derived beliefs are used.
+ */
+function allocationEvidenceScore(allocation, beliefs, groups) {
+  let score = 0;
+  groups.forEach((group) => {
+    if (group.id === "boneyard") return;
+    const belief = beliefs && beliefs[group.id];
+    if (!belief) return;
+    const support = belief.numberSupportConfidence || [];
+    const intention = belief.intention && belief.intention.byPip;
+    (allocation[group.id] || []).forEach((tile) => {
+      const pips = tile.a === tile.b ? [tile.a] : [tile.a, tile.b];
+      pips.forEach((pip) => {
+        const supportConfidence = clamp01(support[pip] || 0);
+        const intentInfo = intention && intention[pip];
+        const intentConfidence = clamp01(intentInfo && intentInfo.confidence || 0);
+        // Log-likelihood style terms keep the score additive and bounded.
+        score += Math.log(1 + 1.4 * supportConfidence);
+        score += Math.log(1 + 0.9 * intentConfidence);
+      });
+    });
+  });
+  return score;
+}
+
 function sampleAllocation(view, beliefs, rng, options) {
   const unseen = unseenTiles(view);
   const groups = groupsFor(view, beliefs, options).filter((group) => group.count > 0);
