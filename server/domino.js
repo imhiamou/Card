@@ -908,17 +908,37 @@ function rememberDominoReview(room, botId, view, stored) {
   const alternative = evaluations.find((row) => selectedScore == null || row.score !== selectedScore) || null;
   const candidateGap = selectedScore != null && best && typeof best.score === "number"
     ? Math.round((selectedScore - best.score) * 1000) / 1000 : null;
+  // The broad move mode (for example DENY_OPPONENT) is not the same as the
+  // persistent number-control plan. Preserve the actual plan separately so
+  // match review can explain its target, owner, confidence, and evidence.
+  const strategyPlan = snapshot.strategy && typeof snapshot.strategy === "object"
+    ? snapshot.strategy
+    : snapshot.plan && snapshot.plan.committed && typeof snapshot.plan.committed === "object"
+      ? snapshot.plan.committed : null;
+  const objective = strategyPlan ? {
+    mode: strategyPlan.mode || null,
+    target: strategyPlan.target == null ? null : strategyPlan.target,
+    owner: strategyPlan.owner || null,
+    ownerId: strategyPlan.ownerId || null,
+    confidence: strategyPlan.confidence == null ? null : strategyPlan.confidence,
+    evidence: strategyPlan.evidence || null,
+    held: !!strategyPlan.held,
+    switched: !!strategyPlan.switched,
+    lines: Array.isArray(strategyPlan.lines) ? strategyPlan.lines.slice() : [],
+    teammateTarget: strategyPlan.teammateTarget == null ? null : strategyPlan.teammateTarget,
+    teammateConfidence: strategyPlan.teammateConfidence == null ? null : strategyPlan.teammateConfidence,
+    teammateEvidence: strategyPlan.teammateEvidence || null
+  } : null;
   room.dominoAiReview.decisions.push({
     at: Date.now(),
     botId: botId,
     turn: (view.log || []).filter((event) => event && event.playerId === botId &&
       (event.type === "play" || event.type === "pass")).length,
     action: snapshot.passAnalysis ? "pass" : selected ? "play" : "unknown",
-    objective: snapshot.passAnalysis && snapshot.passAnalysis.objective || snapshot.plan && snapshot.plan.committed || null,
+    objective: objective,
+    strategyPlan: objective,
     mode: snapshot.strategicMode && (snapshot.strategicMode.code || snapshot.strategicMode.label) || null,
-    target: snapshot.passAnalysis && snapshot.passAnalysis.objective
-      ? snapshot.passAnalysis.objective.target : snapshot.plan && snapshot.plan.committed
-        ? snapshot.plan.committed.target : null,
+    target: objective ? objective.target : null,
     chosenScore: selectedScore != null ? selectedScore : null,
     alternativeScore: alternative && typeof alternative.score === "number" ? alternative.score : null,
     bestCandidateScore: best && typeof best.score === "number" ? best.score : null,
@@ -1147,7 +1167,7 @@ function buildDominoFullMatchReview(room) {
     publicActions: publicActions,
     actionSnapshots: actionSnapshots,
     latestRoundReview: latestRound,
-    note: "One match-wide trace across all rounds recorded in inspector room 1111. Each decision includes the acting bot's own hand and candidate evaluations. actionSnapshots records the exact hands held by every player at each logged action for hindsight training; publicActions records the corresponding played tiles, passes, draws, board transitions, and legal-alternative counts. This ground truth is restricted to the dedicated inspector room."
+    note: "One match-wide trace across all rounds recorded in inspector room 1111. Each decision includes the acting bot's own hand, persistent strategy plan (when available), and candidate evaluations. actualHandsAtDecision and actionSnapshots contain ground-truth hands for hindsight training, not information available to the bot at decision time; they are restricted to the dedicated inspector review. publicActions records the corresponding plays, passes, draws, board transitions, and legal-alternative counts."
   };
 }
 
