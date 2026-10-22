@@ -31,7 +31,7 @@
       exportedAt: exportedAt || new Date().toISOString(),
       source: "Gameweb Dominoes inspector room 1111",
       scope: "one-match-review",
-      note: "Single match-wide review, not a per-bot export. It includes every recorded bot decision, each bot's own hand and candidate scores at decision time, plus public plays, passes, draws, board transitions, and round results. Hidden hands are not reconstructed.",
+      note: "Single match-wide review, not a per-bot export. It includes each bot decision, the persistent strategy plan when available, candidate scores, public actions, and round results. Ground-truth hands in actualHandsAtDecision and actionSnapshots are hindsight-only training data, not information available to the bot at decision time; they are restricted to this dedicated inspector export.",
       matchReview: matchReview,
       latestRoundReview: latestRoundReview,
       completedRounds: completedRounds,
