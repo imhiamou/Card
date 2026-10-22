@@ -1,4 +1,5 @@
 const path = require("path");
+const crypto = require("crypto");
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
@@ -28,6 +29,75 @@ function mapCors(res) {
   res.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.set("Access-Control-Allow-Headers", "Content-Type");
 }
+
+const dominoExports = new Map();
+const DOMINO_EXPORT_TTL_MS = 30 * 60 * 1000;
+const DOMINO_EXPORT_MAX_BYTES = 40 * 1024 * 1024;
+
+function pruneDominoExports() {
+  const now = Date.now();
+  for (const [token, entry] of dominoExports) {
+    if (entry.expiresAt <= now) dominoExports.delete(token);
+  }
+  while (dominoExports.size > 1000) {
+    dominoExports.delete(dominoExports.keys().next().value);
+  }
+}
+
+app.options("/api/domino-export", (req, res) => {
+  mapCors(res);
+  res.sendStatus(204);
+});
+
+app.post("/api/domino-export", express.text({ type: "text/plain", limit: "40mb" }), (req, res) => {
+  mapCors(res);
+  const payload = typeof req.body === "string" ? req.body : "";
+  if (!payload) {
+    res.status(400).json({ ok: false, error: "Export payload is empty." });
+    return;
+  }
+  if (Buffer.byteLength(payload, "utf8") > DOMINO_EXPORT_MAX_BYTES) {
+    res.status(413).json({ ok: false, error: "Export exceeds the 40 MB limit." });
+    return;
+  }
+  try {
+    JSON.parse(payload);
+  } catch (err) {
+    res.status(400).json({ ok: false, error: "Export payload is not valid JSON." });
+    return;
+  }
+  pruneDominoExports();
+  const token = crypto.randomBytes(24).toString("hex");
+  const filename = String(req.query.filename || "domino-end-game-review.json")
+    .replace(/[^a-zA-Z0-9._-]/g, "-")
+    .slice(0, 100) || "domino-end-game-review.json";
+  dominoExports.set(token, {
+    payload,
+    filename: filename.endsWith(".json") ? filename : filename + ".json",
+    expiresAt: Date.now() + DOMINO_EXPORT_TTL_MS
+  });
+  res.status(201).json({
+    ok: true,
+    downloadUrl: req.protocol + "://" + req.get("host") + "/api/domino-export/" + token,
+    expiresInSeconds: Math.floor(DOMINO_EXPORT_TTL_MS / 1000)
+  });
+});
+
+app.get("/api/domino-export/:token", (req, res) => {
+  mapCors(res);
+  pruneDominoExports();
+  const entry = dominoExports.get(req.params.token);
+  if (!entry) {
+    res.status(404).type("text/plain").send("This export link has expired or does not exist. Generate the export again.");
+    return;
+  }
+  res.set("Content-Type", "application/json; charset=utf-8");
+  res.set("Content-Disposition", 'attachment; filename="' + entry.filename.replace(/["\\\\]/g, "-") + '"');
+  res.set("Cache-Control", "no-store");
+  res.set("Content-Length", String(Buffer.byteLength(entry.payload, "utf8")));
+  res.send(entry.payload);
+  dominoExports.delete(req.params.token);
+});
 
 app.options("/api/hh-maps", (req, res) => {
   mapCors(res);
