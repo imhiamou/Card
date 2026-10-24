@@ -1613,6 +1613,21 @@ function registerSocket(socket, io, rooms) {
    * socket and is never broadcast. Anyone who can join room 1111 can
    * read that room's bot snapshots; there is no separate dev login.
    */
+  /*
+   * Explicitly leave a Dominoes table (used by the in-game Return to Lobby
+   * action). Unlike a transport disconnect, this is an intentional exit.
+   */
+  socket.on("dominoLeave", (data) => {
+    const roomCode = data && typeof data.roomCode === "string" ? data.roomCode.trim().toUpperCase() : "";
+    const room = rooms[roomCode];
+    if (!room || room.gameMode !== "dominoes" ||
+        !room.players.some((player) => player.id === socket.id)) return;
+    domino.clearBotTimer(room);
+    socket.to(roomCode).emit("playerLeft");
+    delete rooms[roomCode];
+    socket.leave(roomCode);
+  });
+
   socket.on("dominoInspect", (data) => {
     const roomCode = data && typeof data.roomCode === "string" ? data.roomCode.trim().toUpperCase() : "";
     const requestId = data && data.requestId;
@@ -1978,7 +1993,28 @@ function registerSocket(socket, io, rooms) {
   });
 }
 
+function onSocketRecovered(socket, io, rooms) {
+  const roomCode = Object.keys(rooms).find((code) =>
+    rooms[code] && rooms[code].gameMode === "dominoes" &&
+    rooms[code].players.some((player) => player.id === socket.id)
+  );
+  if (!roomCode) return;
+  const room = rooms[roomCode];
+  const player = room.players.find((item) => item.id === socket.id);
+  if (player) {
+    player.connected = true;
+    player.disconnectedAt = null;
+    if (player.disconnectTimer) {
+      clearTimeout(player.disconnectTimer);
+      player.disconnectTimer = null;
+    }
+  }
+  if (room.domino) emitFullState(room, io, roomCode);
+  else emitDominoLobbyUpdate(room, io, roomCode);
+}
+
 module.exports = {
+  onSocketRecovered,
   onLobbyFull,
   registerSocket,
   buildDoubleSixSet,
