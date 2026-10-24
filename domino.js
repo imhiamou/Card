@@ -2149,9 +2149,6 @@
   function returnToLobby() {
     if (!currentRoom) return;
     const go = () => {
-      if (socket && currentRoom) {
-        socket.emit("dominoLeave", { roomCode: currentRoom });
-      }
       leftTable = true;
       if (dominoScreen) dominoScreen.classList.remove("app-menu-open");
       const menuBtn = $("domMenuBtn");
