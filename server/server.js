@@ -15,8 +15,16 @@ const { createBotSocket } = require("./bots/botSocket");
 const app = express();
 const server = http.createServer(app);
 app.use(express.json({ limit: "2mb" }));
+const DOMINO_DISCONNECT_GRACE_MS = 24 * 24 * 60 * 60 * 1000;
+
 const io = new Server(server, {
-  cors: { origin: "*" }
+  cors: { origin: "*" },
+  // Restore the same socket ID and room memberships after temporary
+  // mobile background/network disconnects. Kept below Node's max timer.
+  connectionStateRecovery: {
+    maxDisconnectionDuration: DOMINO_DISCONNECT_GRACE_MS,
+    skipMiddlewares: true
+  }
 });
 
 // Simple health-check route so Render can verify the service is alive.
@@ -934,6 +942,12 @@ io.on("connection", (socket) => {
   hiddenHunter.registerSocket(socket, io, rooms);
   hhEditor.register(socket);
 
+  // Socket.IO can restore a Dominoes socket after a temporary disconnect.
+  // Re-send the authoritative state so the returning client gets its exact hand.
+  if (socket.recovered) {
+    domino.onSocketRecovered(socket, io, rooms);
+  }
+
   /*
    * "createLobby" — a player creates a new lobby with a code THEY
    * chose (4-8 letters/numbers, auto-uppercased, must be unique).
@@ -1569,21 +1583,51 @@ io.on("connection", (socket) => {
   });
 
   /*
-   * Disconnect — remove the player from their room, notify the
-   * remaining player with "playerLeft" and delete the room's state.
+   * A transient disconnect is not the same as leaving a Dominoes lobby.
+   * Keep the server-authoritative hand, board, turn and match history so
+   * Socket.IO recovery can restore the same player ID on reconnect.
    */
   socket.on("disconnect", () => {
     const roomCode = findRoomOfSocket(socket.id);
     if (!roomCode) return;
 
-    // Stop any pending bot actions before the room state disappears.
     const room = rooms[roomCode];
+    if (room && room.gameMode === "dominoes") {
+      const player = room.players.find((item) => item.id === socket.id);
+      if (player) {
+        player.connected = false;
+        player.disconnectedAt = Date.now();
+        if (player.disconnectTimer) clearTimeout(player.disconnectTimer);
+        player.disconnectTimer = setTimeout(() => {
+          const currentRoom = rooms[roomCode];
+          if (currentRoom !== room) return;
+          const currentPlayer = currentRoom.players.find((item) => item.id === socket.id);
+          if (!currentPlayer || currentPlayer.connected !== false) return;
+          // Only discard a dormant table when every human seat is disconnected.
+          // A connected opponent's match must not be destroyed by this timer.
+          const everyoneAway = currentRoom.players.every((item) => item.isBot || item.connected === false);
+          if (everyoneAway) {
+            domino.clearBotTimer(currentRoom);
+            delete rooms[roomCode];
+          }
+        }, DOMINO_DISCONNECT_GRACE_MS);
+        if (player.disconnectTimer && typeof player.disconnectTimer.unref === "function") {
+          player.disconnectTimer.unref();
+        }
+      }
+      socket.to(roomCode).emit("playerDisconnected", {
+        playerId: socket.id,
+        name: player ? player.name : "Player"
+      });
+      return;
+    }
+
+    // Other game modes retain their existing disconnect behavior.
     if (room) {
       domino.clearBotTimer(room);
       uno.clearBotTimer(room);
       if (room.hh) hiddenHunter.stopRoom(room);
     }
-
     socket.to(roomCode).emit("playerLeft");
     delete rooms[roomCode];
   });
