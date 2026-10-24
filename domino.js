@@ -55,6 +55,7 @@
         '<div class="domEnds">' +
           '<span id="domBoneyard">Boneyard: 0</span>' +
           '<button type="button" id="domDrawBtn" disabled>Draw</button>' +
+          '<button type="button" id="domHintBtn" disabled>Hint</button>' +
         '</div>' +
       '</div>' +
       '<div class="domSeat seat-bottom" data-seat="bottom"></div>' +
@@ -64,6 +65,12 @@
       '<div class="domHand" id="domHand"></div>' +
     '</div>' +
     '<p id="domMsg"></p>' +
+    '<section id="domHintPanel" class="domHintPanel hidden" aria-live="polite" aria-label="Move hint">' +
+      '<strong id="domHintTitle">Move hint</strong>' +
+      '<p id="domHintText"></p>' +
+      '<p id="domHintWhy"></p>' +
+      '<p id="domHintAlternatives"></p>' +
+    '</section>' +
     '<div id="domEndButtons" class="domEndButtons hidden">' +
       '<button type="button" id="domPlayAgainBtn">Play Again</button>' +
     '</div>' +
@@ -84,6 +91,8 @@
   let inspectBotId = null;
   let inspectPage = "overview";
   let inspectRequest = 0;
+  let hintRequest = 0;
+  let currentHint = null;
   let inspectPanelState = null;
   let diagnosticStore = {};
   let active = false;
@@ -134,6 +143,8 @@
   let domHand;
   let domMsg;
   let domDrawBtn;
+  let domHintBtn;
+  let domHintPanel;
   let domScoreboard;
   let domScoreStrip;
   let domHandLabel;
@@ -166,6 +177,8 @@
     domHand = $("domHand");
     domMsg = $("domMsg");
     domDrawBtn = $("domDrawBtn");
+    domHintBtn = $("domHintBtn");
+    domHintPanel = $("domHintPanel");
     domScoreboard = $("domScoreboard");
     domScoreStrip = $("domScoreStrip");
     domHandLabel = $("domHandLabel");
@@ -1380,6 +1393,7 @@
         extraClass: "inHand" +
           (moves.length && myTurn && !gameOver ? " valid" : "") +
           (selectedTileId === tile.id ? " selected" : "") +
+          (currentHint && currentHint.tile && currentHint.tile.id === tile.id ? " domHinted" : "") +
           (animateDrawId && tile.id === animateDrawId ? " drawAnim" : ""),
         tileId: tile.id
       });
@@ -1424,12 +1438,14 @@
     if (domDrawBtn) {
       domDrawBtn.disabled = !canDraw || !myTurn || gameOver;
     }
+    if (domHintBtn) domHintBtn.disabled = !myTurn || gameOver;
     if (!myTurn || gameOver) hideSidePicker();
     renderScoreStrip();
     renderHandLabel();
   }
 
   function applyState(data, opts) {
+    clearDominoHint();
     if (tileDrag) endTileDrag(false);
     const options = opts || {};
     currentRoom = data.room || currentRoom;
@@ -2150,6 +2166,21 @@
     go();
   }
 
+  function clearDominoHint() {
+    currentHint = null;
+    if (domHintPanel) {
+      domHintPanel.classList.add("hidden");
+      $("domHintTitle").textContent = "Move hint";
+      $("domHintText").textContent = "";
+      $("domHintWhy").textContent = "";
+      $("domHintAlternatives").textContent = "";
+    }
+    if (domHintBtn) {
+      domHintBtn.textContent = "Hint";
+      domHintBtn.disabled = !myTurn || gameOver;
+    }
+  }
+
   function wireControls() {
     const lobbyBtn = $("domLobbyBtn");
     if (lobbyBtn && !lobbyBtn.dataset.wired) {
@@ -2191,6 +2222,25 @@
       volumeUp.onclick = () => stepBgmVolume(1);
     }
     if (volumeDown || volumeUp) applyBgmVolume(currentBgmVolume(), false);
+    if (domHintBtn && !domHintBtn.dataset.wired) {
+      domHintBtn.dataset.wired = "1";
+      domHintBtn.onclick = () => {
+        if (!currentRoom || !myTurn || gameOver) return;
+        currentHint = null;
+        if (domHintPanel) {
+          domHintPanel.classList.remove("hidden");
+          $("domHintTitle").textContent = "Calculating hint…";
+          $("domHintText").textContent = "Evaluating legal moves, board control, and likely opponent responses.";
+          $("domHintWhy").textContent = "";
+          $("domHintAlternatives").textContent = "";
+        }
+        renderHand();
+        const requestId = ++hintRequest;
+        socket.emit("dominoHint", { roomCode: currentRoom, requestId: requestId });
+        domHintBtn.disabled = true;
+        domHintBtn.textContent = "Thinking…";
+      };
+    }
     if (!domDrawBtn || domDrawBtn.dataset.wired) return;
     domDrawBtn.dataset.wired = "1";
     domDrawBtn.onclick = () => {
@@ -2298,6 +2348,51 @@
     });
 
     // "dominoPlayed" — Dominoes only.
+    socket.on("dominoHintResult", (data) => {
+      if (!data || data.requestId !== hintRequest) return;
+      if (domHintBtn) {
+        domHintBtn.disabled = !myTurn || gameOver;
+        domHintBtn.textContent = "Hint";
+      }
+      if (!domHintPanel) return;
+      domHintPanel.classList.remove("hidden");
+      if (!data.ok) {
+        currentHint = null;
+        $("domHintTitle").textContent = "Hint unavailable";
+        $("domHintText").textContent = data.error || "The hint could not be calculated.";
+        $("domHintWhy").textContent = "";
+        $("domHintAlternatives").textContent = "";
+        renderHand();
+        return;
+      }
+      currentHint = data;
+      if (data.pass) {
+        $("domHintTitle").textContent = data.canDraw ? "Recommended action: Draw" : "No legal move — pass";
+        $("domHintText").textContent = data.canDraw
+          ? "No tile in your hand matches either open end. Draw from the boneyard."
+          : "No tile in your hand matches either open end.";
+      } else {
+        $("domHintTitle").textContent = "Play " + data.tile.a + "|" + data.tile.b + " on the " + data.side + " end";
+        $("domHintText").textContent = "Current board ends: " + data.board.leftEnd + " and " + data.board.rightEnd + ".";
+      }
+      const strategy = data.strategy || {};
+      const strategyLine = strategy.target == null ? "" :
+        "Plan: " + (strategy.mode || "number control") + " on " + strategy.target +
+        (strategy.confidence == null ? "." : " (confidence " + Math.round(strategy.confidence * 100) + "%).");
+      $("domHintWhy").textContent = [strategyLine, strategy.evidence || "", data.reason || ""]
+        .filter(Boolean).join(" ");
+      const other = (data.alternatives || []).filter((row) =>
+        !data.tile || !row.tile || row.tile.id !== data.tile.id || row.side !== data.side
+      ).slice(0, 2);
+      $("domHintAlternatives").textContent = other.length
+        ? "Alternatives considered: " + other.map((row) =>
+            row.tile ? row.tile.a + "|" + row.tile.b + " (" + row.side + ")" +
+              (row.score == null ? "" : ", score " + row.score) : "another legal move"
+          ).join("; ") + ". Scores are heuristic estimates, not guarantees."
+        : "Recommendation uses your hand and public game history, not hidden opponent hands.";
+      renderHand();
+    });
+
     socket.on("dominoInspectResult", (data) => {
       if (!data || !window.DominoInspect) return;
       if (data.requestId != null && data.requestId !== inspectRequest) return;
