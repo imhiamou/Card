@@ -65,8 +65,11 @@
       '<div class="domHand" id="domHand"></div>' +
     '</div>' +
     '<p id="domMsg"></p>' +
-    '<section id="domHintPanel" class="domHintPanel hidden" aria-live="polite" aria-label="Move hint">' +
-      '<strong id="domHintTitle">Move hint</strong>' +
+    '<section id="domHintPanel" class="domHintPanel hidden" role="dialog" aria-modal="true" aria-labelledby="domHintTitle">' +
+      '<div class="domHintHeader">' +
+        '<strong id="domHintTitle">Move hint</strong>' +
+        '<button type="button" id="domHintClose" aria-label="Close hint">×</button>' +
+      '</div>' +
       '<p id="domHintText"></p>' +
       '<p id="domHintWhy"></p>' +
       '<p id="domHintAlternatives"></p>' +
@@ -2222,13 +2225,22 @@
       volumeUp.onclick = () => stepBgmVolume(1);
     }
     if (volumeDown || volumeUp) applyBgmVolume(currentBgmVolume(), false);
+    const hintClose = $("domHintClose");
+    if (hintClose && !hintClose.dataset.wired) {
+      hintClose.dataset.wired = "1";
+      hintClose.onclick = () => {
+        if (domHintPanel) domHintPanel.classList.add("hidden");
+      };
+    }
     if (domHintBtn && !domHintBtn.dataset.wired) {
       domHintBtn.dataset.wired = "1";
       domHintBtn.onclick = () => {
         if (!currentRoom || !myTurn || gameOver) return;
-        currentHint = null;
+        if (domHintPanel) domHintPanel.classList.remove("hidden");
+        // Reopening the dialog reuses the recommendation for this exact
+        // position. A state update clears it, so stale moves cannot persist.
+        if (currentHint) return;
         if (domHintPanel) {
-          domHintPanel.classList.remove("hidden");
           $("domHintTitle").textContent = "Calculating hint…";
           $("domHintText").textContent = "Evaluating legal moves, board control, and likely opponent responses.";
           $("domHintWhy").textContent = "";
