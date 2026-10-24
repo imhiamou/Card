@@ -1005,3 +1005,39 @@ test("retained teammate targets refresh their evidence and proven voids clear un
   assert.equal(ruledOut.target, null);
   assert.match(ruledOut.evidence, /rules out the committed target 4/i);
 });
+
+
+test("a forced play proves the player's previous open ends are void", () => {
+  clearPlans();
+  const forced = Object.assign(
+    play("opp", 2, 3, "left", 2, 5, 3, 5),
+    { legalAlternatives: 0, boardLeftBefore: 2, boardRightBefore: 5 }
+  );
+  const state = base({
+    hand: [tile(0, 0), tile(1, 1), tile(4, 4)],
+    validMoves: [{ tileId: "0-0", side: "left" }],
+    leftEnd: 3,
+    rightEnd: 5,
+    log: [forced]
+  });
+  const beliefs = belief(state);
+  assert.deepEqual(beliefs.opp.knownImpossibleNumbers, [2, 5]);
+  assert.equal(beliefs.opp.intention.byPip[2].pAtLeastOne, 0);
+  assert.equal(beliefs.opp.intention.byPip[5].pAtLeastOne, 0);
+});
+
+test("a later draw clears voids inferred from a forced play", () => {
+  clearPlans();
+  const forced = Object.assign(
+    play("opp", 2, 3, "left", 2, 5, 3, 5),
+    { legalAlternatives: 0, boardLeftBefore: 2, boardRightBefore: 5 }
+  );
+  const state = base({
+    hand: [tile(0, 0), tile(1, 1), tile(4, 4)],
+    validMoves: [{ tileId: "0-0", side: "left" }],
+    leftEnd: 3,
+    rightEnd: 5,
+    log: [forced, { type: "draw", playerId: "opp" }]
+  });
+  assert.deepEqual(belief(state).opp.knownImpossibleNumbers, []);
+});
