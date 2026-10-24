@@ -95,6 +95,24 @@ function buildBeliefs(view, options) {
     }
     if (event.type === "play" && event.tile) {
       const tile = event.tile;
+
+      // The server records legalAlternatives as the number of other legal
+      // placements available before this play. Zero means this was the
+      // player's only legal move. Once that tile leaves their hand, neither
+      // pre-play open end can remain in their hand: if another tile matched
+      // either end, it would have been another legal move. Treat this as a
+      // hard, public-information void, just like a pass with an empty boneyard.
+      // A later draw clears these hard voids in the draw handler above.
+      if (event.legalAlternatives === 0) {
+        const beforeLeft = event.boardLeftBefore != null
+          ? event.boardLeftBefore : event.leftEndBefore;
+        const beforeRight = event.boardRightBefore != null
+          ? event.boardRightBefore : event.rightEndBefore;
+        [beforeLeft, beforeRight].forEach((pip) => {
+          if (pip != null) belief.hard.add(pip);
+        });
+      }
+
       belief.support[tile.a] += 1;
       if (tile.b !== tile.a) belief.support[tile.b] += 1;
       const exposed = exposedPip(event);
