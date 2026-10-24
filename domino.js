@@ -2147,6 +2147,9 @@
   }
 
   function returnToLobby() {
+    if (socket && currentRoom) {
+      socket.emit("dominoLeave", { roomCode: currentRoom });
+    }
     if (!currentRoom) return;
     const go = () => {
       leftTable = true;
