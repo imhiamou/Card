@@ -1426,3 +1426,27 @@ body.domino-desk-play #domMsg{
     -webkit-overflow-scrolling: touch;
   }
 }
+
+
+/* Player-facing hint panel powered by the same public-information AI as bots. */
+.domHintPanel {
+  margin: 8px auto 12px;
+  padding: 12px 14px;
+  width: min(100%, 760px);
+  border: 1px solid #5479a8;
+  border-radius: 10px;
+  background: #172438;
+  color: #eaf1fb;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.domHintPanel.hidden { display: none; }
+.domHintPanel strong { display: block; margin-bottom: 5px; color: #f0c14a; }
+.domHintPanel p { margin: 4px 0 0; font-size: 0.92rem; }
+.domTile.domHinted {
+  outline: 3px solid #f0c14a;
+  outline-offset: 3px;
+  filter: drop-shadow(0 0 5px rgba(240,193,74,.65));
+}
+#domHintBtn { padding: 10px 14px; }
+#domHintBtn:disabled { opacity: .55; }
