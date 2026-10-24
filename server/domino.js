@@ -1651,6 +1651,56 @@ function registerSocket(socket, io, rooms) {
     socket.emit("dominoInspectResult", payload);
   });
 
+  /*
+   * Ask the production AI for a move suggestion using only the human's own
+   * hand and public history. Hidden opponent hands are never used or returned.
+   */
+  socket.on("dominoHint", (data) => {
+    const roomCode = data && typeof data.roomCode === "string" ? data.roomCode.trim().toUpperCase() : "";
+    const requestId = data && data.requestId;
+    const room = rooms[roomCode];
+    const player = room && room.players.find((item) => item.id === socket.id);
+    if (!room || room.gameMode !== "dominoes" || !room.domino || !player ||
+        player.isBot || room.domino.over || room.domino.currentTurn !== socket.id) {
+      socket.emit("dominoHintResult", { ok: false, requestId: requestId, error: "Hints are available only on your active turn." });
+      return;
+    }
+    try {
+      const view = decisionView(room, socket.id);
+      const explained = dominoBot.getDominoMove(view, { explain: true });
+      const diagnostics = explained && explained.diagnostics ? explained.diagnostics : {};
+      const tileId = explained && !explained.pass ? explained.tileId : null;
+      const tile = tileId == null ? null : view.hand.find((item) => item.id === tileId) || null;
+      const strategy = diagnostics.strategy || {};
+      socket.emit("dominoHintResult", {
+        ok: true, requestId: requestId,
+        positionKey: diagnostics.positionKey || null,
+        pass: !!(explained && explained.pass),
+        tile: tile ? { id: tile.id, a: tile.a, b: tile.b } : null,
+        side: explained && !explained.pass ? explained.side : null,
+        reason: diagnostics.reasoning || diagnostics.summary ||
+          (diagnostics.passAnalysis && diagnostics.passAnalysis.reason) ||
+          "The AI could not produce a move explanation for this position.",
+        strategy: {
+          mode: strategy.mode || null,
+          target: strategy.target == null ? null : strategy.target,
+          owner: strategy.owner || null,
+          confidence: strategy.confidence == null ? null : strategy.confidence,
+          evidence: strategy.evidence || null
+        },
+        alternatives: (diagnostics.candidateEvaluations || []).slice(0, 3).map((row) => ({
+          tile: row.tile || null, side: row.side || null,
+          score: typeof row.score === "number" ? row.score : null
+        })),
+        board: { leftEnd: view.leftEnd, rightEnd: view.rightEnd },
+        canDraw: view.validMoves.length === 0 && view.boneyardCount > 0
+      });
+    } catch (err) {
+      socket.emit("dominoHintResult", { ok: false, requestId: requestId,
+        error: "The hint engine failed to evaluate this position." });
+    }
+  });
+
   socket.on("dominoSetBotSpeed", (data) => {
     const roomCode = data && typeof data.roomCode === "string" ? data.roomCode.trim().toUpperCase() : "";
     const room = rooms[roomCode];
