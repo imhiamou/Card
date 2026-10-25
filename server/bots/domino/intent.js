@@ -357,13 +357,13 @@ function predictNextMove(view, intention, playerId) {
     return Math.max(0, Math.min(1, row.pAtLeastOne)) * preferenceBoost;
   };
   const leftScore = scoreFor(left);
-  const rightScore = right === left ? leftScore : scoreFor(right);
-  const total = leftScore + (right === left ? 0 : rightScore);
+  const rightScore = right === left ? 0 : scoreFor(right);
+  const total = leftScore + rightScore;
   if (total <= 0) {
     return { likelyEnd: null, confidence: 0, leftProbability: 0, rightProbability: 0, basis: "no-public-evidence" };
   }
   const leftProbability = leftScore / total;
-  const rightProbability = right === left ? leftProbability : rightScore / total;
+  const rightProbability = rightScore / total;
   const likelyEnd = leftProbability === rightProbability ? null : leftProbability > rightProbability ? left : right;
   return {
     likelyEnd: likelyEnd,
