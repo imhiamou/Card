@@ -101,7 +101,7 @@ test("a player with no observed history is not assigned a confident behavioral s
   const intention = buildBeliefs(view).mate.intention;
 
   assert.equal(intention.behavior.style, "insufficient-evidence");
-  assert.equal(intention.behavior.observedPlays, 0);
+  assert.equal(intention.behavior.weightedPlaySignal, 0);
   assert.equal(intention.preferred, null);
 });
 
