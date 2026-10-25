@@ -186,7 +186,14 @@ function readPlays(view, playerId, row) {
   const log = view.log || [];
   let previous = null;
   log.forEach((event, index) => {
-    if (!event || event.playerId !== playerId || event.type !== "play" || !event.tile) return;
+    if (!event || event.playerId !== playerId) return;
+    // A draw or pass breaks consecutive-play evidence for this player. A
+    // forced play also breaks the sequence below; none should be treated as
+    // a deliberate continuation of an earlier tile pattern.
+    if (event.type !== "play" || !event.tile) {
+      previous = null;
+      return;
+    }
     const before = inferBefore(event);
     const handSize = handSizeThen(view, playerId, index);
     let forceChance = null;
@@ -244,9 +251,12 @@ function readPlays(view, playerId, row) {
         row.byPip[exposed].last = "maintained";
       }
       previous = event.tile;
-    } else if (exposed != null) {
-      row.byPip[exposed].forced += 1;
-      row.byPip[exposed].last = "forced";
+    } else {
+      if (exposed != null) {
+        row.byPip[exposed].forced += 1;
+        row.byPip[exposed].last = "forced";
+      }
+      previous = null;
     }
     if (otherEnd != null && !touches(event.tile, otherEnd) && unseen.length && handSize != null) {
       const otherChoices = unseen.filter((tile) => touches(tile, otherEnd) && !violates(tile, voids));
@@ -331,7 +341,7 @@ function behaviorProfile(intention) {
   else if (observed >= 2) style = "mixed";
   return {
     style: style,
-    observedPlays: Math.round(observed * 100) / 100,
+    weightedPlaySignal: Math.round(observed * 100) / 100,
     deliberateSignal: Math.round(deliberate * 100) / 100,
     forcedSignal: Math.round(forced * 100) / 100,
     persistence: Math.round(persistence * 100) / 100,
@@ -348,6 +358,21 @@ function predictNextMove(view, intention, playerId) {
     return { likelyEnd: null, confidence: 0, leftProbability: 0, rightProbability: 0, basis: "unavailable" };
   }
   const rows = intention && intention.byPip || [];
+  const leftAvailability = rows[left] ? Math.max(0, Math.min(1, rows[left].pAtLeastOne || 0)) : 0;
+  const rightAvailability = rows[right] ? Math.max(0, Math.min(1, rows[right].pAtLeastOne || 0)) : 0;
+  if (left === right) {
+    const hasEvidence = leftAvailability > 0;
+    return {
+      likelyEnd: hasEvidence ? left : null,
+      confidence: 0,
+      leftProbability: 0.5,
+      rightProbability: 0.5,
+      baselineLeftProbability: 0.5,
+      baselineRightProbability: 0.5,
+      basis: hasEvidence ? "same-open-number" : "no-public-evidence",
+      interpretation: "heuristic-score-share-not-calibrated"
+    };
+  }
   const scoreFor = (pip) => {
     if (pip == null || !rows[pip] || rows[pip].pAtLeastOne <= 0) return 0;
     const row = rows[pip];
@@ -356,9 +381,7 @@ function predictNextMove(view, intention, playerId) {
       : 1 + Math.max(0, Math.min(1, row.confidence || 0)) * 0.25;
     return Math.max(0, Math.min(1, row.pAtLeastOne)) * preferenceBoost;
   };
-  const leftAvailability = rows[left] ? Math.max(0, Math.min(1, rows[left].pAtLeastOne || 0)) : 0;
-  const rightAvailability = right === left ? 0
-    : rows[right] ? Math.max(0, Math.min(1, rows[right].pAtLeastOne || 0)) : 0;
+  const rightAvailability = rows[right] ? Math.max(0, Math.min(1, rows[right].pAtLeastOne || 0)) : 0;
   const baselineTotal = leftAvailability + rightAvailability;
   const baselineLeftProbability = baselineTotal > 0 ? leftAvailability / baselineTotal : 0;
   const baselineRightProbability = baselineTotal > 0 ? rightAvailability / baselineTotal : 0;
@@ -368,7 +391,8 @@ function predictNextMove(view, intention, playerId) {
   if (total <= 0) {
     return {
       likelyEnd: null, confidence: 0, leftProbability: 0, rightProbability: 0,
-      baselineLeftProbability: 0, baselineRightProbability: 0, basis: "no-public-evidence"
+      baselineLeftProbability: 0.5, baselineRightProbability: 0.5, basis: "no-public-evidence",
+      interpretation: "heuristic-score-share-not-calibrated"
     };
   }
   const leftProbability = leftScore / total;
@@ -381,7 +405,8 @@ function predictNextMove(view, intention, playerId) {
     rightProbability: Math.round(rightProbability * 100) / 100,
     baselineLeftProbability: Math.round(baselineLeftProbability * 100) / 100,
     baselineRightProbability: Math.round(baselineRightProbability * 100) / 100,
-    basis: intention && intention.preferred != null ? "tile-availability-plus-behavior" : "tile-availability"
+    basis: intention && intention.preferred != null ? "tile-availability-plus-behavior" : "tile-availability",
+    interpretation: "heuristic-score-share-not-calibrated"
   };
 }
 
@@ -454,5 +479,7 @@ module.exports = {
   annotateIntentions,
   publicIntention,
   atLeastOne,
-  choosePreferred
+  choosePreferred,
+  behaviorProfile,
+  predictNextMove
 };
