@@ -362,7 +362,7 @@ function predictNextMove(view, intention, playerId) {
   const left = view.leftEnd;
   const right = view.rightEnd;
   if (!player || handCount <= 0 || left == null || right == null) {
-    return { likelyEnd: null, confidence: 0, leftProbability: 0, rightProbability: 0, basis: "unavailable" };
+    return { likelyEnd: null, baselineLikelyEnd: null, confidence: 0, leftProbability: 0, rightProbability: 0, basis: "unavailable" };
   }
   const rows = intention && intention.byPip || [];
   const leftAvailability = rows[left] ? Math.max(0, Math.min(1, rows[left].pAtLeastOne || 0)) : 0;
@@ -371,6 +371,7 @@ function predictNextMove(view, intention, playerId) {
     const hasEvidence = leftAvailability > 0;
     return {
       likelyEnd: hasEvidence ? left : null,
+      baselineLikelyEnd: hasEvidence ? left : null,
       confidence: 0,
       leftProbability: 0.5,
       rightProbability: 0.5,
@@ -396,7 +397,7 @@ function predictNextMove(view, intention, playerId) {
   const total = leftScore + rightScore;
   if (total <= 0) {
     return {
-      likelyEnd: null, confidence: 0, leftProbability: 0, rightProbability: 0,
+      likelyEnd: null, baselineLikelyEnd: null, confidence: 0, leftProbability: 0, rightProbability: 0,
       baselineLeftProbability: 0.5, baselineRightProbability: 0.5, basis: "no-public-evidence",
       interpretation: "heuristic-score-share-not-calibrated"
     };
@@ -404,8 +405,11 @@ function predictNextMove(view, intention, playerId) {
   const leftProbability = leftScore / total;
   const rightProbability = rightScore / total;
   const likelyEnd = leftProbability === rightProbability ? null : leftProbability > rightProbability ? left : right;
+  const baselineLikelyEnd = baselineTotal <= 0 || leftAvailability === rightAvailability
+    ? null : leftAvailability > rightAvailability ? left : right;
   return {
     likelyEnd: likelyEnd,
+    baselineLikelyEnd: baselineLikelyEnd,
     confidence: Math.round(Math.abs(leftProbability - rightProbability) * 100) / 100,
     leftProbability: Math.round(leftProbability * 100) / 100,
     rightProbability: Math.round(rightProbability * 100) / 100,
