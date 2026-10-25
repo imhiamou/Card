@@ -689,8 +689,8 @@
             : "";
           const prediction = player.nextMovePrediction && player.nextMovePrediction.likelyEnd != null
             ? "; next-end estimate: " + player.nextMovePrediction.likelyEnd +
-              " (behavior-adjusted " + text(player.nextMovePrediction.leftProbability) + "/" +
-              text(player.nextMovePrediction.rightProbability) + "; availability-only baseline " +
+              " (behavior-adjusted heuristic score share " + text(player.nextMovePrediction.leftProbability) + "/" +
+              text(player.nextMovePrediction.rightProbability) + "; availability-only heuristic baseline " +
               text(player.nextMovePrediction.baselineLeftProbability) + "/" +
               text(player.nextMovePrediction.baselineRightProbability) + ")"
             : "; next-end estimate unavailable";
