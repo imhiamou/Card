@@ -204,7 +204,14 @@ function readPlays(view, playerId, row) {
       unseen = unseenThen(view, index, botIds).filter((tile) => tile.id !== event.tile.id);
       voids = voidsBefore(log, playerId, index);
       const alternatives = unseen.filter((tile) => matchesEither(tile, before.left, before.right) && !violates(tile, voids));
-      forceChance = 1 - atLeastOne(unseen.length, alternatives.length, Math.max(0, handSize - 1));
+      // Prefer the server's recorded legal-alternative count when present.
+      // It is authoritative and avoids reclassifying a known forced move
+      // from an approximate hidden-hand reconstruction.
+      if (Number.isFinite(event.legalAlternatives)) {
+        forceChance = event.legalAlternatives === 0 ? 1 : 0;
+      } else {
+        forceChance = 1 - atLeastOne(unseen.length, alternatives.length, Math.max(0, handSize - 1));
+      }
     }
     const weight = signalWeight(forceChance);
     const matched = before ? (event.side === "left" ? before.left : before.right) : null;
