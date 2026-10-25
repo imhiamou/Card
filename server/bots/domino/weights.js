@@ -39,6 +39,7 @@ const DEFAULT_WEIGHTS = {
   mateSuit: 0.6,
   otherOpp: 0.4,
   ownOuts: 2,
+  doubleEndControl: 3.5,
   stuckDoubleRelief: 1.4,
   shedPips: 12,
   dumpDouble: 5,
