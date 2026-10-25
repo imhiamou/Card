@@ -123,6 +123,7 @@ function blankParts() {
     mateSuit: 0,
     otherOpp: 0,
     ownOuts: 0,
+    doubleEndControl: 0,
     stuckDouble: 0,
     shedPips: 0,
     dumpDouble: 0,
@@ -286,6 +287,23 @@ function scoreMoveParts(view, beliefs, move, weights, options) {
   const outs = rest.filter((tile) => matchesEither(tile, left, right)).length;
   parts.ownOuts = weights.ownOuts * outs;
   score += parts.ownOuts;
+
+  // Equal ends deliberately narrow the next player's legal numbers. Reward
+  // this only when the bot can continue on that number itself; otherwise the
+  // same move can trap the bot rather than establish control.
+  if (left != null && left === right) {
+    const heldControlTiles = rest.filter((tile) => touches(tile, left)).length;
+    if (heldControlTiles > 0) {
+      const controlCount = Math.min(heldControlTiles, 3);
+      parts.doubleEndControl = (weights.doubleEndControl || 0) * controlCount;
+      const plan = beliefs && beliefs._plan;
+      if (plan && plan.mode === "self-control" && plan.target === left) {
+        parts.doubleEndControl += (weights.doubleEndControl || 0) *
+          0.5 * Math.max(0, Math.min(1, plan.confidence || 0));
+      }
+      score += parts.doubleEndControl;
+    }
+  }
 
   let unlocked = 0;
   let stuck = 0;
