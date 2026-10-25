@@ -356,11 +356,20 @@ function predictNextMove(view, intention, playerId) {
       : 1 + Math.max(0, Math.min(1, row.confidence || 0)) * 0.25;
     return Math.max(0, Math.min(1, row.pAtLeastOne)) * preferenceBoost;
   };
+  const leftAvailability = rows[left] ? Math.max(0, Math.min(1, rows[left].pAtLeastOne || 0)) : 0;
+  const rightAvailability = right === left ? 0
+    : rows[right] ? Math.max(0, Math.min(1, rows[right].pAtLeastOne || 0)) : 0;
+  const baselineTotal = leftAvailability + rightAvailability;
+  const baselineLeftProbability = baselineTotal > 0 ? leftAvailability / baselineTotal : 0;
+  const baselineRightProbability = baselineTotal > 0 ? rightAvailability / baselineTotal : 0;
   const leftScore = scoreFor(left);
   const rightScore = right === left ? 0 : scoreFor(right);
   const total = leftScore + rightScore;
   if (total <= 0) {
-    return { likelyEnd: null, confidence: 0, leftProbability: 0, rightProbability: 0, basis: "no-public-evidence" };
+    return {
+      likelyEnd: null, confidence: 0, leftProbability: 0, rightProbability: 0,
+      baselineLeftProbability: 0, baselineRightProbability: 0, basis: "no-public-evidence"
+    };
   }
   const leftProbability = leftScore / total;
   const rightProbability = rightScore / total;
@@ -370,6 +379,8 @@ function predictNextMove(view, intention, playerId) {
     confidence: Math.round(Math.abs(leftProbability - rightProbability) * 100) / 100,
     leftProbability: Math.round(leftProbability * 100) / 100,
     rightProbability: Math.round(rightProbability * 100) / 100,
+    baselineLeftProbability: Math.round(baselineLeftProbability * 100) / 100,
+    baselineRightProbability: Math.round(baselineRightProbability * 100) / 100,
     basis: intention && intention.preferred != null ? "tile-availability-plus-behavior" : "tile-availability"
   };
 }
