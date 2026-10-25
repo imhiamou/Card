@@ -84,6 +84,13 @@ test("next-move estimate combines tile availability with observed preference", (
   assert.ok(prediction.rightProbability >= 0 && prediction.rightProbability <= 1);
   if (prediction.basis !== "unavailable" && prediction.basis !== "no-public-evidence") {
     assert.ok(Math.abs(prediction.leftProbability + prediction.rightProbability - 1) <= 0.02);
+    assert.ok(prediction.baselineLeftProbability >= 0 && prediction.baselineLeftProbability <= 1);
+    assert.ok(prediction.baselineRightProbability >= 0 && prediction.baselineRightProbability <= 1);
+    assert.ok(Math.abs(prediction.baselineLeftProbability + prediction.baselineRightProbability - 1) <= 0.02);
+    if (intention.preferred === 3) {
+      assert.ok(prediction.rightProbability > prediction.baselineRightProbability,
+        "behavioral evidence should increase the predicted choice of the preferred right end");
+    }
   }
 });
 
