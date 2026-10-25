@@ -312,6 +312,68 @@ function fillCounts(view, beliefs, playerId, row, inventory) {
   row.confidence = preferred == null ? 0 : row.byPip[preferred].confidence;
 }
 
+function behaviorProfile(intention) {
+  const rows = intention && intention.byPip || [];
+  const total = (key) => rows.reduce((sum, row) => sum + (Number(row[key]) || 0), 0);
+  const deliberate = total("deliberate");
+  const forced = total("forced");
+  const changedAway = total("changedAway");
+  const observed = deliberate + forced;
+  const preferred = intention && intention.preferred != null ? rows[intention.preferred] : null;
+  const persistence = preferred
+    ? (preferred.inTile + preferred.bridged + preferred.continued + preferred.maintained)
+    : 0;
+  let style = "insufficient-evidence";
+  if (observed >= 2 && forced / observed >= 0.6) style = "mostly-forced";
+  else if (intention && intention.confidence >= 0.45 && persistence >= 1.5 &&
+      persistence >= changedAway * 1.25) style = "consistent-number-control";
+  else if (observed >= 3 && changedAway >= deliberate * 0.6) style = "flexible-or-changing";
+  else if (observed >= 2) style = "mixed";
+  return {
+    style: style,
+    observedPlays: Math.round(observed * 100) / 100,
+    deliberateSignal: Math.round(deliberate * 100) / 100,
+    forcedSignal: Math.round(forced * 100) / 100,
+    persistence: Math.round(persistence * 100) / 100,
+    changesAway: Math.round(changedAway * 100) / 100
+  };
+}
+
+function predictNextMove(view, intention, playerId) {
+  const player = (view.players || []).find((seat) => seat.id === playerId);
+  const handCount = player ? Math.max(0, player.handCount || 0) : 0;
+  const left = view.leftEnd;
+  const right = view.rightEnd;
+  if (!player || handCount <= 0 || left == null || right == null) {
+    return { likelyEnd: null, confidence: 0, leftProbability: 0, rightProbability: 0, basis: "unavailable" };
+  }
+  const rows = intention && intention.byPip || [];
+  const scoreFor = (pip) => {
+    if (pip == null || !rows[pip] || rows[pip].pAtLeastOne <= 0) return 0;
+    const row = rows[pip];
+    const preferenceBoost = intention && intention.preferred === pip
+      ? 1 + Math.max(0, Math.min(1, intention.confidence)) * 1.25
+      : 1 + Math.max(0, Math.min(1, row.confidence || 0)) * 0.25;
+    return Math.max(0, Math.min(1, row.pAtLeastOne)) * preferenceBoost;
+  };
+  const leftScore = scoreFor(left);
+  const rightScore = right === left ? leftScore : scoreFor(right);
+  const total = leftScore + (right === left ? 0 : rightScore);
+  if (total <= 0) {
+    return { likelyEnd: null, confidence: 0, leftProbability: 0, rightProbability: 0, basis: "no-public-evidence" };
+  }
+  const leftProbability = leftScore / total;
+  const rightProbability = right === left ? leftProbability : rightScore / total;
+  const likelyEnd = leftProbability === rightProbability ? null : leftProbability > rightProbability ? left : right;
+  return {
+    likelyEnd: likelyEnd,
+    confidence: Math.round(Math.abs(leftProbability - rightProbability) * 100) / 100,
+    leftProbability: Math.round(leftProbability * 100) / 100,
+    rightProbability: Math.round(rightProbability * 100) / 100,
+    basis: intention && intention.preferred != null ? "tile-availability-plus-behavior" : "tile-availability"
+  };
+}
+
 function annotateIntentions(view, beliefs) {
   const inventory = buildInventory(view || {});
   const drew = (view.log || []).some((event) => event && event.type === "draw");
@@ -320,6 +382,8 @@ function annotateIntentions(view, beliefs) {
     row.drawsSeen = drew;
     if (id !== view.selfId) readPlays(view, id, row);
     fillCounts(view, beliefs, id, row, inventory);
+    row.behavior = behaviorProfile(row);
+    row.nextMovePrediction = id === view.selfId ? null : predictNextMove(view, row, id);
     beliefs[id].intention = row;
   });
   inventory.byPip.forEach((pipRow) => {
@@ -351,6 +415,8 @@ function publicIntention(intention) {
     lastMoveForced: !!intention.lastMoveForced,
     lastMoveForceChance: intention.lastMoveForceChance,
     drawsSeen: !!intention.drawsSeen,
+    behavior: intention.behavior ? Object.assign({}, intention.behavior) : null,
+    nextMovePrediction: intention.nextMovePrediction ? Object.assign({}, intention.nextMovePrediction) : null,
     byPip: (intention.byPip || []).map((row) => ({
       expectedTiles: Math.round(row.expectedTiles * 100) / 100,
       pAtLeastOne: Math.round(row.pAtLeastOne * 100) / 100,
