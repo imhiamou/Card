@@ -388,7 +388,6 @@ function predictNextMove(view, intention, playerId) {
       : 1 + Math.max(0, Math.min(1, row.confidence || 0)) * 0.25;
     return Math.max(0, Math.min(1, row.pAtLeastOne)) * preferenceBoost;
   };
-  const rightAvailability = rows[right] ? Math.max(0, Math.min(1, rows[right].pAtLeastOne || 0)) : 0;
   const baselineTotal = leftAvailability + rightAvailability;
   const baselineLeftProbability = baselineTotal > 0 ? leftAvailability / baselineTotal : 0;
   const baselineRightProbability = baselineTotal > 0 ? rightAvailability / baselineTotal : 0;
