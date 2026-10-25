@@ -138,6 +138,9 @@ test("no-preference benchmark: predictions do not invent a behavioral advantage"
   const count = 1500;
   let baselineBrier = 0;
   let adjustedBrier = 0;
+  let baselineCorrect = 0;
+  let adjustedCorrect = 0;
+  let availabilityOnlyCount = 0;
 
   for (let i = 0; i < count; i++) {
     const row = scenario(rng, false);
@@ -146,13 +149,27 @@ test("no-preference benchmark: predictions do not invent a behavioral advantage"
     const adjusted = row.prediction.leftProbability;
     baselineBrier += (base - actualLeft) ** 2;
     adjustedBrier += (adjusted - actualLeft) ** 2;
+    const baselinePip = row.prediction.baselineLeftProbability >= row.prediction.baselineRightProbability
+      ? row.left : row.right;
+    baselineCorrect += baselinePip === row.actualPip ? 1 : 0;
+    adjustedCorrect += row.prediction.likelyEnd === row.actualPip ? 1 : 0;
+    if (row.prediction.basis === "tile-availability") availabilityOnlyCount += 1;
+    assert.equal(row.prediction.basis, "tile-availability");
     assert.equal(adjusted, base);
   }
 
   baselineBrier /= count;
   adjustedBrier /= count;
+  baselineCorrect /= count;
+  adjustedCorrect /= count;
   t.diagnostic("no-preference benchmark (" + count + " legal positions): " +
     "baseline Brier=" + baselineBrier.toFixed(4) +
-    ", adjusted Brier=" + adjustedBrier.toFixed(4));
+    ", adjusted Brier=" + adjustedBrier.toFixed(4) +
+    ", baseline accuracy=" + (baselineCorrect * 100).toFixed(1) + "%" +
+    ", adjusted accuracy=" + (adjustedCorrect * 100).toFixed(1) + "%" +
+    ", insufficient behavior evidence=" + availabilityOnlyCount + "/" + count +
+    " (availability-only fallback)");
   assert.equal(adjustedBrier, baselineBrier);
+  assert.equal(availabilityOnlyCount, count);
+  assert.equal(adjustedCorrect, baselineCorrect);
 });
