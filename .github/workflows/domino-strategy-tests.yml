@@ -6,6 +6,8 @@ on:
     paths:
       - "server/dominoStrategy.test.js"
       - "server/dominoInspect.test.js"
+      - "server/dominoBehavior.test.js"
+      - "server/dominoBehaviorBenchmark.test.js"
       - "server/bots/domino/**"
       - "server/domino.js"
       - "assets/domino-inspect.js"
@@ -16,6 +18,9 @@ on:
     branches: [main]
     paths:
       - "server/dominoStrategy.test.js"
+      - "server/dominoInspect.test.js"
+      - "server/dominoBehavior.test.js"
+      - "server/dominoBehaviorBenchmark.test.js"
       - "server/bots/domino/**"
       - "server/domino.js"
       - "package.json"
