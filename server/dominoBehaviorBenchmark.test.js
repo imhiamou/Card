@@ -110,8 +110,7 @@ test("controlled 3000-position benchmark: behavior evidence improves next-end pr
     baselineBrier += (base - actualLeft) ** 2;
     adjustedBrier += (adjusted - actualLeft) ** 2;
 
-    const baselinePip = row.prediction.baselineLeftProbability >= row.prediction.baselineRightProbability
-      ? row.left : row.right;
+    const baselinePip = row.prediction.baselineLikelyEnd;
     baselineCorrect += baselinePip === row.actualPip ? 1 : 0;
     adjustedCorrect += row.prediction.likelyEnd === row.actualPip ? 1 : 0;
   }
@@ -149,8 +148,7 @@ test("no-preference benchmark: predictions do not invent a behavioral advantage"
     const adjusted = row.prediction.leftProbability;
     baselineBrier += (base - actualLeft) ** 2;
     adjustedBrier += (adjusted - actualLeft) ** 2;
-    const baselinePip = row.prediction.baselineLeftProbability >= row.prediction.baselineRightProbability
-      ? row.left : row.right;
+    const baselinePip = row.prediction.baselineLikelyEnd;
     baselineCorrect += baselinePip === row.actualPip ? 1 : 0;
     adjustedCorrect += row.prediction.likelyEnd === row.actualPip ? 1 : 0;
     if (row.prediction.basis === "tile-availability") availabilityOnlyCount += 1;
