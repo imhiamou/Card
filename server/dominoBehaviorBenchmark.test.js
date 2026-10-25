@@ -3,7 +3,7 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const { atLeastOne, predictNextMove } = require("./bots/domino/intent");
-const { mulberry32, shuffleInPlace } = require("./bots/domino/sample");
+const { mulberry32 } = require("./bots/domino/sample");
 
 function doubleSixSet() {
   const tiles = [];
@@ -11,6 +11,15 @@ function doubleSixSet() {
     for (let b = a; b <= 6; b++) tiles.push({ id: a + "-" + b, a, b });
   }
   return tiles;
+}
+
+function shuffle(items, rng) {
+  const result = items.slice();
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
 }
 
 function touches(tile, pip) {
@@ -25,7 +34,7 @@ function removeById(tiles, id) {
 
 function scenario(rng, withPreference) {
   const full = doubleSixSet();
-  const deck = shuffleInPlace(full.slice(), rng);
+  const deck = shuffle(full, rng);
   const left = Math.floor(rng() * 7);
   let right = Math.floor(rng() * 6);
   if (right >= left) right += 1;
@@ -47,7 +56,7 @@ function scenario(rng, withPreference) {
   const targetHandPool = remaining.slice();
   removeById(targetHandPool, leftTile.id);
   removeById(targetHandPool, rightTile.id);
-  const targetHand = [leftTile, rightTile, ...shuffleInPlace(targetHandPool, rng).slice(0, 5)];
+  const targetHand = [leftTile, rightTile, ...shuffle(targetHandPool, rng).slice(0, 5)];
   assert.equal(targetHand.length, 7);
 
   // The observer knows their own hand and the board tile, but not the target
