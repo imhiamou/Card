@@ -684,8 +684,15 @@
             ? "; may be weak on " + joinPips(player.suspectedMissing) + " (uncertain)"
             : "";
           const forced = player.lastMoveForced ? "; last play likely forced" : "";
+          const behavior = player.behavior && player.behavior.style
+            ? "; observed style: " + player.behavior.style
+            : "";
+          const prediction = player.nextMovePrediction && player.nextMovePrediction.likelyEnd != null
+            ? "; next-end estimate: " + player.nextMovePrediction.likelyEnd +
+              " (confidence " + text(player.nextMovePrediction.confidence) + ")"
+            : "; next-end estimate unavailable";
           return player.playerId + " (" + text(player.handCount) + " tiles): " +
-            preference + "; " + proven + suspected + forced + ".";
+            preference + "; " + proven + suspected + forced + behavior + prediction + ".";
         })
       });
     }
