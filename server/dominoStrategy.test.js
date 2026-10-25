@@ -1041,3 +1041,36 @@ test("a later draw clears voids inferred from a forced play", () => {
   });
   assert.deepEqual(belief(state).opp.knownImpossibleNumbers, []);
 });
+
+
+test("forming equal ends is rewarded when the bot holds follow-up tiles for that number", () => {
+  clearPlans();
+  const state = base({
+    hand: [
+      tile(4, 5),
+      tile(2, 4),
+      tile(0, 4),
+      tile(1, 4),
+      tile(4, 6),
+      tile(0, 1)
+    ],
+    validMoves: [
+      { tileId: "4-5", side: "left" },
+      { tileId: "2-4", side: "right" }
+    ],
+    leftEnd: 5,
+    rightEnd: 4,
+    chain: [tile(5, 3), tile(3, 4)],
+    players: seats([6, 4, 4, 4]),
+    log: []
+  });
+  const view = normalize(state);
+  const beliefs = buildBeliefs(view);
+  const control = scoreMoveParts(view, beliefs, { tileId: "4-5", side: "left" }, mergeWeights()).parts;
+  const split = scoreMoveParts(view, beliefs, { tileId: "2-4", side: "right" }, mergeWeights()).parts;
+  assert.ok(control.doubleEndControl > 0, "5-4 should create 4-4 and reward retained 4 tiles");
+  assert.equal(split.doubleEndControl, 0, "4-2 should not receive an equal-end control bonus");
+  const result = decide(state);
+  assert.equal(result.tileId, "4-5");
+  assert.equal(result.side, "left");
+});
