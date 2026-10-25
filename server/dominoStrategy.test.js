@@ -1062,6 +1062,7 @@ test("forming equal ends is rewarded when the bot holds follow-up tiles for that
     rightEnd: 4,
     chain: [tile(5, 3), tile(3, 4)],
     players: seats([6, 4, 4, 4]),
+    boneyardCount: 8,
     log: []
   });
   const view = normalize(state);
@@ -1070,7 +1071,7 @@ test("forming equal ends is rewarded when the bot holds follow-up tiles for that
   const split = scoreMoveParts(view, beliefs, { tileId: "2-4", side: "right" }, mergeWeights()).parts;
   assert.ok(control.doubleEndControl > 0, "5-4 should create 4-4 and reward retained 4 tiles");
   assert.equal(split.doubleEndControl, 0, "4-2 should not receive an equal-end control bonus");
-  const result = decide(state);
+  const result = getDominoMove(state, { explain: true, limits: { samples: 8, maxMs: 18 } });
   assert.equal(result.tileId, "4-5");
   assert.equal(result.side, "left");
 });
