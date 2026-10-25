@@ -891,6 +891,8 @@ function buildDiagnostics(input) {
         preferredNumber: intention && intention.preferred != null ? intention.preferred : null,
         preferenceConfidence: intention ? intention.confidence : 0,
         lastMoveForced: !!(intention && intention.lastMoveForced),
+        behavior: intention && intention.behavior ? Object.assign({}, intention.behavior) : null,
+        nextMovePrediction: intention && intention.nextMovePrediction ? Object.assign({}, intention.nextMovePrediction) : null,
         provenVoids: provenVoids,
         suspectedMissing: suspectedMissing
       };
