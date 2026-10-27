@@ -2385,7 +2385,13 @@
           : "No tile in your hand matches either open end.";
       } else {
         $("domHintTitle").textContent = "Play " + data.tile.a + "|" + data.tile.b + " on the " + data.side + " end";
-        $("domHintText").textContent = "Current board ends: " + data.board.leftEnd + " and " + data.board.rightEnd + ".";
+        const endsText = data.resultingEnds
+          ? " The play leaves ends " + data.resultingEnds.left + "|" + data.resultingEnds.right + "."
+          : "";
+        const marginText = typeof data.margin === "number"
+          ? " Heuristic lead over the next option: " + data.margin + " points."
+          : "";
+        $("domHintText").textContent = "Current board ends: " + data.board.leftEnd + " and " + data.board.rightEnd + "." + endsText + marginText;
       }
       const strategy = data.strategy || {};
       const strategyLine = strategy.target == null ? "" :
