@@ -14,6 +14,7 @@
 
 const dominoBot = require("./bots/dominoBot");
 const dominoInspect = require("./bots/domino/inspect");
+const { getDominoHint } = require("./bots/domino/hint");
 
 const MAX_PIP = 6;
 const HAND_SIZE = 7;
@@ -1667,33 +1668,36 @@ function registerSocket(socket, io, rooms) {
     }
     try {
       const view = decisionView(room, socket.id);
-      const explained = dominoBot.getDominoMove(view, { explain: true });
-      const diagnostics = explained && explained.diagnostics ? explained.diagnostics : {};
-      const tileId = explained && !explained.pass ? explained.tileId : null;
-      const tile = tileId == null ? null : view.hand.find((item) => item.id === tileId) || null;
-      const strategy = diagnostics.strategy || {};
+      // Human hints use a dedicated evaluator. The bot's policy is not reused,
+      // so the hint can prioritize hand-management and explain the trade-offs
+      // without silently changing bot play behavior.
+      const hint = getDominoHint(view);
       socket.emit("dominoHintResult", {
-        ok: true, requestId: requestId,
-        positionKey: diagnostics.positionKey || null,
-        pass: !!(explained && explained.pass),
-        tile: tile ? { id: tile.id, a: tile.a, b: tile.b } : null,
-        side: explained && !explained.pass ? explained.side : null,
-        reason: diagnostics.reasoning || diagnostics.summary ||
-          (diagnostics.passAnalysis && diagnostics.passAnalysis.reason) ||
-          "The AI could not produce a move explanation for this position.",
+        ok: true,
+        requestId: requestId,
+        pass: !!hint.pass,
+        tile: hint.tile || null,
+        side: hint.side || null,
+        reason: hint.reason || "The hint evaluator could not produce a detailed explanation.",
         strategy: {
-          mode: strategy.mode || null,
-          target: strategy.target == null ? null : strategy.target,
-          owner: strategy.owner || null,
-          confidence: strategy.confidence == null ? null : strategy.confidence,
-          evidence: strategy.evidence || null
+          mode: hint.strategy && hint.strategy.mode || null,
+          target: hint.strategy && hint.strategy.target != null ? hint.strategy.target : null,
+          owner: hint.strategy && hint.strategy.owner || null,
+          confidence: hint.strategy && hint.strategy.confidence != null ? hint.strategy.confidence : null,
+          evidence: hint.strategy && hint.strategy.evidence || null
         },
-        alternatives: (diagnostics.candidateEvaluations || []).slice(0, 3).map((row) => ({
-          tile: row.tile || null, side: row.side || null,
-          score: typeof row.score === "number" ? row.score : null
+        alternatives: (hint.alternatives || []).slice(0, 3).map((row) => ({
+          tile: row.tile || null,
+          side: row.side || null,
+          score: typeof row.score === "number" ? row.score : null,
+          reasons: row.reasons || [],
+          resultingEnds: row.resultingEnds || null
         })),
         board: { leftEnd: view.leftEnd, rightEnd: view.rightEnd },
-        canDraw: view.validMoves.length === 0 && view.boneyardCount > 0
+        resultingEnds: hint.resultingEnds || null,
+        canDraw: !!hint.canDraw,
+        score: hint.score == null ? null : hint.score,
+        margin: hint.margin == null ? null : hint.margin
       });
     } catch (err) {
       socket.emit("dominoHintResult", { ok: false, requestId: requestId,
