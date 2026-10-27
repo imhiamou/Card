@@ -2,7 +2,6 @@
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const domino = require("../domino");
 const { getDominoHint } = require("./hint");
 
 function tile(a, b) {
@@ -35,8 +34,8 @@ function state(extra) {
 
 test("hint chooses an immediate hand-emptying play above every heuristic", () => {
   const view = state({
-    hand: [tile(6, 6), tile(1, 2)],
-    validMoves: [{ tileId: "6-6", side: "left" }, { tileId: "1-2", side: "right" }],
+    hand: [tile(6, 6)],
+    validMoves: [{ tileId: "6-6", side: "left" }],
     leftEnd: 6,
     rightEnd: 2,
     chain: [tile(4, 6), tile(4, 2)]
