@@ -2,6 +2,7 @@
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
+const domino = require("../../domino");
 const { getDominoHint } = require("./hint");
 
 function tile(a, b) {
@@ -163,4 +164,91 @@ test("hint alternatives expose scores, reasons, and resulting ends without hidde
   const encoded = JSON.stringify(hint);
   assert.equal(encoded.includes("hands"), false);
   assert.equal(encoded.includes("allocation"), false);
+});
+
+
+test("hint returns only legal moves across 120 randomized legal board states", () => {
+  let seed = 0x6d2b79f5;
+  function rng() {
+    seed = (seed + 0x6D2B79F5) >>> 0;
+    let value = seed;
+    value = Math.imul(value ^ (value >>> 15), value | 1);
+    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+  }
+  function shuffle(items) {
+    for (let i = items.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [items[i], items[j]] = [items[j], items[i]];
+    }
+    return items;
+  }
+  function opponentCounts(total) {
+    const counts = [0, 0, 0];
+    for (let i = 0; i < total; i++) {
+      const index = counts.findIndex((count) => count < 7);
+      assert.notEqual(index, -1, "unseen tiles must fit the other three hands");
+      counts[index] += 1;
+    }
+    return counts;
+  }
+
+  for (let iteration = 0; iteration < 120; iteration++) {
+    const deck = shuffle(domino.buildDoubleSixSet().map((item) => tile(item.a, item.b)));
+    const hand = deck.slice(0, 7);
+    const pool = deck.slice(7);
+    const board = { chain: [], leftEnd: null, rightEnd: null, mustPlayId: null };
+    const opening = pool.shift();
+    domino.placeTile(board, opening, "center");
+    const targetLength = 1 + Math.floor(rng() * 8);
+
+    while (board.chain.length < targetLength) {
+      const moves = domino.listValidMoves(pool, board.leftEnd, board.rightEnd, board.chain.length);
+      if (!moves.length) break;
+      const move = moves[Math.floor(rng() * moves.length)];
+      const next = pool.find((item) => item.id === move.tileId);
+      assert.ok(next);
+      assert.ok(domino.placeTile(board, next, move.side));
+      pool.splice(pool.findIndex((item) => item.id === next.id), 1);
+    }
+
+    const counts = opponentCounts(pool.length);
+    const players = [
+      { id: "me", handCount: hand.length, team: "A" },
+      { id: "opp", handCount: counts[0], team: "B" },
+      { id: "mate", handCount: counts[1], team: "A" },
+      { id: "far", handCount: counts[2], team: "B" }
+    ];
+    const validMoves = domino.listValidMoves(hand, board.leftEnd, board.rightEnd, board.chain.length)
+      .map((move) => ({ tileId: move.tileId, side: move.side }));
+    const view = {
+      selfId: "me",
+      hand,
+      validMoves,
+      leftEnd: board.leftEnd,
+      rightEnd: board.rightEnd,
+      chain: board.chain,
+      players,
+      teamMode: true,
+      teamA: ["me", "mate"],
+      teamB: ["opp", "far"],
+      boneyardCount: 0,
+      log: []
+    };
+    const hint = getDominoHint(view);
+    if (!validMoves.length) {
+      assert.equal(hint.pass, true, "position " + iteration + " has no legal move");
+      continue;
+    }
+    assert.equal(hint.pass, false, "position " + iteration + " has legal moves");
+    assert.ok(validMoves.some((move) =>
+      move.tileId === hint.tile.id && move.side === hint.side
+    ), "position " + iteration + " recommended an illegal move");
+    assert.ok(Number.isFinite(hint.score), "position " + iteration + " must have a finite score");
+    hint.alternatives.forEach((row) => {
+      assert.ok(validMoves.some((move) =>
+        move.tileId === row.tile.id && move.side === row.side
+      ), "position " + iteration + " contains an illegal alternative");
+    });
+  }
 });
