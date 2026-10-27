@@ -2398,8 +2398,10 @@
       ).slice(0, 2);
       $("domHintAlternatives").textContent = other.length
         ? "Alternatives considered: " + other.map((row) =>
-            row.tile ? row.tile.a + "|" + row.tile.b + " (" + row.side + ")" +
-              (row.score == null ? "" : ", score " + row.score) : "another legal move"
+            (row.tile ? row.tile.a + "|" + row.tile.b + " (" + row.side + ")" : "another legal move") +
+            (row.resultingEnds ? ", leaves ends " + row.resultingEnds.left + "|" + row.resultingEnds.right : "") +
+            (row.score == null ? "" : ", score " + row.score) +
+            (row.reasons && row.reasons.length ? " — " + row.reasons[0] : "")
           ).join("; ") + ". Scores are heuristic estimates, not guarantees."
         : "Recommendation uses your hand and public game history, not hidden opponent hands.";
       renderHand();
