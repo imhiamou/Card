@@ -49,11 +49,12 @@ test("hint chooses an immediate hand-emptying play above every heuristic", () =>
 
 test("hint prefers controlling both ends on a number the hand can continue", () => {
   const view = state({
-    hand: [tile(4, 5), tile(2, 4), tile(4, 4), tile(1, 4), tile(6, 6)],
+    hand: [tile(4, 5), tile(2, 4), tile(1, 4), tile(3, 4), tile(6, 6)],
     validMoves: [
       { tileId: "4-5", side: "left" },
       { tileId: "2-4", side: "right" },
-      { tileId: "4-4", side: "right" }
+      { tileId: "1-4", side: "right" },
+      { tileId: "3-4", side: "right" }
     ],
     leftEnd: 5,
     rightEnd: 4,
