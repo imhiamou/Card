@@ -251,8 +251,13 @@ function runBenchmark(pairs, seed) {
     hintBlockedWins: 0,
     productionEmptyHandWins: 0,
     productionBlockedWins: 0,
+    hintSweptPairs: 0,
+    splitPairs: 0,
+    productionSweptPairs: 0,
+    pairsWithDraws: 0,
     totalPlies: 0
   };
+  const pairedDealScores = [];
 
   for (let index = 0; index < pairs; index++) {
     const hands = deal((seed + Math.imul(index + 1, 0x9E3779B1)) >>> 0);
@@ -264,25 +269,37 @@ function runBenchmark(pairs, seed) {
     clearPlans();
     const second = playGame(hands, "B", "hint-benchmark-" + seed + "-" + index + "-B");
 
+    let hintWinsInPair = 0;
+    let productionWinsInPair = 0;
+    let drawsInPair = 0;
     for (const result of [first, second]) {
       stats.totalPlies += result.plies;
       if (result.winnerTeam == null) {
         stats.draws++;
+        drawsInPair++;
         continue;
       }
       const hintWon = result.winnerTeam === (result === first ? "A" : "B");
       if (hintWon) {
+        hintWinsInPair++;
         stats.hintWins++;
         stats.hintPoints += result.pointsAwarded;
         if (result.winReason === "empty-hand") stats.hintEmptyHandWins++;
         else stats.hintBlockedWins++;
       } else {
+        productionWinsInPair++;
         stats.productionWins++;
         stats.productionPoints += result.pointsAwarded;
         if (result.winReason === "empty-hand") stats.productionEmptyHandWins++;
         else stats.productionBlockedWins++;
       }
     }
+
+    pairedDealScores.push((hintWinsInPair + drawsInPair * 0.5) / 2);
+    if (hintWinsInPair === 2) stats.hintSweptPairs++;
+    else if (productionWinsInPair === 2) stats.productionSweptPairs++;
+    else if (hintWinsInPair === 1 && productionWinsInPair === 1) stats.splitPairs++;
+    if (drawsInPair > 0) stats.pairsWithDraws++;
 
     if ((index + 1) % 100 === 0 || index + 1 === pairs) {
       process.stderr.write("Completed " + (index + 1) + "/" + pairs + " paired deals\n");
@@ -292,23 +309,28 @@ function runBenchmark(pairs, seed) {
   const decisive = stats.hintWins + stats.productionWins;
   const scoreRate = (stats.hintWins + stats.draws * 0.5) / stats.games;
   const winRate = decisive ? stats.hintWins / decisive : null;
-  const scoreVariance = stats.games > 1
-    ? (stats.hintWins + stats.draws * 0.25) / stats.games - scoreRate * scoreRate
+  // The two games in a pair share the same deal, so they are not independent.
+  // Estimate uncertainty across paired-deal score shares instead of pretending
+  // all 2,000 game outcomes are independent observations.
+  const pairedMean = pairedDealScores.reduce((sum, value) => sum + value, 0) / pairs;
+  const pairedVariance = pairs > 1
+    ? pairedDealScores.reduce((sum, value) => sum + Math.pow(value - pairedMean, 2), 0) / (pairs - 1)
     : 0;
-  const standardError = Math.sqrt(Math.max(0, scoreVariance) / stats.games);
+  const standardError = Math.sqrt(pairedVariance / pairs);
   stats.hintScoreRate = Number(scoreRate.toFixed(4));
   stats.hintWinRateAmongDecisive = winRate == null ? null : Number(winRate.toFixed(4));
   stats.hintScoreRate95CI = [
-    Number(Math.max(0, scoreRate - 1.96 * standardError).toFixed(4)),
-    Number(Math.min(1, scoreRate + 1.96 * standardError).toFixed(4))
+    Number(Math.max(0, pairedMean - 1.96 * standardError).toFixed(4)),
+    Number(Math.min(1, pairedMean + 1.96 * standardError).toFixed(4))
   ];
+  stats.confidenceIntervalMethod = "Approximate 95% t/normal interval calculated across paired-deal score shares; paired games are not treated as independent.";
   stats.averagePliesPerGame = Number((stats.totalPlies / stats.games).toFixed(2));
   stats.averagePointsWhenHintWins = stats.hintWins
     ? Number((stats.hintPoints / stats.hintWins).toFixed(2)) : null;
   stats.averagePointsWhenProductionWins = stats.productionWins
     ? Number((stats.productionPoints / stats.productionWins).toFixed(2)) : null;
   stats.seed = seed >>> 0;
-  stats.interpretation = "Synthetic self-play only. A pair is two games on the same deal with the policies swapping teams. The interval is an approximate 95% interval for hint-team score share (wins=1, draws=0.5, losses=0); it does not establish performance against humans.";
+  stats.interpretation = "Synthetic self-play only. Each pair replays the same deal with policies swapping teams. The confidence interval uses pair-level score shares to account for the two games sharing a deal; it does not establish performance against humans.";
   return stats;
 }
 
