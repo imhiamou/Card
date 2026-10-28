@@ -177,7 +177,7 @@ function playGame(handsInput, hintTeam, gameId) {
       if (game.consecutivePasses >= 4) {
         const teamAPips = pipTotal(game.hands.p0) + pipTotal(game.hands.p2);
         const teamBPips = pipTotal(game.hands.p1) + pipTotal(game.hands.p3);
-        winnerTeam = teamAPips === teamBPips ? null : teamAPips < teamBPips ? "A" : "B";
+        winnerTeam = teamAPips <= teamBPips ? "A" : "B";
         winReason = "blocked";
         break;
       }
