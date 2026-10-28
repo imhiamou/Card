@@ -36,3 +36,6 @@ jobs:
           node-version: 22
       - name: Run Dominoes strategy and prediction tests
         run: npm run test:domino-strategy
+      - name: Benchmark 1,000 paired hint-versus-production deals (2,000 games)
+        run: npm run benchmark:domino-hint -- --pairs=1000
+        timeout-minutes: 45
